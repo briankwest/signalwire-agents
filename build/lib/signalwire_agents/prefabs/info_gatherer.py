@@ -62,18 +62,15 @@ class InfoGathererAgent(AgentBase):
     
     def _build_info_gatherer_prompt(self):
         """Build the agent prompt for information gathering"""
-        # Set personality and goal
-        self.set_personality("You are a friendly and efficient virtual assistant.")
-        self.set_goal("Your job is to collect specific information from the user.")
-        
-        # Add core instructions
-        self.add_instruction("Ask for ONLY ONE piece of information at a time.")
-        self.add_instruction("Confirm each answer before moving to the next question.")
-        self.add_instruction("Do not ask for information not in your field list.")
-        self.add_instruction("Be polite but direct with your questions.")
+        # Create base instructions
+        instructions = [
+            "Ask for ONLY ONE piece of information at a time.",
+            "Confirm each answer before moving to the next question.",
+            "Do not ask for information not in your field list.",
+            "Be polite but direct with your questions."
+        ]
         
         # Add field-specific instructions
-        field_instructions = "You need to collect the following information:"
         for i, field in enumerate(self.fields, 1):
             field_name = field.get("name")
             field_prompt = field.get("prompt")
@@ -83,13 +80,23 @@ class InfoGathererAgent(AgentBase):
             if validation:
                 field_text += f" ({validation})"
                 
-            self.add_instruction(field_text)
+            instructions.append(field_text)
         
         # Add confirmation instruction if a template is provided
         if self.confirmation_template:
-            self.add_instruction(
+            instructions.append(
                 f"After collecting all fields, confirm with: {self.confirmation_template}"
             )
+            
+        # Define the prompt sections declaratively
+        self.PROMPT_SECTIONS = {
+            "Personality": "You are a friendly and efficient virtual assistant.",
+            "Goal": "Your job is to collect specific information from the user.",
+            "Instructions": instructions
+        }
+        
+        # Process the prompt sections 
+        self._process_prompt_sections()
     
     def _setup_post_prompt(self):
         """Set up the post-prompt for summary formatting"""

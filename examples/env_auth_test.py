@@ -32,6 +32,11 @@ class SimpleTestAgent(AgentBase):
     A minimal agent for testing environment variable authentication
     """
     
+    # Define prompt structure declaratively
+    PROMPT_SECTIONS = {
+        "Personality": "Test agent for environment variables"
+    }
+    
     def __init__(self):
         # Initialize the agent
         super().__init__(
@@ -40,8 +45,6 @@ class SimpleTestAgent(AgentBase):
             host="0.0.0.0",
             port=3000
         )
-        
-        self.set_personality("Test agent for environment variables")
 
 if __name__ == "__main__":
     agent = SimpleTestAgent()

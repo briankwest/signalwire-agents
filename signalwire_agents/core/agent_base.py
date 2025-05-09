@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type, Type
 import base64
 import secrets
 from urllib.parse import urlparse
+import json
 
 try:
     import fastapi
@@ -56,7 +57,11 @@ class AgentBase:
         basic_auth: Optional[Tuple[str, str]] = None,
         use_pom: bool = True,
         per_call_sessions: bool = True,
-        token_expiry_secs: int = 600
+        token_expiry_secs: int = 600,
+        auto_answer: bool = True,
+        record_call: bool = False,
+        record_format: str = "mp4",
+        record_stereo: bool = True
     ):
         """
         Initialize a new agent
@@ -70,6 +75,10 @@ class AgentBase:
             use_pom: Whether to use POM for prompt building
             per_call_sessions: Whether to use per-call security sessions
             token_expiry_secs: Seconds until tokens expire
+            auto_answer: Whether to automatically answer calls
+            record_call: Whether to record calls
+            record_format: Recording format
+            record_stereo: Whether to record in stereo
         """
         self.name = name
         self.route = route.rstrip("/")  # Ensure no trailing slash
@@ -114,6 +123,12 @@ class AgentBase:
         
         # Register the tool decorator on this instance
         self.tool = self._tool_decorator
+        
+        # Call settings
+        self._auto_answer = auto_answer
+        self._record_call = record_call
+        self._record_format = record_format
+        self._record_stereo = record_stereo
         
         # Process declarative PROMPT_SECTIONS if defined in subclass
         self._process_prompt_sections()
@@ -296,73 +311,6 @@ class AgentBase:
                 body=body,
                 bullets=bullets
             )
-        return self
-    
-    # Legacy/shorthand methods - these are defined in terms of the more general methods above
-    # They're maintained for backward compatibility and convenience
-    
-    def set_personality(self, text: str) -> 'AgentBase':
-        """
-        Set the agent's personality description
-        
-        Args:
-            text: Personality description
-            
-        Returns:
-            Self for method chaining
-        """
-        return self.prompt_add_section("Personality", body=text)
-    
-    def set_goal(self, text: str) -> 'AgentBase':
-        """
-        Set the agent's goal/objective
-        
-        Args:
-            text: Goal description
-            
-        Returns:
-            Self for method chaining
-        """
-        return self.prompt_add_section("Goal", body=text)
-    
-    def add_instruction(self, text: str) -> 'AgentBase':
-        """
-        Add an instruction bullet point
-        
-        Args:
-            text: Instruction text
-            
-        Returns:
-            Self for method chaining
-        """
-        return self.prompt_add_to_section("Instructions", bullet=text)
-    
-    def add_example(self, title: str, body: str) -> 'AgentBase':
-        """
-        Add an example interaction
-        
-        Args:
-            title: Example title/summary
-            body: Example text
-            
-        Returns:
-            Self for method chaining
-        """
-        if not self._pom_builder.has_section("Examples"):
-            self.prompt_add_section("Examples")
-        return self.prompt_add_subsection("Examples", title, body=body)
-    
-    def set_post_prompt(self, text: str) -> 'AgentBase':
-        """
-        Set the post-prompt text for summary formatting
-        
-        Args:
-            text: Post-prompt instructions
-            
-        Returns:
-            Self for method chaining
-        """
-        self._post_prompt = text
         return self
     
     # ----------------------------------------------------------------------
@@ -701,7 +649,11 @@ class AgentBase:
             swaig_functions=swaig_functions,
             startup_hook_url=startup_hook_url,
             hangup_hook_url=hangup_hook_url,
-            prompt_is_pom=prompt_is_pom
+            prompt_is_pom=prompt_is_pom,
+            add_answer=self._auto_answer,
+            record_call=self._record_call,
+            record_format=self._record_format,
+            record_stereo=self._record_stereo
         )
     
     def _check_basic_auth(self, request: Request) -> bool:
@@ -748,7 +700,13 @@ class AgentBase:
                 
             # Generate SWML
             call_id = request.query_params.get("call_id")
-            return self._render_swml(call_id)
+            swml_string = self._render_swml(call_id)
+            
+            # Parse the string to get the actual JSON object
+            swml_json = json.loads(swml_string)
+            
+            # Return the raw JSON (FastAPI will serialize it once)
+            return swml_json
         
         # Post-prompt webhook
         @router.post("/post_prompt")
@@ -857,3 +815,54 @@ class AgentBase:
         """Stop the web server"""
         # This requires additional implementation for graceful shutdown
         pass
+
+    # ----------------------------------------------------------------------
+    # Call Settings
+    # ----------------------------------------------------------------------
+    
+    def set_auto_answer(self, enabled: bool) -> 'AgentBase':
+        """
+        Set whether to automatically answer calls
+        
+        Args:
+            enabled: Whether to auto-answer
+            
+        Returns:
+            Self for method chaining
+        """
+        self._auto_answer = enabled
+        return self
+    
+    def set_call_recording(self, 
+                          enabled: bool, 
+                          format: str = "mp4", 
+                          stereo: bool = True) -> 'AgentBase':
+        """
+        Configure call recording settings
+        
+        Args:
+            enabled: Whether to record calls
+            format: Recording format ('mp4' or 'wav')
+            stereo: Whether to record in stereo
+            
+        Returns:
+            Self for method chaining
+        """
+        self._record_call = enabled
+        self._record_format = format
+        self._record_stereo = stereo
+        return self
+
+    # Only keep the pure post-prompt setter which is essential
+    def set_post_prompt(self, text: str) -> 'AgentBase':
+        """
+        Set the post-prompt text for summary formatting
+        
+        Args:
+            text: Post-prompt instructions
+            
+        Returns:
+            Self for method chaining
+        """
+        self._post_prompt = text
+        return self

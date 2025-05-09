@@ -22,7 +22,10 @@ class SwmlRenderer:
         hangup_hook_url: Optional[str] = None,
         prompt_is_pom: bool = False,
         params: Optional[Dict[str, Any]] = None,
-        add_answer: bool = True,
+        add_answer: bool = False,
+        record_call: bool = False,
+        record_format: str = "mp4",
+        record_stereo: bool = True,
         format: str = "json"
     ) -> str:
         """
@@ -38,6 +41,9 @@ class SwmlRenderer:
             prompt_is_pom: Whether prompt is a POM object or raw text
             params: Additional AI params (temperature, etc)
             add_answer: Whether to auto-add the answer block after AI
+            record_call: Whether to add a record_call block
+            record_format: Format for recording the call
+            record_stereo: Whether to record in stereo
             format: Output format, 'json' or 'yaml'
             
         Returns:
@@ -107,13 +113,28 @@ class SwmlRenderer:
         if params:
             ai_block["ai"].update(params)
             
-        # Add the AI block to the main section
-        swml["sections"]["main"].append(ai_block)
+        # Start building the SWML blocks
+        main_blocks = []
         
-        # Add answer block if requested
+        # Add answer block first if requested (to answer the call)
         if add_answer:
-            swml["sections"]["main"].append({"answer": {}})
+            main_blocks.append({"answer": {}})
             
+        # Add record_call block next if requested
+        if record_call:
+            main_blocks.append({
+                "record_call": {
+                    "format": record_format,
+                    "stereo": str(record_stereo).lower()  # SWML expects "true"/"false" as strings
+                }
+            })
+        
+        # Add the AI block
+        main_blocks.append(ai_block)
+        
+        # Set the main section to our ordered blocks
+        swml["sections"]["main"] = main_blocks
+        
         # Return in requested format
         if format.lower() == "yaml":
             return yaml.dump(swml, sort_keys=False)
@@ -177,4 +198,4 @@ class SwmlRenderer:
         if format.lower() == "yaml":
             return yaml.dump(swml, sort_keys=False)
         else:
-            return json.dumps(swml, indent=2)
+            return json.dumps(swml)
