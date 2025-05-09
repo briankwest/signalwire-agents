@@ -26,7 +26,8 @@ class SwmlRenderer:
         record_call: bool = False,
         record_format: str = "mp4",
         record_stereo: bool = True,
-        format: str = "json"
+        format: str = "json",
+        default_webhook_url: Optional[str] = None
     ) -> str:
         """
         Generate a complete SWML document with AI configuration
@@ -45,6 +46,7 @@ class SwmlRenderer:
             record_format: Format for recording the call
             record_stereo: Whether to record in stereo
             format: Output format, 'json' or 'yaml'
+            default_webhook_url: Optional default webhook URL for all SWAIG functions
             
         Returns:
             SWML document as a string
@@ -80,34 +82,46 @@ class SwmlRenderer:
         if post_prompt_url:
             ai_block["ai"]["post_prompt_url"] = post_prompt_url
             
-        # Add SWAIG if provided
-        if swaig_functions:
-            ai_block["ai"]["SWAIG"] = swaig_functions
-            
-        # Add special hooks if provided
+        # SWAIG is always included and always starts with defaults
+        ai_block["ai"]["SWAIG"] = []
+        
+        # Add defaults as the first element
+        defaults = {
+            "defaults": {
+                "web_hook_url": default_webhook_url if default_webhook_url else ""
+            }
+        }
+        ai_block["ai"]["SWAIG"].append(defaults)
+        
+        # Always add startup_hook and hangup_hook as proper SWAIG functions
         if startup_hook_url:
-            if not "SWAIG" in ai_block["ai"]:
-                ai_block["ai"]["SWAIG"] = []
-                
-            ai_block["ai"]["SWAIG"].append({
+            startup_hook = {
                 "function": "startup_hook",
-                "request": {
-                    "url": startup_hook_url,
-                    "method": "POST"
+                "description": "Called when the call starts",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
                 }
-            })
+            }
+            ai_block["ai"]["SWAIG"].append(startup_hook)
             
         if hangup_hook_url:
-            if not "SWAIG" in ai_block["ai"]:
-                ai_block["ai"]["SWAIG"] = []
-                
-            ai_block["ai"]["SWAIG"].append({
-                "function": "hangup_hook", 
-                "request": {
-                    "url": hangup_hook_url,
-                    "method": "POST"
+            hangup_hook = {
+                "function": "hangup_hook",
+                "description": "Called when the call ends",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
                 }
-            })
+            }
+            ai_block["ai"]["SWAIG"].append(hangup_hook)
+        
+        # Add regular functions from the provided list
+        if swaig_functions:
+            for func in swaig_functions:
+                # Skip special hooks as we've already added them
+                if func.get("function") not in ["startup_hook", "hangup_hook"]:
+                    ai_block["ai"]["SWAIG"].append(func)
             
         # Add params if provided
         if params:

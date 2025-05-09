@@ -64,7 +64,8 @@ class AgentBase:
         record_call: bool = False,
         record_format: str = "mp4",
         record_stereo: bool = True,
-        state_manager: Optional[StateManager] = None
+        state_manager: Optional[StateManager] = None,
+        default_webhook_url: Optional[str] = None
     ):
         """
         Initialize a new agent
@@ -83,11 +84,13 @@ class AgentBase:
             record_format: Recording format
             record_stereo: Whether to record in stereo
             state_manager: Optional state manager for this agent
+            default_webhook_url: Optional default webhook URL for all SWAIG functions
         """
         self.name = name
         self.route = route.rstrip("/")  # Ensure no trailing slash
         self.host = host
         self.port = port
+        self._default_webhook_url = default_webhook_url
         
         # Set basic auth credentials
         if basic_auth is not None:
@@ -114,7 +117,7 @@ class AgentBase:
         self._post_prompt = None
         
         # Initialize tool registry
-        self._tools: Dict[str, SwaigFunction] = {}
+        self._swaig_functions: Dict[str, SwaigFunction] = {}
         
         # Initialize session manager
         self._session_manager = SessionManager(token_expiry_secs=token_expiry_secs)
@@ -330,7 +333,8 @@ class AgentBase:
         description: str, 
         parameters: Dict[str, Any], 
         handler: Callable,
-        secure: bool = True
+        secure: bool = True,
+        fillers: Optional[Dict[str, List[str]]] = None
     ) -> 'AgentBase':
         """
         Define a SWAIG function that the AI can call
@@ -341,19 +345,21 @@ class AgentBase:
             parameters: JSON Schema of parameters
             handler: Function to call when invoked
             secure: Whether to require token validation
+            fillers: Optional dict mapping language codes to arrays of filler phrases
             
         Returns:
             Self for method chaining
         """
-        if name in self._tools:
+        if name in self._swaig_functions:
             raise ValueError(f"Tool with name '{name}' already exists")
             
-        self._tools[name] = SwaigFunction(
+        self._swaig_functions[name] = SwaigFunction(
             name=name,
             description=description,
             parameters=parameters,
             handler=handler,
-            secure=secure
+            secure=secure,
+            fillers=fillers
         )
         return self
     
@@ -375,13 +381,15 @@ class AgentBase:
             parameters = kwargs.get("parameters", {})
             description = kwargs.get("description", func.__doc__ or f"Function {name}")
             secure = kwargs.get("secure", True)
+            fillers = kwargs.get("fillers", None)
             
             self.define_tool(
                 name=name,
                 description=description,
                 parameters=parameters,
                 handler=func,
-                secure=secure
+                secure=secure,
+                fillers=fillers
             )
             return func
         return decorator
@@ -455,7 +463,7 @@ class AgentBase:
             
         This method can be overridden by subclasses.
         """
-        return list(self._tools.values())
+        return list(self._swaig_functions.values())
     
     def on_summary(self, summary: Dict[str, Any]) -> None:
         """
@@ -481,10 +489,10 @@ class AgentBase:
             
         This method can be overridden by subclasses.
         """
-        if name not in self._tools:
+        if name not in self._swaig_functions:
             return SwaigFunctionResult(f"Function '{name}' not found").to_dict()
             
-        return self._tools[name].execute(args)
+        return self._swaig_functions[name].execute(args)
     
     def validate_basic_auth(self, username: str, password: str) -> bool:
         """
@@ -584,19 +592,23 @@ class AgentBase:
         username, password = self._basic_auth
         return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
     
-    def _build_hook_url(self, hook_name: str, call_id: str, token: str) -> str:
+    def _build_startup_hook_url(self) -> str:
         """
-        Build the URL for a hook function
+        Build the startup hook URL
         
-        Args:
-            hook_name: Hook name (startup_hook or hangup_hook)
-            call_id: Call session ID
-            token: Security token
-            
         Returns:
-            Full URL with query parameters
+            Startup hook URL
         """
-        return f"{self.get_full_url()}/tools/{hook_name}?token={token}&call_id={call_id}"
+        return f"{self.get_full_url()}/tools/startup_hook"
+        
+    def _build_hangup_hook_url(self) -> str:
+        """
+        Build the hangup hook URL
+        
+        Returns:
+            Hangup hook URL
+        """
+        return f"{self.get_full_url()}/tools/hangup_hook"
     
     def _render_swml(self, call_id: str = None) -> str:
         """
@@ -624,30 +636,36 @@ class AgentBase:
             
         # Prepare SWAIG functions
         swaig_functions = []
-        for tool in self.define_tools():
-            if self._per_call_sessions:
-                token = self._session_manager.generate_token(call_id, tool.name)
-                swaig_functions.append(tool.to_swaig(
+        for name, func in self._swaig_functions.items():
+            if self._per_call_sessions and call_id:
+                token = self._session_manager.generate_token(call_id, name)
+                swaig_functions.append(func.to_swaig(
                     base_url=self.get_full_url(),
                     token=token,
                     call_id=call_id
                 ))
             else:
-                swaig_functions.append(tool.to_swaig(
+                swaig_functions.append(func.to_swaig(
                     base_url=self.get_full_url()
                 ))
         
-        # Add hooks for session management
+        # Create tokens and hook URLs
         startup_hook_url = None
         hangup_hook_url = None
         
-        if self._per_call_sessions:
+        if self._per_call_sessions and call_id:
             startup_token = self._session_manager.generate_token(call_id, "startup_hook")
             hangup_token = self._session_manager.generate_token(call_id, "hangup_hook")
             
-            startup_hook_url = self._build_hook_url("startup_hook", call_id, startup_token)
-            hangup_hook_url = self._build_hook_url("hangup_hook", call_id, hangup_token)
+            # We're passing the full URL including token for the hooks
+            startup_hook_url = f"{self._build_startup_hook_url()}?token={startup_token}&call_id={call_id}"
+            hangup_hook_url = f"{self._build_hangup_hook_url()}?token={hangup_token}&call_id={call_id}"
         
+        # Get the default webhook URL (either from the instance or construct a default)
+        default_webhook_url = self._default_webhook_url
+        if not default_webhook_url:
+            default_webhook_url = f"{self.get_full_url()}/swaig"
+            
         # Render SWML
         return SwmlRenderer.render_swml(
             prompt=prompt,
@@ -660,7 +678,8 @@ class AgentBase:
             add_answer=self._auto_answer,
             record_call=self._record_call,
             record_format=self._record_format,
-            record_stereo=self._record_stereo
+            record_stereo=self._record_stereo,
+            default_webhook_url=default_webhook_url
         )
     
     def _check_basic_auth(self, request: Request) -> bool:
@@ -727,15 +746,16 @@ class AgentBase:
                 # Parse the request body JSON (if any)
                 body = await self._parse_request_body(request)
                 
-                # Get or generate call_id
+                # Get call_id from query params or body
                 call_id = request.query_params.get("call_id", body.get("call_id"))
-                if not call_id:
-                    call_id = secrets.token_urlsafe(16)
                 
-                # Process the request data through the handler
-                self._process_request_data(call_id, body)
+                # Just store the body for now, actual state initialization happens 
+                # through startup_hook, not through main endpoint
+                if call_id:
+                    # Save this request for future processing
+                    self._save_request_data(call_id, body)
                 
-                # Generate SWML with updated state
+                # Generate and return SWML
                 swml_string = self._render_swml(call_id)
                 swml_json = json.loads(swml_string)
                 
@@ -804,7 +824,7 @@ class AgentBase:
                 return {"status": "ok"}
             
             # Regular tool calls
-            if function_name in self._tools and self._tools[function_name].secure:
+            if function_name in self._swaig_functions and self._swaig_functions[function_name].secure:
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
             
@@ -875,27 +895,51 @@ class AgentBase:
         except Exception:
             return {}
     
-    def _process_request_data(self, call_id: str, data: Dict[str, Any]) -> None:
+    def _save_request_data(self, call_id: str, data: Dict[str, Any]) -> None:
         """
-        Process incoming request data
+        Save incoming request data without processing it
         
-        This is called for POST requests to the main endpoint and
-        can be used to update state or trigger other behaviors.
+        This is a lightweight method called for POST requests to the main endpoint
+        before a call has officially started via startup_hook.
         
         Args:
-            call_id: Call ID (generated if not provided)
+            call_id: Call ID
+            data: Request data dictionary
+        """
+        if not data:
+            return
+            
+        # Get or create a pending_requests entry in state
+        state = self.get_state(call_id) or {}
+        pending = state.setdefault("pending_requests", [])
+        
+        # Add this request to the pending list
+        pending.append({
+            "timestamp": datetime.now().isoformat(),
+            "data": data
+        })
+        
+        # Update the state
+        self.update_state(call_id, state)
+    
+    def _process_request_data(self, call_id: str, data: Dict[str, Any]) -> None:
+        """
+        Process incoming request data for an active call
+        
+        This is called after a call has been established via startup_hook
+        and can be used to update state or trigger other behaviors.
+        
+        Args:
+            call_id: Call ID
             data: Request data dictionary
             
         Override this in subclasses to customize behavior.
         """
+        if not data:
+            return
+            
         # Store the data in state
         state = self.get_state(call_id) or {}
-        
-        # Add or update the request data
-        state["last_request"] = {
-            "timestamp": datetime.now().isoformat(),
-            "data": data
-        }
         
         # Add to request history
         requests = state.setdefault("requests", [])
@@ -903,6 +947,12 @@ class AgentBase:
             "timestamp": datetime.now().isoformat(),
             "data": data
         })
+        
+        # Store the most recent request
+        state["last_request"] = {
+            "timestamp": datetime.now().isoformat(),
+            "data": data
+        }
         
         # Update the state
         self.update_state(call_id, state)
@@ -1079,12 +1129,38 @@ class AgentBase:
         Override this in subclasses to customize behavior.
         The base implementation initializes state storage.
         """
-        # Save initial state
+        # Check for existing pending requests
+        existing_state = self.get_state(call_id)
+        pending_requests = []
+        
+        if existing_state:
+            # Save any pending requests to process after initialization
+            pending_requests = existing_state.get("pending_requests", [])
+        
+        # Initialize fresh state with call data
         self.set_state(call_id, {
             "call_data": call_data,
             "started_at": datetime.now().isoformat(),
-            "events": [{"type": "call_start", "timestamp": datetime.now().isoformat()}]
+            "events": [{"type": "call_start", "timestamp": datetime.now().isoformat()}],
+            "active": True
         })
+        
+        # Process any pending requests that were received before the call officially started
+        if pending_requests:
+            state = self.get_state(call_id)
+            state["pending_requests"] = pending_requests
+            
+            # Process each pending request
+            for request in pending_requests:
+                request_data = request.get("data", {})
+                if request_data:
+                    self._process_request_data(call_id, request_data)
+                    
+            # Clear pending requests since they've been processed
+            state = self.get_state(call_id)
+            if "pending_requests" in state:
+                del state["pending_requests"]
+                self.update_state(call_id, state)
     
     def on_call_end(self, call_id: str) -> None:
         """
@@ -1104,4 +1180,5 @@ class AgentBase:
                 "timestamp": datetime.now().isoformat()
             })
             state["ended_at"] = datetime.now().isoformat()
+            state["active"] = False
             self.update_state(call_id, state)

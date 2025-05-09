@@ -18,7 +18,8 @@ class SwaigFunction:
         parameters: Dict[str, Any],
         handler: Callable,
         secure: bool = True,
-        output_schema: Optional[Dict] = None
+        output_schema: Optional[Dict] = None,
+        fillers: Optional[Dict[str, List[str]]] = None
     ):
         """
         Initialize a new SWAIG function
@@ -26,10 +27,11 @@ class SwaigFunction:
         Args:
             name: Function name to be exposed to the AI
             description: Description of what the function does
-            parameters: JSON Schema definition of parameters
+            parameters: JSON Schema definition of parameters (properties object)
             handler: Callable function that implements the logic
             secure: Whether this function requires token validation
             output_schema: Optional schema for the function's return value
+            fillers: Optional dict mapping language codes to arrays of filler phrases
         """
         self.name = name
         self.description = description
@@ -37,6 +39,7 @@ class SwaigFunction:
         self.handler = handler
         self.secure = secure
         self.output_schema = output_schema
+        self.fillers = fillers or {}
 
     def validate_args(self, args: Dict[str, Any]) -> bool:
         """
@@ -68,13 +71,37 @@ class SwaigFunction:
         if token and call_id:
             url = f"{url}?token={token}&call_id={call_id}"
         
-        return {
+        # Create properly structured function definition
+        function_def = {
             "function": self.name,
-            "arguments": self.parameters,
-            "request": {
-                "url": url,
-                "method": "POST"
-            }
+            "description": self.description,
+            # Wrap parameters in proper structure if not already
+            "parameters": self._ensure_parameter_structure(),
+            # Only include web_hook_url if we're not using defaults
+            "web_hook_url": url,
+        }
+        
+        # Add fillers if provided
+        if self.fillers and len(self.fillers) > 0:
+            function_def["fillers"] = self.fillers
+            
+        return function_def
+    
+    def _ensure_parameter_structure(self) -> Dict[str, Any]:
+        """
+        Ensure parameters are correctly structured with type: object and properties
+        
+        Returns:
+            Properly structured parameters object
+        """
+        # If already has type:object and properties, return as is
+        if isinstance(self.parameters, dict) and self.parameters.get('type') == 'object' and 'properties' in self.parameters:
+            return self.parameters
+            
+        # Otherwise, wrap it in the correct structure
+        return {
+            "type": "object",
+            "properties": self.parameters
         }
 
     def execute(self, args: Dict[str, Any]) -> Dict[str, Any]:

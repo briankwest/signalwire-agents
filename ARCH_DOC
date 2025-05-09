@@ -22,7 +22,7 @@ boiler-plate.
     ├───────────────────────────────┤
     │  AgentBase                    │  (Prompt builder, SWML, HTTP, auth)
     ├───────────────────────────────┤
-    │  Core Helpers & Runtime       │  (SwaigFunction, Result, SessionMgr)
+    │  Core Helpers & Runtime       │  (SwaigFunction, Result, StateManager)
     └───────────────────────────────┘
 
 3. Core Components
@@ -31,44 +31,65 @@ A. AgentBase
    •  __init__(name, route, host, port, …) – registers router & auth  
    •  Prompt Builder  
       – Maintains `_prompt_sections` list of POM-compliant sections  
-      – Sugar setters (`set_personality`, `add_instruction`, …)  
-      – Fallback to `set_prompt_text()` / `set_prompt_pom()` for raw use  
+      – Declarative PROMPT_SECTIONS class attribute (recommended)  
+      – Raw text prompts (set_prompt_text) for simplicity  
+      – Programmatic POM building (prompt_add_section) for complex scenarios  
    •  SWML Renderer `_render_swml(call_id)`  
       – Serialises prompt, SWAIG registry, post_prompt_url, hooks  
    •  Web Interface (`serve`, `as_router`)  
       – GET  /route                → SWML document  
+      – POST /route                → SWML with request data processing   
       – POST /route/post_prompt    → summary handler  
       – POST /route/tools/<fn>     → token-validated SWAIG call  
    •  Call-Session Manager  
       – Generates `call_id`, per-function tokens  
       – `startup_hook` activates, `hangup_hook` invalidates session  
+   •  State Manager  
+      – Persistent storage across interactions (get_state, set_state)  
+      – Auto-expiring state with cleanup  
 
 B. SwaigFunction  
    •  Declarative descriptor holding `name`, `description`, `parameters`,
       `handler`, `secure` flag.  
+   •  SWAIG spec compliant with proper parameter structure (type:object/properties)
+   •  Support for optional fillers to provide feedback during processing
    •  `to_swaig(base_url, token, call_id)` returns JSON ready for SWML.  
-   •  Decorator style  `@tool(name=…, parameters=…)`.
+   •  Decorator style  `@tool(name=…, parameters=…, fillers=…)`.
 
 C. SwaigFunctionResult  
    •  Wrapper around SWAIG response payload.  
-   •  `set_response()`, `add_action(type, **kwargs)`, `to_dict()`.
+   •  `set_response()`, `add_action(type, **kwargs)`, `to_dict()`.  
+   •  Actions include play, transfer, send_sms, and others per spec.
 
-D. Session / Security  
+D. SwmlRenderer
+   •  Handles proper SWML generation according to spec
+   •  Always creates a SWAIG array with:
+      - A defaults object with web_hook_url
+      - startup_hook and hangup_hook functions when needed
+      - User-defined SWAIG functions with proper structure
+   •  Generates compliant JSON/YAML output
+
+E. Session / Security  
    •  Basic-Auth for SWML + post_prompt endpoints.  
    •  Ephemeral per-call tokens embedded into SWAIG URLs.  
    •  Tokens live from `startup_hook` → `hangup_hook`.
 
-E. Prefab Archetypes  
+F. Prefab Archetypes  
    •  `InfoGathererAgent(fields=[…], confirmation_template=…)`  
    •  `SurveyAgent`, `FAQBotAgent`, `ConciergeAgent`, etc.  
    •  Supply `PROMPT_SECTIONS`, default tools & summary formats.  
    •  Zero code beyond constructor arguments for most cases.
 
+G. State Management  
+   •  Abstract StateManager interface with FileStateManager implementation  
+   •  Methods for get_state, set_state, update_state, clear_state  
+   •  1-day expiration with automatic cleanup  
+
 4. Operational Flow
 -------------------
 1. SignalWire hits  `/agent`  (basic-auth) → SDK returns SWML.  
 2. SWML contains:  
-      • Prompt (rendered POM)  
+      • Prompt (rendered POM or text)  
       • post_prompt_url (basic-auth)  
       • startup/hangup hooks (tokenised URLs)  
       • SWAIG array with per-function tokenised URLs.  
