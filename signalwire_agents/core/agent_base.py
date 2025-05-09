@@ -76,16 +76,10 @@ class AgentBase:
         self.host = host
         self.port = port
         
-        # Log environment variables for debugging
-        print(f"DEBUG: Environment variables present:")
-        print(f"SWML_BASIC_AUTH_USER: {os.environ.get('SWML_BASIC_AUTH_USER', 'NOT SET')}")
-        print(f"SWML_BASIC_AUTH_PASSWORD: {os.environ.get('SWML_BASIC_AUTH_PASSWORD', 'NOT SET')}")
-        
         # Set basic auth credentials
         if basic_auth is not None:
             # Use provided credentials
             self._basic_auth = basic_auth
-            print(f"DEBUG: Using provided basic_auth parameter: {basic_auth[0]}:{basic_auth[1]}")
         else:
             # Check environment variables first - be explicit about getting them
             env_user = os.environ.get('SWML_BASIC_AUTH_USER')
@@ -94,13 +88,11 @@ class AgentBase:
             if env_user and env_pass:
                 # Use environment variables - create a new tuple to avoid reference issues
                 self._basic_auth = (str(env_user), str(env_pass))
-                print(f"DEBUG: Using environment variables: {env_user}:{env_pass}")
             else:
                 # Generate random credentials as fallback
                 username = f"user_{secrets.token_hex(4)}"
                 password = secrets.token_urlsafe(16)
                 self._basic_auth = (username, password)
-                print(f"DEBUG: Generated random credentials: {username}:{password}")
         
         # Initialize prompt builder
         self._use_pom = use_pom
