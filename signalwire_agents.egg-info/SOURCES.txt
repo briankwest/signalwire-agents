@@ -15,6 +15,9 @@ signalwire_agents/core/swaig_function.py
 signalwire_agents/core/swml_renderer.py
 signalwire_agents/core/security/__init__.py
 signalwire_agents/core/security/session_manager.py
+signalwire_agents/core/state/__init__.py
+signalwire_agents/core/state/file_state_manager.py
+signalwire_agents/core/state/state_manager.py
 signalwire_agents/prefabs/__init__.py
 signalwire_agents/prefabs/concierge.py
 signalwire_agents/prefabs/faq_bot.py

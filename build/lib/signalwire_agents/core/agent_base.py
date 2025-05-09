@@ -10,6 +10,7 @@ import base64
 import secrets
 from urllib.parse import urlparse
 import json
+from datetime import datetime
 
 try:
     import fastapi
@@ -26,6 +27,7 @@ from signalwire_agents.core.swaig_function import SwaigFunction
 from signalwire_agents.core.function_result import SwaigFunctionResult
 from signalwire_agents.core.swml_renderer import SwmlRenderer
 from signalwire_agents.core.security.session_manager import SessionManager
+from signalwire_agents.core.state import StateManager, FileStateManager
 
 
 class AgentBase:
@@ -61,7 +63,8 @@ class AgentBase:
         auto_answer: bool = True,
         record_call: bool = False,
         record_format: str = "mp4",
-        record_stereo: bool = True
+        record_stereo: bool = True,
+        state_manager: Optional[StateManager] = None
     ):
         """
         Initialize a new agent
@@ -79,6 +82,7 @@ class AgentBase:
             record_call: Whether to record calls
             record_format: Recording format
             record_stereo: Whether to record in stereo
+            state_manager: Optional state manager for this agent
         """
         self.name = name
         self.route = route.rstrip("/")  # Ensure no trailing slash
@@ -132,6 +136,9 @@ class AgentBase:
         
         # Process declarative PROMPT_SECTIONS if defined in subclass
         self._process_prompt_sections()
+        
+        # Initialize state manager
+        self._state_manager = state_manager or FileStateManager()
     
     def _process_prompt_sections(self):
         """
@@ -690,7 +697,7 @@ class AgentBase:
             
         router = APIRouter()
         
-        # Main SWML endpoint
+        # Main SWML endpoint - supports both GET and POST
         @router.get("/")
         async def get_swml(request: Request, response: Response):
             # Check auth
@@ -707,6 +714,34 @@ class AgentBase:
             
             # Return the raw JSON (FastAPI will serialize it once)
             return swml_json
+            
+        # POST support for sending data to the agent
+        @router.post("/")
+        async def post_data(request: Request, response: Response):
+            # Check auth
+            if not self._check_basic_auth(request):
+                response.headers["WWW-Authenticate"] = "Basic"
+                return HTTPException(status_code=401, detail="Unauthorized")
+                
+            try:
+                # Parse the request body JSON (if any)
+                body = await self._parse_request_body(request)
+                
+                # Get or generate call_id
+                call_id = request.query_params.get("call_id", body.get("call_id"))
+                if not call_id:
+                    call_id = secrets.token_urlsafe(16)
+                
+                # Process the request data through the handler
+                self._process_request_data(call_id, body)
+                
+                # Generate SWML with updated state
+                swml_string = self._render_swml(call_id)
+                swml_json = json.loads(swml_string)
+                
+                return swml_json
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
         
         # Post-prompt webhook
         @router.post("/post_prompt")
@@ -719,6 +754,15 @@ class AgentBase:
             # Parse the summary data
             try:
                 summary = await request.json()
+                
+                # Save the summary to state if call_id is present
+                call_id = summary.get("call_id")
+                if call_id:
+                    state = self.get_state(call_id) or {}
+                    state["summary"] = summary
+                    self.update_state(call_id, state)
+                
+                # Call the handler
                 self.on_summary(summary)
                 return {"status": "ok"}
             except Exception as e:
@@ -727,51 +771,141 @@ class AgentBase:
         # Tool/function calls
         @router.post("/tools/{function_name}")
         async def handle_tool(function_name: str, request: Request):
-            # Special hooks don't need auth validation
+            # Parse the request body for all tool calls
+            body = await self._parse_request_body(request)
+            
+            # Get call_id from query or body
+            call_id = request.query_params.get("call_id", body.get("call_id"))
+            token = request.query_params.get("token", body.get("token"))
+            
+            # Special hooks for session management
             if function_name == "startup_hook":
-                call_id = request.query_params.get("call_id")
-                token = request.query_params.get("token")
-                
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
                     
+                # Activate the session
                 self._session_manager.activate_session(call_id)
+                
+                # Call the hook method with the request data
+                self.on_call_start(call_id, body)
+                
                 return {"status": "ok"}
                 
             if function_name == "hangup_hook":
-                call_id = request.query_params.get("call_id")
-                token = request.query_params.get("token")
-                
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
                     
+                # End the session
                 self._session_manager.end_session(call_id)
+                
+                # Call the hook method
+                self.on_call_end(call_id)
+                
                 return {"status": "ok"}
             
             # Regular tool calls
-            call_id = request.query_params.get("call_id")
-            token = request.query_params.get("token")
-            
-            # Check if tool exists and requires validation
             if function_name in self._tools and self._tools[function_name].secure:
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
             
-            # Parse arguments
-            try:
-                args = await request.json()
-            except Exception:
-                args = {}
+            # Merge body with query params for arguments
+            args = body
+            
+            # Add call state to context if available
+            if call_id:
+                # Get state for this call
+                state = self.get_state(call_id)
                 
+                # Log this function call in state
+                if state:
+                    events = state.setdefault("events", [])
+                    events.append({
+                        "type": "function_call",
+                        "function": function_name,
+                        "timestamp": datetime.now().isoformat(),
+                        "args": args
+                    })
+                    self.update_state(call_id, state)
+            
             # Call the function
             try:
                 result = self.on_function_call(function_name, args)
+                
+                # Log the result if we have state
+                if call_id and state:
+                    events = state.setdefault("events", [])
+                    events.append({
+                        "type": "function_result",
+                        "function": function_name,
+                        "timestamp": datetime.now().isoformat(),
+                        "result": result
+                    })
+                    self.update_state(call_id, state)
+                
                 return result
             except Exception as e:
                 return {"status": "error", "error": {"message": str(e)}}
         
         self._router = router
         return router
+    
+    async def _parse_request_body(self, request: Request) -> Dict[str, Any]:
+        """
+        Parse the request body as JSON
+        
+        Args:
+            request: FastAPI request object
+            
+        Returns:
+            Dictionary of request data (empty dict if not parseable)
+        """
+        try:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                return await request.json()
+            elif "application/x-www-form-urlencoded" in content_type:
+                form_data = await request.form()
+                return {k: v for k, v in form_data.items()}
+            else:
+                # Try JSON anyway as a fallback
+                text = await request.body()
+                if text:
+                    return json.loads(text)
+                return {}
+        except Exception:
+            return {}
+    
+    def _process_request_data(self, call_id: str, data: Dict[str, Any]) -> None:
+        """
+        Process incoming request data
+        
+        This is called for POST requests to the main endpoint and
+        can be used to update state or trigger other behaviors.
+        
+        Args:
+            call_id: Call ID (generated if not provided)
+            data: Request data dictionary
+            
+        Override this in subclasses to customize behavior.
+        """
+        # Store the data in state
+        state = self.get_state(call_id) or {}
+        
+        # Add or update the request data
+        state["last_request"] = {
+            "timestamp": datetime.now().isoformat(),
+            "data": data
+        }
+        
+        # Add to request history
+        requests = state.setdefault("requests", [])
+        requests.append({
+            "timestamp": datetime.now().isoformat(),
+            "data": data
+        })
+        
+        # Update the state
+        self.update_state(call_id, state)
     
     def serve(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
         """
@@ -866,3 +1000,108 @@ class AgentBase:
         """
         self._post_prompt = text
         return self
+
+    # ----------------------------------------------------------------------
+    # State Management Methods
+    # ----------------------------------------------------------------------
+    
+    def get_state(self, call_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the state for a call
+        
+        Args:
+            call_id: Call session ID
+            
+        Returns:
+            State data dictionary or None if not found
+        """
+        return self._state_manager.retrieve(call_id)
+        
+    def set_state(self, call_id: str, data: Dict[str, Any]) -> bool:
+        """
+        Set the state for a call (overwrites existing state)
+        
+        Args:
+            call_id: Call session ID
+            data: State data dictionary
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self._state_manager.store(call_id, data)
+        
+    def update_state(self, call_id: str, data: Dict[str, Any]) -> bool:
+        """
+        Update the state for a call (merges with existing state)
+        
+        Args:
+            call_id: Call session ID
+            data: State data to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self._state_manager.update(call_id, data)
+        
+    def clear_state(self, call_id: str) -> bool:
+        """
+        Clear the state for a call
+        
+        Args:
+            call_id: Call session ID
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self._state_manager.delete(call_id)
+    
+    def cleanup_expired_state(self) -> int:
+        """
+        Clean up expired state data
+        
+        Returns:
+            Number of expired items cleaned up
+        """
+        return self._state_manager.cleanup_expired()
+    
+    # ----------------------------------------------------------------------
+    # Hook methods for call lifecycle
+    # ----------------------------------------------------------------------
+    
+    def on_call_start(self, call_id: str, call_data: Dict[str, Any]) -> None:
+        """
+        Called when a call starts (from startup_hook)
+        
+        Args:
+            call_id: Call session ID
+            call_data: Initial call data
+            
+        Override this in subclasses to customize behavior.
+        The base implementation initializes state storage.
+        """
+        # Save initial state
+        self.set_state(call_id, {
+            "call_data": call_data,
+            "started_at": datetime.now().isoformat(),
+            "events": [{"type": "call_start", "timestamp": datetime.now().isoformat()}]
+        })
+    
+    def on_call_end(self, call_id: str) -> None:
+        """
+        Called when a call ends (from hangup_hook)
+        
+        Args:
+            call_id: Call session ID
+            
+        Override this in subclasses to customize behavior.
+        The base implementation records the end time but keeps the state.
+        """
+        # Update state with end time
+        state = self.get_state(call_id)
+        if state:
+            state.setdefault("events", []).append({
+                "type": "call_end", 
+                "timestamp": datetime.now().isoformat()
+            })
+            state["ended_at"] = datetime.now().isoformat()
+            self.update_state(call_id, state)
