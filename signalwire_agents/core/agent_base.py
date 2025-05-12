@@ -67,7 +67,8 @@ class AgentBase:
         record_stereo: bool = True,
         state_manager: Optional[StateManager] = None,
         default_webhook_url: Optional[str] = None,
-        agent_id: Optional[str] = None
+        agent_id: Optional[str] = None,
+        native_functions: Optional[List[str]] = None
     ):
         """
         Initialize a new agent
@@ -88,6 +89,7 @@ class AgentBase:
             state_manager: Optional state manager for this agent
             default_webhook_url: Optional default webhook URL for all SWAIG functions
             agent_id: Optional unique ID for this agent, generated if not provided
+            native_functions: Optional list of native functions to include in the SWAIG object
         """
         self.name = name
         self.route = route.rstrip("/")  # Ensure no trailing slash
@@ -154,6 +156,9 @@ class AgentBase:
         
         # Process class-decorated tools (using @AgentBase.tool)
         self._register_class_decorated_tools()
+        
+        # Add native_functions parameter
+        self.native_functions = native_functions or []
     
     def _process_prompt_sections(self):
         """
@@ -498,7 +503,7 @@ class AgentBase:
             raw_data: Optional raw request data
             
         Returns:
-            Function result
+            Function result with "response" and optional "actions" keys
             
         This method can be overridden by subclasses.
         """
@@ -515,10 +520,38 @@ class AgentBase:
         
         # If handler has a raw_data parameter, pass the raw data
         if 'raw_data' in handler_params:
-            return func.execute(args, raw_data=raw_data)
+            result = func.execute(args, raw_data=raw_data)
         else:
             # Otherwise, just call with the extracted arguments
-            return func.execute(args)
+            result = func.execute(args)
+            
+        # Ensure the result is properly serialized
+        if isinstance(result, SwaigFunctionResult):
+            result = result.to_dict()
+            
+        # Ensure response has the right format
+        if isinstance(result, dict):
+            # Create a clean result with only the fields we need
+            clean_result = {}
+            
+            # Extract response
+            if "response" in result:
+                clean_result["response"] = result["response"]
+            elif "result" in result and isinstance(result["result"], dict) and "response" in result["result"]:
+                clean_result["response"] = result["result"]["response"]
+            else:
+                clean_result["response"] = "Function executed successfully."
+                
+            # Extract actions if present
+            if "actions" in result:
+                clean_result["actions"] = result["actions"]
+            elif "result" in result and isinstance(result["result"], dict) and "actions" in result["result"]:
+                clean_result["actions"] = result["result"]["actions"]
+                
+            return clean_result
+        else:
+            # For non-dict results, wrap in a response
+            return {"response": str(result)}
     
     def validate_basic_auth(self, username: str, password: str) -> bool:
         """
@@ -659,6 +692,10 @@ class AgentBase:
             username, password = self._basic_auth
             base = f"http://{username}:{password}@{host}:{self.port}"
         
+        # Ensure the endpoint has a trailing slash to prevent redirects
+        if endpoint in ["swaig", "post_prompt"]:
+            endpoint = f"{endpoint}/"
+            
         # Simple path - use the route directly with the endpoint
         path = f"{self.route}/{endpoint}"
             
@@ -723,18 +760,23 @@ class AgentBase:
         # Get the default webhook URL with auth
         default_webhook_url = self._build_webhook_url("swaig", query_params)
         
-        # Prepare SWAIG sections
-        swaig_sections = []
+        # Prepare SWAIG object (correct format)
+        swaig_obj = {}
         
-        # Add defaults section first if we have functions
+        # Add defaults if we have functions
         if self._swaig_functions:
-            swaig_sections.append({
-                "defaults": {
-                    "web_hook_url": default_webhook_url
-                }
-            })
+            swaig_obj["defaults"] = {
+                "web_hook_url": default_webhook_url
+            }
+            
+        # Add native_functions if any are defined
+        if self.native_functions:
+            swaig_obj["native_functions"] = self.native_functions
         
-        # Add each function
+        # Create functions array
+        swaig_functions = []
+        
+        # Add each function to the functions array
         for name, func in self._swaig_functions.items():
             # Get token for secure functions when we have a call_id
             token = None
@@ -762,7 +804,11 @@ class AgentBase:
                 token_params["token"] = token
                 function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
                 
-            swaig_sections.append(function_entry)
+            swaig_functions.append(function_entry)
+            
+        # Add functions array to SWAIG object if we have any
+        if swaig_functions:
+            swaig_obj["functions"] = swaig_functions
             
         # Add post-prompt URL if we have a post-prompt
         post_prompt_url = None
@@ -821,8 +867,8 @@ class AgentBase:
             swml["sections"]["main"][1]["ai"]["prompt"]["text"] = prompt
         
         # Add SWAIG if we have functions
-        if swaig_sections:
-            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_sections
+        if swaig_obj:
+            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_obj
             
         # Add hooks for state tracking
         if startup_hook_url:
@@ -944,8 +990,8 @@ class AgentBase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
         
-        # Post-prompt webhook
-        @router.post("/post_prompt")
+        # Post-prompt webhook (with trailing slash to avoid redirects)
+        @router.post("/post_prompt/")
         async def handle_post_prompt(request: Request, response: Response):
             # Check auth
             if not self._check_basic_auth(request):
@@ -969,9 +1015,15 @@ class AgentBase:
             except Exception as e:
                 return {"status": "error", "message": str(e)}
                 
-        # Single SWAIG endpoint that handles all function calls
-        @router.post("/swaig")
-        async def handle_swaig(request: Request):
+        # Single SWAIG endpoint that handles all function calls (with trailing slash to avoid redirects)
+        @router.post("/swaig/")
+        async def handle_swaig(request: Request, response: Response):
+            # Check basic auth first
+            if not self._check_basic_auth(request):
+                response.headers["WWW-Authenticate"] = "Basic"
+                print(f"DEBUG: SWAIG unauthorized access attempt")
+                return HTTPException(status_code=401, detail="Unauthorized")
+                
             # Parse the request body
             body = await self._parse_request_body(request)
             
@@ -981,7 +1033,10 @@ class AgentBase:
             
             # Extract function name from the request body
             function_name = body.get("function")
+            print(f"DEBUG: SWAIG function call received: {function_name} with call_id={call_id}")
+            
             if not function_name:
+                print(f"DEBUG: SWAIG missing function name in request")
                 return HTTPException(status_code=400, detail="Function name not provided")
             
             # Special hooks for state tracking
@@ -1017,8 +1072,16 @@ class AgentBase:
             
             # Regular tool calls
             if function_name in self._swaig_functions and self._swaig_functions[function_name].secure:
-                if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
+                # First check if basic auth was successful (we've already passed that check to get here)
+                # This allows either basic auth or token auth to work
+                has_basic_auth = self._check_basic_auth(request)
+                has_token_auth = call_id and token and self.validate_tool_token(function_name, token, call_id)
+                
+                if not (has_basic_auth or has_token_auth):
+                    print(f"DEBUG: SWAIG authentication failed for {function_name}: basic_auth={has_basic_auth}, token_auth={has_token_auth}")
                     return HTTPException(status_code=401, detail="Unauthorized")
+                    
+                print(f"DEBUG: SWAIG authentication successful for {function_name} via {'basic auth' if has_basic_auth else 'token'}")
             
             # Extract arguments from the request body
             # In SWAIG, arguments come in an "argument" object with "parsed" and "raw" properties
@@ -1028,33 +1091,72 @@ class AgentBase:
                 if "parsed" in body["argument"] and isinstance(body["argument"]["parsed"], list) and body["argument"]["parsed"]:
                     # Use the first item from the parsed array
                     args = body["argument"]["parsed"][0]
+                    print(f"DEBUG: SWAIG extracted parsed arguments: {args}")
                 elif "raw" in body["argument"]:
                     # Try to parse the raw string as JSON
                     try:
                         args = json.loads(body["argument"]["raw"])
+                        print(f"DEBUG: SWAIG extracted raw arguments: {args}")
                     except:
+                        print(f"DEBUG: SWAIG failed to parse raw arguments: {body['argument']['raw']}")
                         pass
             
             # Call the function
             try:
+                print(f"DEBUG: SWAIG calling function {function_name} with args: {args}")
                 # Pass the full request body and extracted arguments to the handler
                 result = self.on_function_call(function_name, args, body)
                 
+                # Ensure the result is properly serialized
+                if isinstance(result, SwaigFunctionResult):
+                    result = result.to_dict()
+                
+                # Ensure the result has the proper format (just response and optional actions)
+                if isinstance(result, dict):
+                    # Extract only the fields we need
+                    clean_result = {}
+                    if "response" in result:
+                        clean_result["response"] = result["response"]
+                    elif "result" in result and isinstance(result["result"], dict) and "response" in result["result"]:
+                        # Handle legacy format
+                        clean_result["response"] = result["result"]["response"]
+                        
+                    # Add actions if present
+                    if "actions" in result:
+                        clean_result["actions"] = result["actions"]
+                    elif "result" in result and isinstance(result["result"], dict) and "actions" in result["result"]:
+                        clean_result["actions"] = result["result"]["actions"]
+                        
+                    # If no proper response found, create a default one
+                    if "response" not in clean_result:
+                        clean_result["response"] = "Function executed successfully."
+                        
+                    result = clean_result
+                else:
+                    # If not a dict, create a simple response
+                    result = {"response": str(result)}
+                    
+                print(f"DEBUG: SWAIG function {function_name} result: {result}")
+                
                 # Log the result if we have state
                 if call_id:
-                    state = self.get_state(call_id) or {}
-                    events = state.setdefault("events", [])
-                    events.append({
-                        "type": "function_result",
-                        "function": function_name,
-                        "timestamp": datetime.now().isoformat(),
-                        "result": result
-                    })
-                    self.update_state(call_id, state)
+                    try:
+                        state = self.get_state(call_id) or {}
+                        events = state.setdefault("events", [])
+                        events.append({
+                            "type": "function_result",
+                            "function": function_name,
+                            "timestamp": datetime.now().isoformat(),
+                            "result": result
+                        })
+                        self.update_state(call_id, state)
+                    except Exception as e:
+                        print(f"DEBUG: SWAIG error storing state: {str(e)}")
                 
                 return result
             except Exception as e:
-                return {"status": "error", "error": {"message": str(e)}}
+                print(f"DEBUG: SWAIG error executing function {function_name}: {str(e)}")
+                return {"response": f"Error: {str(e)}"}
         
         self._router = router
         return router
@@ -1405,3 +1507,40 @@ class AgentBase:
                     secure=secure,
                     fillers=fillers
                 )
+
+    def add_native_function(self, function_name: str) -> 'AgentBase':
+        """
+        Add a native function to the agent
+        
+        Args:
+            function_name: Name of the native function to add
+            
+        Returns:
+            Self for method chaining
+        """
+        if function_name not in self.native_functions:
+            self.native_functions.append(function_name)
+        return self
+        
+    def remove_native_function(self, function_name: str) -> 'AgentBase':
+        """
+        Remove a native function from the agent
+        
+        Args:
+            function_name: Name of the native function to remove
+            
+        Returns:
+            Self for method chaining
+        """
+        if function_name in self.native_functions:
+            self.native_functions.remove(function_name)
+        return self
+        
+    def get_native_functions(self) -> List[str]:
+        """
+        Get all native functions for the agent
+        
+        Returns:
+            List of native function names
+        """
+        return self.native_functions.copy()

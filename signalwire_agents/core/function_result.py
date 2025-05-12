@@ -73,12 +73,15 @@ class SwaigFunctionResult:
         Convert to the JSON structure expected by SWAIG
         
         Returns:
-            Dictionary in SWAIG function response format
+            Dictionary in SWAIG function response format with just response and optional actions
         """
-        return {
-            "status": "ok",
-            "result": {
-                "response": self.response,
-                "action": self.actions
-            }
+        # Simple format with just response
+        result = {
+            "response": self.response
         }
+        
+        # Only include actions if there are any
+        if self.actions:
+            result["actions"] = self.actions
+            
+        return result

@@ -77,7 +77,7 @@ class SimpleAgent(AgentBase):
         description="Get the current time",
         parameters={}
     )
-    def get_time(self):
+    def get_time(self, args=None):
         """Get the current time"""
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
@@ -93,8 +93,10 @@ class SimpleAgent(AgentBase):
             }
         }
     )
-    def get_weather(self, location):
+    def get_weather(self, args):
         """Get the current weather for a location"""
+        # Extract location from the args dictionary 
+        location = args.get("location", "Unknown location")
         # In a real implementation, this would call a weather API
         return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
@@ -149,11 +151,28 @@ class SimpleAgentWithRawPrompt(AgentBase):
         description="Get the current time",
         parameters={}
     )
-    def get_time(self):
+    def get_time(self, args=None):
         """Get the current time"""
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
         return SwaigFunctionResult(f"The current time is {formatted_time}")
+    
+    @AgentBase.tool(
+        name="get_weather",
+        description="Get the current weather for a location",
+        parameters={
+            "location": {
+                "type": "string",
+                "description": "The city or location to get weather for"
+            }
+        }
+    )
+    def get_weather(self, args):
+        """Get the current weather for a location"""
+        # Extract location from the args dictionary 
+        location = args.get("location", "Unknown location")
+        # In a real implementation, this would call a weather API
+        return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
     def on_summary(self, summary):
         """Handle the conversation summary"""
@@ -219,11 +238,28 @@ class SimpleAgentWithProgrammaticPOM(AgentBase):
         description="Get the current time",
         parameters={}
     )
-    def get_time(self):
+    def get_time(self, args=None):
         """Get the current time"""
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
         return SwaigFunctionResult(f"The current time is {formatted_time}")
+    
+    @AgentBase.tool(
+        name="get_weather",
+        description="Get the current weather for a location",
+        parameters={
+            "location": {
+                "type": "string",
+                "description": "The city or location to get weather for"
+            }
+        }
+    )
+    def get_weather(self, args):
+        """Get the current weather for a location"""
+        # Extract location from the args dictionary 
+        location = args.get("location", "Unknown location")
+        # In a real implementation, this would call a weather API
+        return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
     def on_summary(self, summary):
         """Handle the conversation summary"""

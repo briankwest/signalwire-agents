@@ -72,7 +72,7 @@ class SWAIGFunction:
             raw_data: Optional raw request data
             
         Returns:
-            Function result as a dictionary
+            Function result as a dictionary with "response" and optional "actions"
         """
         try:
             # Call the handler with the arguments and raw data
@@ -84,13 +84,18 @@ class SWAIGFunction:
                 result = self.handler(args)
                 
             # Convert the result to a dictionary if needed
-            if not isinstance(result, dict):
-                result = {"result": result}
+            from signalwire_agents.core.function_result import SwaigFunctionResult
+            if isinstance(result, SwaigFunctionResult):
+                # If the result is already a SwaigFunctionResult, serialize it to dict
+                return result.to_dict()
+            elif not isinstance(result, dict):
+                # If not a dict or SwaigFunctionResult, wrap it
+                return {"response": str(result)}
                 
             return result
         except Exception as e:
             # Return an error response
-            return {"status": "error", "error": {"message": str(e)}}
+            return {"response": f"Error: {str(e)}"}
         
     def validate_args(self, args: Dict[str, Any]) -> bool:
         """
