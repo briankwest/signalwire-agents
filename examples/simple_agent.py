@@ -102,11 +102,20 @@ class SimpleAgent(AgentBase):
         # Extract location from the args dictionary 
         location = args.get("location", "Unknown location")
         
-        # Log the full raw POST data for debugging (optional)
-        print(f"DEBUG: Full POST data received: {raw_data}")
+        # Create the result with a response
+        result = SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
         
-        # In a real implementation, this would call a weather API
-        return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
+        # You could add actions if needed, examples:
+        # Send a text message with the weather info
+        # result.add_action("send_sms", {
+        #     "to": "+1234567890",
+        #     "message": f"Weather for {location}: Sunny, 72°F"
+        # })
+        
+        # Or play a weather sound
+        # result.add_action("play", f"https://example.com/sounds/sunny.wav")
+        
+        return result
     
     def on_summary(self, summary):
         """Handle the conversation summary"""

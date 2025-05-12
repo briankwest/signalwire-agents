@@ -8,6 +8,7 @@ approach, which allows defining the entire prompt structure as a class attribute
 
 import os
 import sys
+import json
 from datetime import datetime
 
 # Add the parent directory to the path so we can import the package
@@ -80,7 +81,7 @@ class DeclarativeAgent(AgentBase):
         description="Get the current time",
         parameters={}
     )
-    def get_time(self):
+    def get_time(self, args, raw_data):
         """Get the current time"""
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
@@ -96,8 +97,11 @@ class DeclarativeAgent(AgentBase):
             }
         }
     )
-    def get_weather(self, location):
+    def get_weather(self, args, raw_data):
         """Get the current weather for a location"""
+        # Extract location from the args dictionary
+        location = args.get("location", "Unknown location")
+        
         # In a real implementation, this would call a weather API
         return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
@@ -151,8 +155,6 @@ class PomFormatAgent(AgentBase):
 
 
 if __name__ == "__main__":
-    import json
-    
     # Create and start the agent
     agent = DeclarativeAgent()
     print("\nStarting the declarative agent. Press Ctrl+C to stop.")
@@ -161,7 +163,20 @@ if __name__ == "__main__":
     # Print the rendered markdown prompt for demonstration
     print("\nGenerated Prompt:")
     print("-" * 50)
-    print(agent._pom_builder.render_markdown())
+    
+    # Get the formatted prompt from the agent's POM
+    try:
+        # Try to use pom directly (modern approach)
+        if agent.pom:
+            print(agent.pom.render_markdown())
+        # Fallback for older implementations that might use _pom_builder
+        elif hasattr(agent, '_pom_builder') and agent._pom_builder:
+            print(agent._pom_builder.render_markdown())
+        else:
+            print(agent.get_prompt())
+    except Exception as e:
+        print(f"Could not render prompt: {e}")
+        
     print("-" * 50)
     
     try:

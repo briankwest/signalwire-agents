@@ -28,7 +28,13 @@ class SwaigFunctionResult:
         # With actions
         return (
             SwaigFunctionResult("I'll transfer you to support")
-            .add_action("transfer", dest="support")
+            .add_action("transfer", {"dest": "support"})
+        )
+        
+        # With simple action value
+        return (
+            SwaigFunctionResult("I'll confirm that")
+            .add_action("confirm", True)
         )
     """
     def __init__(self, response: Optional[str] = None):
@@ -39,7 +45,7 @@ class SwaigFunctionResult:
             response: Optional natural language response to include
         """
         self.response = response or ""
-        self.actions: List[Dict[str, Any]] = []
+        self.action: List[Dict[str, Any]] = []
     
     def set_response(self, response: str) -> 'SwaigFunctionResult':
         """
@@ -54,18 +60,18 @@ class SwaigFunctionResult:
         self.response = response
         return self
     
-    def add_action(self, action_type: str, **kwargs) -> 'SwaigFunctionResult':
+    def add_action(self, name: str, data: Any) -> 'SwaigFunctionResult':
         """
         Add a structured action to the response
         
         Args:
-            action_type: The type of action (play, transfer, etc)
-            **kwargs: Action-specific parameters
+            name: The name/type of the action (e.g., "play", "transfer")
+            data: The data for the action - can be a string, boolean, object, or array
             
         Returns:
             Self for method chaining
         """
-        self.actions.append({"type": action_type, **kwargs})
+        self.action.append({name: data})
         return self
     
     def to_dict(self) -> Dict[str, Any]:
@@ -74,7 +80,7 @@ class SwaigFunctionResult:
         
         The result must have at least one of:
         - 'response': Text to be spoken by the AI
-        - 'actions': Array of actions to be performed
+        - 'action': Array of action objects
         
         Returns:
             Dictionary in SWAIG function response format
@@ -86,11 +92,11 @@ class SwaigFunctionResult:
         if self.response:
             result["response"] = self.response
             
-        # Add actions if present
-        if self.actions:
-            result["actions"] = self.actions
+        # Add action if present
+        if self.action:
+            result["action"] = self.action
             
-        # Ensure we have at least one of response or actions
+        # Ensure we have at least one of response or action
         if not result:
             # Default response if neither is present
             result["response"] = "Action completed."

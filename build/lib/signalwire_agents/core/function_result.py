@@ -28,7 +28,13 @@ class SwaigFunctionResult:
         # With actions
         return (
             SwaigFunctionResult("I'll transfer you to support")
-            .add_action("transfer", dest="support")
+            .add_action("transfer", {"dest": "support"})
+        )
+        
+        # With simple action value
+        return (
+            SwaigFunctionResult("I'll confirm that")
+            .add_action("confirm", True)
         )
     """
     def __init__(self, response: Optional[str] = None):
@@ -39,7 +45,7 @@ class SwaigFunctionResult:
             response: Optional natural language response to include
         """
         self.response = response or ""
-        self.actions: List[Dict[str, Any]] = []
+        self.action: List[Dict[str, Any]] = []
     
     def set_response(self, response: str) -> 'SwaigFunctionResult':
         """
@@ -54,34 +60,45 @@ class SwaigFunctionResult:
         self.response = response
         return self
     
-    def add_action(self, action_type: str, **kwargs) -> 'SwaigFunctionResult':
+    def add_action(self, name: str, data: Any) -> 'SwaigFunctionResult':
         """
         Add a structured action to the response
         
         Args:
-            action_type: The type of action (play, transfer, etc)
-            **kwargs: Action-specific parameters
+            name: The name/type of the action (e.g., "play", "transfer")
+            data: The data for the action - can be a string, boolean, object, or array
             
         Returns:
             Self for method chaining
         """
-        self.actions.append({"type": action_type, **kwargs})
+        self.action.append({name: data})
         return self
     
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert to the JSON structure expected by SWAIG
         
-        Returns:
-            Dictionary in SWAIG function response format with just response and optional actions
-        """
-        # Simple format with just response
-        result = {
-            "response": self.response
-        }
+        The result must have at least one of:
+        - 'response': Text to be spoken by the AI
+        - 'action': Array of action objects
         
-        # Only include actions if there are any
-        if self.actions:
-            result["actions"] = self.actions
+        Returns:
+            Dictionary in SWAIG function response format
+        """
+        # Create the result object
+        result = {}
+        
+        # Add response if present
+        if self.response:
+            result["response"] = self.response
+            
+        # Add action if present
+        if self.action:
+            result["action"] = self.action
+            
+        # Ensure we have at least one of response or action
+        if not result:
+            # Default response if neither is present
+            result["response"] = "Action completed."
             
         return result

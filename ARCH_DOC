@@ -40,7 +40,7 @@ A. AgentBase
       – GET  /route                → SWML document  
       – POST /route                → SWML with request data processing   
       – POST /route/post_prompt    → summary handler  
-      – POST /route/tools/:name    → SWAIG invocation  
+      – POST /route/swaig          → SWAIG invocation  
    •  Call-Session Manager  
       – Generates `call_id`, per-function tokens  
       – `startup_hook` activates, `hangup_hook` invalidates session  
@@ -55,7 +55,7 @@ A. AgentBase
       – Supports SWML_PROXY_URL_BASE environment variable for public-facing URLs
       – Automatically replaces local server URL with public proxy URL in all SWML
 
-B. SwaigFunction  
+B. SWAIGFunction  
    •  Declarative descriptor holding `name`, `description`, `parameters`,
       `handler`, `secure` flag.  
    •  SWAIG spec compliant with proper parameter structure (type:object/properties)
@@ -65,8 +65,9 @@ B. SwaigFunction
 
 C. SwaigFunctionResult  
    •  Wrapper around SWAIG response payload.  
-   •  `set_response()`, `add_action(type, **kwargs)`, `to_dict()`.  
-   •  Actions include play, transfer, send_sms, and others per spec.
+   •  `set_response()`, `add_action(name, data)`, `to_dict()`.  
+   •  Result format includes `response` text and/or `action` array.
+   •  Actions stored in "action" key (singular) with each action as {name: data} object.
 
 D. SwmlRenderer
    •  Handles proper SWML generation according to spec
@@ -101,7 +102,7 @@ G. State Management
       • startup/hangup hooks (tokenised URLs)  
       • SWAIG array with per-function tokenised URLs.  
 3. startup_hook fires → session marked *active*.  
-4. During call AI invokes `/tools/<fn>` with token & call_id → SDK
+4. During call AI invokes `/swaig` with token & call_id → SDK
    validates → executes `handler` → returns `SwaigFunctionResult`.  
 5. hangup_hook fires → session & tokens purged.  
 6. post_prompt summary arrives → `on_summary()` callback runs.
@@ -109,11 +110,11 @@ G. State Management
 5. Extensibility Points
 -----------------------
 •  Override any of:  
-   – `get_prompt()`, `get_post_prompt()`  
+   – `get_prompt()` or use direct POM API access via `self.pom`  
    – `define_tools()` or decorated methods  
    – `on_summary(summary)`  
-   – `on_function_call(name, args)` for catch-all logic  
-•  Add new prompt section helpers in AgentBase without breaking prefabs.  
+   – `on_function_call(name, args, raw_data)` for catch-all logic  
+•  Directly manipulate the POM structure via `self.pom` API methods.  
 •  Plug custom authentication/authorisation by overriding
    `validate_basic_auth()` and `validate_tool_token()`.
 
@@ -122,7 +123,7 @@ G. State Management
 A. Single-Agent Microservice  
    ```
    agent = SupportBot()
-   agent.serve(host="0.0.0.0", port=8080, route="/support")
+   agent.serve(host="0.0.0.0", port=8080)
    ```
 B. Multi-Agent Host  
    ```
@@ -131,7 +132,7 @@ B. Multi-Agent Host
    server.register(SalesBot(),   "/sales")
    server.run()
    ```
-   ( `AgentServer` is a thin FastAPI/Flask wrapper around multiple
+   ( `AgentServer` is a thin FastAPI wrapper around multiple
      `agent.as_router()` instances. )
 
 7. Future Enhancements
