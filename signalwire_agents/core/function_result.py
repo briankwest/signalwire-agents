@@ -72,16 +72,27 @@ class SwaigFunctionResult:
         """
         Convert to the JSON structure expected by SWAIG
         
-        Returns:
-            Dictionary in SWAIG function response format with just response and optional actions
-        """
-        # Simple format with just response
-        result = {
-            "response": self.response
-        }
+        The result must have at least one of:
+        - 'response': Text to be spoken by the AI
+        - 'actions': Array of actions to be performed
         
-        # Only include actions if there are any
+        Returns:
+            Dictionary in SWAIG function response format
+        """
+        # Create the result object
+        result = {}
+        
+        # Add response if present
+        if self.response:
+            result["response"] = self.response
+            
+        # Add actions if present
         if self.actions:
             result["actions"] = self.actions
+            
+        # Ensure we have at least one of response or actions
+        if not result:
+            # Default response if neither is present
+            result["response"] = "Action completed."
             
         return result
