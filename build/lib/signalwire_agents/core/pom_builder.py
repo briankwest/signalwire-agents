@@ -57,16 +57,15 @@ class PomBuilder:
         self._sections[title] = section
         return self
     
-    def add_to_section(self, title: str, body: Optional[str] = None, 
-                       bullet: Optional[str] = None, bullets: Optional[List[str]] = None) -> 'PomBuilder':
+    def add_to_section(self, title: str, body: Optional[str] = None, bullet: Optional[str] = None, bullets: Optional[List[str]] = None) -> 'PomBuilder':
         """
-        Add content to an existing section, creating it if it doesn't exist
+        Add content to an existing section
         
         Args:
-            title: Section title to add to
-            body: Optional body text to append
-            bullet: Optional single bullet to add
-            bullets: Optional list of bullets to add
+            title: Section title
+            body: Text to append to the section body
+            bullet: Single bullet to add
+            bullets: List of bullets to add
             
         Returns:
             Self for method chaining
@@ -76,19 +75,21 @@ class PomBuilder:
             self.add_section(title)
             
         section = self._sections[title]
+        
+        # Add body text if provided
         if body:
-            # Append to existing body with spacing
-            if section.body:
+            if hasattr(section, 'body') and section.body:
                 section.body = f"{section.body}\n\n{body}"
             else:
                 section.body = body
                 
+        # Process bullets
         if bullet:
             section.bullets.append(bullet)
-            
+                
         if bullets:
             section.bullets.extend(bullets)
-            
+                
         return self
     
     def add_subsection(self, parent_title: str, title: str, body: str = "", 
@@ -119,13 +120,13 @@ class PomBuilder:
     
     def has_section(self, title: str) -> bool:
         """
-        Check if a section exists
+        Check if a section with the given title exists
         
         Args:
             title: Section title to check
             
         Returns:
-            True if the section exists
+            True if the section exists, False otherwise
         """
         return title in self._sections
     

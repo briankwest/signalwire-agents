@@ -121,11 +121,23 @@ class AgentBase:
                 password = secrets.token_urlsafe(16)
                 self._basic_auth = (username, password)
         
-        # Initialize prompt builder
+        # Initialize prompt handling
         self._use_pom = use_pom
-        self._pom_builder = PomBuilder() if use_pom else None
         self._raw_prompt = None
         self._post_prompt = None
+        
+        # Initialize POM if needed
+        if self._use_pom:
+            try:
+                from signalwire_pom.pom import PromptObjectModel
+                self.pom = PromptObjectModel()
+            except ImportError:
+                raise ImportError(
+                    "signalwire-pom package is required for use_pom=True. "
+                    "Install it with: pip install signalwire-pom"
+                )
+        else:
+            self.pom = None
         
         # Initialize tool registry
         self._swaig_functions: Dict[str, SWAIGFunction] = {}
@@ -181,7 +193,7 @@ class AgentBase:
                 if isinstance(content, str):
                     # Plain text - add as body
                     self.prompt_add_section(title, body=content)
-                elif isinstance(content, list):
+                elif isinstance(content, list) and content:  # Only add if non-empty
                     # List of strings - add as bullets
                     self.prompt_add_section(title, bullets=content)
                 elif isinstance(content, dict):
@@ -191,34 +203,71 @@ class AgentBase:
                     numbered = content.get('numbered', False)
                     numbered_bullets = content.get('numberedBullets', False)
                     
-                    # Create the section
-                    self.prompt_add_section(
-                        title, 
-                        body=body, 
-                        bullets=bullets,
-                        numbered=numbered,
-                        numbered_bullets=numbered_bullets
-                    )
-                    
-                    # Process subsections if any
-                    subsections = content.get('subsections', [])
-                    for subsection in subsections:
-                        if 'title' in subsection:
-                            sub_title = subsection['title']
-                            sub_body = subsection.get('body', '')
-                            sub_bullets = subsection.get('bullets', [])
-                            
-                            self.prompt_add_subsection(
-                                title, 
-                                sub_title,
-                                body=sub_body,
-                                bullets=sub_bullets
-                            )
-        # If sections is a list of section objects
+                    # Only create section if it has content
+                    if body or bullets or 'subsections' in content:
+                        # Create the section
+                        self.prompt_add_section(
+                            title, 
+                            body=body, 
+                            bullets=bullets if bullets else None,
+                            numbered=numbered,
+                            numbered_bullets=numbered_bullets
+                        )
+                        
+                        # Process subsections if any
+                        subsections = content.get('subsections', [])
+                        for subsection in subsections:
+                            if 'title' in subsection:
+                                sub_title = subsection['title']
+                                sub_body = subsection.get('body', '')
+                                sub_bullets = subsection.get('bullets', [])
+                                
+                                # Only add subsection if it has content
+                                if sub_body or sub_bullets:
+                                    self.prompt_add_subsection(
+                                        title, 
+                                        sub_title,
+                                        body=sub_body,
+                                        bullets=sub_bullets if sub_bullets else None
+                                    )
+        # If sections is a list of section objects, use the POM format directly
         elif isinstance(sections, list):
-            # Use the POM format directly
-            if self._pom_builder:
-                self._pom_builder = PomBuilder.from_sections(sections)
+            if self.pom:
+                # Process each section using auto-vivifying methods
+                for section in sections:
+                    if 'title' in section:
+                        title = section['title']
+                        body = section.get('body', '')
+                        bullets = section.get('bullets', [])
+                        numbered = section.get('numbered', False)
+                        numbered_bullets = section.get('numberedBullets', False)
+                        
+                        # Only create section if it has content
+                        if body or bullets or 'subsections' in section:
+                            self.prompt_add_section(
+                                title,
+                                body=body,
+                                bullets=bullets if bullets else None,
+                                numbered=numbered,
+                                numbered_bullets=numbered_bullets
+                            )
+                            
+                            # Process subsections if any
+                            subsections = section.get('subsections', [])
+                            for subsection in subsections:
+                                if 'title' in subsection:
+                                    sub_title = subsection['title']
+                                    sub_body = subsection.get('body', '')
+                                    sub_bullets = subsection.get('bullets', [])
+                                    
+                                    # Only add subsection if it has content
+                                    if sub_body or sub_bullets:
+                                        self.prompt_add_subsection(
+                                            title,
+                                            sub_title,
+                                            body=sub_body,
+                                            bullets=sub_bullets if sub_bullets else None
+                                        )
     
     # ----------------------------------------------------------------------
     # Prompt Building Methods
@@ -248,7 +297,7 @@ class AgentBase:
             Self for method chaining
         """
         if self._use_pom:
-            self._pom_builder = PomBuilder.from_sections(pom)
+            self.pom = pom
         else:
             raise ValueError("use_pom must be True to use set_prompt_pom")
         return self
@@ -274,8 +323,8 @@ class AgentBase:
         Returns:
             Self for method chaining
         """
-        if self._use_pom and self._pom_builder:
-            self._pom_builder.add_section(
+        if self._use_pom and self.pom:
+            self.pom.add_section(
                 title=title,
                 body=body,
                 bullets=bullets,
@@ -303,8 +352,8 @@ class AgentBase:
         Returns:
             Self for method chaining
         """
-        if self._use_pom and self._pom_builder:
-            self._pom_builder.add_to_section(
+        if self._use_pom and self.pom:
+            self.pom.add_to_section(
                 title=title,
                 body=body,
                 bullet=bullet,
@@ -331,8 +380,8 @@ class AgentBase:
         Returns:
             Self for method chaining
         """
-        if self._use_pom and self._pom_builder:
-            self._pom_builder.add_subsection(
+        if self._use_pom and self.pom:
+            self.pom.add_subsection(
                 parent_title=parent_title,
                 title=title,
                 body=body,
@@ -454,8 +503,8 @@ class AgentBase:
         if self._raw_prompt is not None:
             return self._raw_prompt
             
-        if self._use_pom and self._pom_builder is not None:
-            return self._pom_builder.to_dict()
+        if self._use_pom and self.pom:
+            return self.pom.to_dict()
             
         # Default minimal prompt if nothing else set
         return "You are a helpful AI assistant. Answer user questions clearly and concisely."
@@ -510,48 +559,20 @@ class AgentBase:
         if name not in self._swaig_functions:
             return SwaigFunctionResult(f"Function '{name}' not found").to_dict()
         
-        # Get the function and handler
+        # Get the function object
         func = self._swaig_functions[name]
-        handler = func.handler
         
-        # Check if the handler accepts a raw_data parameter
-        sig = inspect.signature(handler)
-        handler_params = list(sig.parameters.keys())
-        
-        # If handler has a raw_data parameter, pass the raw data
-        if 'raw_data' in handler_params:
-            result = func.execute(args, raw_data=raw_data)
-        else:
-            # Otherwise, just call with the extracted arguments
-            result = func.execute(args)
+        try:
+            # Execute the function with args and raw_data
+            result = func.execute(args, raw_data)
             
-        # Ensure the result is properly serialized
-        if isinstance(result, SwaigFunctionResult):
-            result = result.to_dict()
-            
-        # Ensure response has the right format
-        if isinstance(result, dict):
-            # Create a clean result with only the fields we need
-            clean_result = {}
-            
-            # Extract response
-            if "response" in result:
-                clean_result["response"] = result["response"]
-            elif "result" in result and isinstance(result["result"], dict) and "response" in result["result"]:
-                clean_result["response"] = result["result"]["response"]
-            else:
-                clean_result["response"] = "Function executed successfully."
+            # If the result is already a dict (from SwaigFunctionResult.to_dict), return it directly
+            return result
                 
-            # Extract actions if present
-            if "actions" in result:
-                clean_result["actions"] = result["actions"]
-            elif "result" in result and isinstance(result["result"], dict) and "actions" in result["result"]:
-                clean_result["actions"] = result["result"]["actions"]
-                
-            return clean_result
-        else:
-            # For non-dict results, wrap in a response
-            return {"response": str(result)}
+        except Exception as e:
+            import logging
+            logging.error(f"Error in on_function_call for {name}: {str(e)}")
+            return SwaigFunctionResult("Sorry, I encountered an error while processing your request.").to_dict()
     
     def validate_basic_auth(self, username: str, password: str) -> bool:
         """
@@ -1104,6 +1125,8 @@ class AgentBase:
             # Call the function
             try:
                 print(f"DEBUG: SWAIG calling function {function_name} with args: {args}")
+                print(f"DEBUG: SWAIG full POST data: {body}")
+                
                 # Pass the full request body and extracted arguments to the handler
                 result = self.on_function_call(function_name, args, body)
                 
@@ -1544,3 +1567,17 @@ class AgentBase:
             List of native function names
         """
         return self.native_functions.copy()
+
+    def has_section(self, title: str) -> bool:
+        """
+        Check if a section with the given title exists in the POM
+        
+        Args:
+            title: Section title to check
+            
+        Returns:
+            True if the section exists, False otherwise
+        """
+        if self._use_pom and self.pom:
+            return self.pom.find_section(title) is not None
+        return False

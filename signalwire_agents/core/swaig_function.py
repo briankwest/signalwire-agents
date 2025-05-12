@@ -4,6 +4,7 @@ SwaigFunction class for defining and managing SWAIG function interfaces
 
 from typing import Dict, Any, Optional, Callable, List, Type, Union
 import inspect
+import logging
 
 
 class SWAIGFunction:
@@ -72,43 +73,40 @@ class SWAIGFunction:
             raw_data: Optional raw request data
             
         Returns:
-            Function result as a dictionary with "response" and optional "actions"
+            Function result as a dictionary (from SwaigFunctionResult.to_dict())
         """
         try:
-            # Inspect the function signature to determine parameter names
-            sig = inspect.signature(self.handler)
-            param_names = list(sig.parameters.keys())
-            
-            # Check which parameters the handler accepts
-            handler_kwargs = {}
-            
-            # First parameter is always the 'self' instance
-            param_count = len(param_names)
-            
-            if param_count >= 2:
-                # At least one parameter after 'self', assume it's for args
-                handler_kwargs[param_names[1]] = args
+            # Raw data is mandatory, but we'll handle the case where it's null for robustness
+            if raw_data is None:
+                raw_data = {}  # Provide an empty dict as fallback
+
+            # Call the handler with both args and raw_data
+            result = self.handler(args, raw_data)
                 
-            if param_count >= 3 and raw_data is not None:
-                # Has a third parameter, pass raw_data
-                handler_kwargs[param_names[2]] = raw_data
-                
-            # Call the handler with the appropriate parameters
-            result = self.handler(**handler_kwargs)
-                
-            # Convert the result to a dictionary if needed
+            # Import here to avoid circular imports
             from signalwire_agents.core.function_result import SwaigFunctionResult
+            
+            # Handle different result types - everything must end up as a SwaigFunctionResult
             if isinstance(result, SwaigFunctionResult):
-                # If the result is already a SwaigFunctionResult, serialize it to dict
+                # Already a SwaigFunctionResult - just convert to dict
                 return result.to_dict()
-            elif not isinstance(result, dict):
-                # If not a dict or SwaigFunctionResult, wrap it
-                return {"response": str(result)}
+            elif isinstance(result, dict) and "response" in result:
+                # Already in the correct format - use as is
+                return result
+            elif isinstance(result, dict):
+                # Dictionary without response - create a SwaigFunctionResult
+                return SwaigFunctionResult("Function completed successfully").to_dict()
+            else:
+                # String or other type - create a SwaigFunctionResult with the string representation
+                return SwaigFunctionResult(str(result)).to_dict()
                 
-            return result
         except Exception as e:
-            # Return an error response
-            return {"response": f"Error: {str(e)}"}
+            # Log the error for debugging but don't expose details to the AI
+            logging.error(f"Error executing SWAIG function {self.name}: {str(e)}")
+            # Return a generic error message
+            return SwaigFunctionResult(
+                "Sorry, I couldn't complete that action. Please try again or contact support if the issue persists."
+            ).to_dict()
         
     def validate_args(self, args: Dict[str, Any]) -> bool:
         """

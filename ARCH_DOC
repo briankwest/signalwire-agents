@@ -29,11 +29,10 @@ boiler-plate.
 ------------------
 A. AgentBase  
    •  __init__(name, route, host, port, enable_state_tracking=False, …) – registers router & auth  
-   •  Prompt Builder  
-      – Maintains `_prompt_sections` list of POM-compliant sections  
-      – Declarative PROMPT_SECTIONS class attribute (recommended)  
-      – Raw text prompts (set_prompt_text) for simplicity  
-      – Programmatic POM building (prompt_add_section) for complex scenarios  
+   •  Prompt Building  
+      – Direct access to POM API via `self.pom` for structured prompts (recommended)
+      – Raw text prompts (set_prompt_text) for simplicity when needed
+      – Declarative PROMPT_SECTIONS for auto-initialization  
    •  SWML Renderer `_render_swml(call_id)`  
       – Serialises prompt, SWAIG registry, post_prompt_url, hooks  
       – Always includes SWAIG array with defaults and state tracking hooks  
