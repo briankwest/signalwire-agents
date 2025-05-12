@@ -93,10 +93,17 @@ class SimpleAgent(AgentBase):
             }
         }
     )
-    def get_weather(self, args):
+    def get_weather(self, args, raw_data=None):
         """Get the current weather for a location"""
         # Extract location from the args dictionary 
         location = args.get("location", "Unknown location")
+        
+        # Log the full raw POST data for debugging (optional)
+        print(f"DEBUG: Full POST data received: {raw_data}")
+        
+        # Access other parts of the raw request if needed
+        # For example: call_id = raw_data.get("call_id") if raw_data else None
+        
         # In a real implementation, this would call a weather API
         return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
@@ -167,10 +174,17 @@ class SimpleAgentWithRawPrompt(AgentBase):
             }
         }
     )
-    def get_weather(self, args):
+    def get_weather(self, args, raw_data=None):
         """Get the current weather for a location"""
         # Extract location from the args dictionary 
         location = args.get("location", "Unknown location")
+        
+        # Log the full raw POST data for debugging (optional)
+        print(f"DEBUG: Full POST data received: {raw_data}")
+        
+        # Access other parts of the raw request if needed
+        # For example: call_id = raw_data.get("call_id") if raw_data else None
+        
         # In a real implementation, this would call a weather API
         return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     
@@ -254,10 +268,17 @@ class SimpleAgentWithProgrammaticPOM(AgentBase):
             }
         }
     )
-    def get_weather(self, args):
+    def get_weather(self, args, raw_data=None):
         """Get the current weather for a location"""
         # Extract location from the args dictionary 
         location = args.get("location", "Unknown location")
+        
+        # Log the full raw POST data for debugging (optional)
+        print(f"DEBUG: Full POST data received: {raw_data}")
+        
+        # Access other parts of the raw request if needed
+        # For example: call_id = raw_data.get("call_id") if raw_data else None
+        
         # In a real implementation, this would call a weather API
         return SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
     

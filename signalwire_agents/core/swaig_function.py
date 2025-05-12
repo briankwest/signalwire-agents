@@ -75,13 +75,26 @@ class SWAIGFunction:
             Function result as a dictionary with "response" and optional "actions"
         """
         try:
-            # Call the handler with the arguments and raw data
-            if raw_data and len(inspect.signature(self.handler).parameters) > 1:
-                # Handler accepts raw data as second argument
-                result = self.handler(args, raw_data)
-            else:
-                # Handler only accepts parsed arguments
-                result = self.handler(args)
+            # Inspect the function signature to determine parameter names
+            sig = inspect.signature(self.handler)
+            param_names = list(sig.parameters.keys())
+            
+            # Check which parameters the handler accepts
+            handler_kwargs = {}
+            
+            # First parameter is always the 'self' instance
+            param_count = len(param_names)
+            
+            if param_count >= 2:
+                # At least one parameter after 'self', assume it's for args
+                handler_kwargs[param_names[1]] = args
+                
+            if param_count >= 3 and raw_data is not None:
+                # Has a third parameter, pass raw_data
+                handler_kwargs[param_names[2]] = raw_data
+                
+            # Call the handler with the appropriate parameters
+            result = self.handler(**handler_kwargs)
                 
             # Convert the result to a dictionary if needed
             from signalwire_agents.core.function_result import SwaigFunctionResult

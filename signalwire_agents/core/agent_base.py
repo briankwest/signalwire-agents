@@ -1104,6 +1104,8 @@ class AgentBase:
             # Call the function
             try:
                 print(f"DEBUG: SWAIG calling function {function_name} with args: {args}")
+                print(f"DEBUG: SWAIG full POST data: {body}")
+                
                 # Pass the full request body and extracted arguments to the handler
                 result = self.on_function_call(function_name, args, body)
                 
