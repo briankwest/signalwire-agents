@@ -28,7 +28,7 @@ boiler-plate.
 3. Core Components
 ------------------
 A. AgentBase  
-   •  __init__(name, route, host, port, …) – registers router & auth  
+   •  __init__(name, route, host, port, enable_state_tracking=False, …) – registers router & auth  
    •  Prompt Builder  
       – Maintains `_prompt_sections` list of POM-compliant sections  
       – Declarative PROMPT_SECTIONS class attribute (recommended)  
@@ -36,17 +36,25 @@ A. AgentBase
       – Programmatic POM building (prompt_add_section) for complex scenarios  
    •  SWML Renderer `_render_swml(call_id)`  
       – Serialises prompt, SWAIG registry, post_prompt_url, hooks  
+      – Always includes SWAIG array with defaults and state tracking hooks  
    •  Web Interface (`serve`, `as_router`)  
       – GET  /route                → SWML document  
       – POST /route                → SWML with request data processing   
       – POST /route/post_prompt    → summary handler  
-      – POST /route/tools/<fn>     → token-validated SWAIG call  
+      – POST /route/tools/:name    → SWAIG invocation  
    •  Call-Session Manager  
       – Generates `call_id`, per-function tokens  
       – `startup_hook` activates, `hangup_hook` invalidates session  
    •  State Manager  
       – Persistent storage across interactions (get_state, set_state)  
       – Auto-expiring state with cleanup  
+   •  State Tracking System (optional, disabled by default)  
+      – Lifecycle hooks via startup_hook and hangup_hook  
+      – Tracks call state from initiation to termination  
+      – Stores pending requests for processing when a call activates
+   •  URL Generation & Proxying
+      – Supports SWML_PROXY_URL_BASE environment variable for public-facing URLs
+      – Automatically replaces local server URL with public proxy URL in all SWML
 
 B. SwaigFunction  
    •  Declarative descriptor holding `name`, `description`, `parameters`,

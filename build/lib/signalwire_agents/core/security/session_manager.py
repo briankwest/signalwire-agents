@@ -52,13 +52,13 @@ class SessionManager:
         self._active_calls[call_id] = CallSession(call_id)
         return call_id
     
-    def generate_token(self, call_id: str, function_name: str) -> str:
+    def generate_token(self, function_name: str, call_id: str) -> str:
         """
         Generate a secure token for a function call
         
         Args:
-            call_id: Call session ID
             function_name: Name of the function to generate a token for
+            call_id: Call session ID
             
         Returns:
             A secure random token

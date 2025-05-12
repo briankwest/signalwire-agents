@@ -85,15 +85,16 @@ class SwmlRenderer:
         # SWAIG is always included and always starts with defaults
         ai_block["ai"]["SWAIG"] = []
         
-        # Add defaults as the first element
-        defaults = {
-            "defaults": {
-                "web_hook_url": default_webhook_url if default_webhook_url else ""
+        # Add defaults as the first element when a default webhook URL is provided
+        if default_webhook_url:
+            defaults = {
+                "defaults": {
+                    "web_hook_url": default_webhook_url
+                }
             }
-        }
-        ai_block["ai"]["SWAIG"].append(defaults)
+            ai_block["ai"]["SWAIG"].append(defaults)
         
-        # Always add startup_hook and hangup_hook as proper SWAIG functions
+        # Add SWAIG hooks if provided
         if startup_hook_url:
             startup_hook = {
                 "function": "startup_hook",
@@ -101,7 +102,8 @@ class SwmlRenderer:
                 "parameters": {
                     "type": "object",
                     "properties": {}
-                }
+                },
+                "web_hook_url": startup_hook_url
             }
             ai_block["ai"]["SWAIG"].append(startup_hook)
             
@@ -112,7 +114,8 @@ class SwmlRenderer:
                 "parameters": {
                     "type": "object",
                     "properties": {}
-                }
+                },
+                "web_hook_url": hangup_hook_url
             }
             ai_block["ai"]["SWAIG"].append(hangup_hook)
         
@@ -123,9 +126,15 @@ class SwmlRenderer:
                 if func.get("function") not in ["startup_hook", "hangup_hook"]:
                     ai_block["ai"]["SWAIG"].append(func)
             
-        # Add params if provided
+        # Add AI params if provided (but not rendering settings)
         if params:
-            ai_block["ai"].update(params)
+            # Filter out non-AI parameters that should be separate SWML methods
+            ai_params = {k: v for k, v in params.items() 
+                         if k not in ["auto_answer", "record_call", "record_format", "record_stereo"]}
+            
+            # Only update if we have valid AI parameters
+            if ai_params:
+                ai_block["ai"].update(ai_params)
             
         # Start building the SWML blocks
         main_blocks = []
@@ -139,7 +148,7 @@ class SwmlRenderer:
             main_blocks.append({
                 "record_call": {
                     "format": record_format,
-                    "stereo": str(record_stereo).lower()  # SWML expects "true"/"false" as strings
+                    "stereo": record_stereo  # SWML expects a boolean not a string
                 }
             })
         

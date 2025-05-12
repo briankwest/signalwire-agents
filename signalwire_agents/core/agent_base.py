@@ -5,6 +5,7 @@ AgentBase - Core foundation class for all SignalWire AI Agents
 import functools
 import inspect
 import os
+import uuid
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type, TypeVar
 import base64
 import secrets
@@ -23,7 +24,7 @@ except ImportError:
     )
 
 from signalwire_agents.core.pom_builder import PomBuilder
-from signalwire_agents.core.swaig_function import SwaigFunction
+from signalwire_agents.core.swaig_function import SWAIGFunction
 from signalwire_agents.core.function_result import SwaigFunctionResult
 from signalwire_agents.core.swml_renderer import SwmlRenderer
 from signalwire_agents.core.security.session_manager import SessionManager
@@ -58,14 +59,15 @@ class AgentBase:
         port: int = 3000,
         basic_auth: Optional[Tuple[str, str]] = None,
         use_pom: bool = True,
-        per_call_sessions: bool = True,
+        enable_state_tracking: bool = False,
         token_expiry_secs: int = 600,
         auto_answer: bool = True,
         record_call: bool = False,
         record_format: str = "mp4",
         record_stereo: bool = True,
         state_manager: Optional[StateManager] = None,
-        default_webhook_url: Optional[str] = None
+        default_webhook_url: Optional[str] = None,
+        agent_id: Optional[str] = None
     ):
         """
         Initialize a new agent
@@ -77,7 +79,7 @@ class AgentBase:
             port: Port to bind the web server to
             basic_auth: Optional (username, password) tuple for basic auth
             use_pom: Whether to use POM for prompt building
-            per_call_sessions: Whether to use per-call security sessions
+            enable_state_tracking: Whether to track state across a call lifecycle using startup_hook and hangup_hook
             token_expiry_secs: Seconds until tokens expire
             auto_answer: Whether to automatically answer calls
             record_call: Whether to record calls
@@ -85,12 +87,19 @@ class AgentBase:
             record_stereo: Whether to record in stereo
             state_manager: Optional state manager for this agent
             default_webhook_url: Optional default webhook URL for all SWAIG functions
+            agent_id: Optional unique ID for this agent, generated if not provided
         """
         self.name = name
         self.route = route.rstrip("/")  # Ensure no trailing slash
         self.host = host
         self.port = port
         self._default_webhook_url = default_webhook_url
+        
+        # Generate or use the provided agent ID
+        self.agent_id = agent_id or str(uuid.uuid4())
+        
+        # Check for proxy URL base in environment
+        self._proxy_url_base = os.environ.get('SWML_PROXY_URL_BASE')
         
         # Set basic auth credentials
         if basic_auth is not None:
@@ -117,11 +126,11 @@ class AgentBase:
         self._post_prompt = None
         
         # Initialize tool registry
-        self._swaig_functions: Dict[str, SwaigFunction] = {}
+        self._swaig_functions: Dict[str, SWAIGFunction] = {}
         
         # Initialize session manager
         self._session_manager = SessionManager(token_expiry_secs=token_expiry_secs)
-        self._per_call_sessions = per_call_sessions
+        self._enable_state_tracking = enable_state_tracking
         
         # Server state
         self._app = None
@@ -142,6 +151,9 @@ class AgentBase:
         
         # Initialize state manager
         self._state_manager = state_manager or FileStateManager()
+        
+        # Process class-decorated tools (using @AgentBase.tool)
+        self._register_class_decorated_tools()
     
     def _process_prompt_sections(self):
         """
@@ -353,7 +365,7 @@ class AgentBase:
         if name in self._swaig_functions:
             raise ValueError(f"Tool with name '{name}' already exists")
             
-        self._swaig_functions[name] = SwaigFunction(
+        self._swaig_functions[name] = SWAIGFunction(
             name=name,
             description=description,
             parameters=parameters,
@@ -369,8 +381,8 @@ class AgentBase:
         
         Used as:
         
-        @agent.tool(name="get_weather", parameters={...})
-        def get_weather(self, location):
+        @agent.tool(name="example_function", parameters={...})
+        def example_function(self, param1):
             # ...
         """
         def decorator(func):
@@ -401,8 +413,8 @@ class AgentBase:
         
         Used as:
         
-        @AgentBase.tool(name="get_weather", parameters={...})
-        def get_weather(self, location):
+        @AgentBase.tool(name="example_function", parameters={...})
+        def example_function(self, param1):
             # ...
         """
         def decorator(func):
@@ -454,12 +466,12 @@ class AgentBase:
         """
         return self._post_prompt
     
-    def define_tools(self) -> List[SwaigFunction]:
+    def define_tools(self) -> List[SWAIGFunction]:
         """
         Define the tools this agent can use
         
         Returns:
-            List of SwaigFunction objects
+            List of SWAIGFunction objects
             
         This method can be overridden by subclasses.
         """
@@ -476,13 +488,14 @@ class AgentBase:
         """
         pass
     
-    def on_function_call(self, name: str, args: Dict[str, Any]) -> Any:
+    def on_function_call(self, name: str, args: Dict[str, Any], raw_data: Optional[Dict[str, Any]] = None) -> Any:
         """
         Handle a function call if not handled by a specific function
         
         Args:
             name: Function name
-            args: Function arguments
+            args: Extracted function arguments
+            raw_data: Optional raw request data
             
         Returns:
             Function result
@@ -491,8 +504,21 @@ class AgentBase:
         """
         if name not in self._swaig_functions:
             return SwaigFunctionResult(f"Function '{name}' not found").to_dict()
-            
-        return self._swaig_functions[name].execute(args)
+        
+        # Get the function and handler
+        func = self._swaig_functions[name]
+        handler = func.handler
+        
+        # Check if the handler accepts a raw_data parameter
+        sig = inspect.signature(handler)
+        handler_params = list(sig.parameters.keys())
+        
+        # If handler has a raw_data parameter, pass the raw data
+        if 'raw_data' in handler_params:
+            return func.execute(args, raw_data=raw_data)
+        else:
+            # Otherwise, just call with the extracted arguments
+            return func.execute(args)
     
     def validate_basic_auth(self, username: str, password: str) -> bool:
         """
@@ -523,8 +549,8 @@ class AgentBase:
             
         This method can be overridden by subclasses.
         """
-        if not self._per_call_sessions:
-            # Simple token comparison if not using session management
+        if not self._enable_state_tracking:
+            # Simple token comparison if not using state tracking
             return token == self._basic_auth[1]
             
         # Use session manager for validation
@@ -567,49 +593,107 @@ class AgentBase:
             
         return (username, password, source)
     
-    def get_full_url(self) -> str:
+    def get_full_url(self, include_auth: bool = False) -> str:
         """
         Get the full URL for this agent's endpoint
         
-        Returns:
-            Full URL including host, port, and route
-        """
-        if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
-            host = "localhost"
-        else:
-            host = self.host
+        Args:
+            include_auth: Whether to include authentication credentials in the URL
             
-        return f"http://{host}:{self.port}{self.route}"
-    
-    def _build_post_prompt_url(self) -> str:
-        """
-        Build the URL for post_prompt webhook
-        
         Returns:
-            Full URL with basic auth
+            Full URL including host, port, and route (with auth if requested)
         """
-        url = urlparse(f"{self.get_full_url()}/post_prompt")
-        username, password = self._basic_auth
-        return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
-    
-    def _build_startup_hook_url(self) -> str:
-        """
-        Build the startup hook URL
+        # Start with the base URL (either proxy or local)
+        if self._proxy_url_base:
+            # Use the proxy URL base from environment, ensuring we don't duplicate the route
+            # Strip any trailing slashes from proxy base
+            proxy_base = self._proxy_url_base.rstrip('/')
+            # Make sure route starts with a slash for consistency
+            route = self.route if self.route.startswith('/') else f"/{self.route}"
+            base_url = f"{proxy_base}{route}"
+        else:
+            # Default local URL
+            if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                host = "localhost"
+            else:
+                host = self.host
+                
+            base_url = f"http://{host}:{self.port}{self.route}"
+            
+        # Add auth if requested
+        if include_auth:
+            username, password = self._basic_auth
+            url = urlparse(base_url)
+            return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
         
+        return base_url
+        
+    def _build_webhook_url(self, endpoint: str, query_params: Optional[Dict[str, str]] = None) -> str:
+        """
+        Helper method to build webhook URLs consistently
+        
+        Args:
+            endpoint: The endpoint path (e.g., "swaig", "post_prompt")
+            query_params: Optional query parameters to append
+            
         Returns:
-            Startup hook URL
+            Fully constructed webhook URL
         """
-        return f"{self.get_full_url()}/tools/startup_hook"
+        # Base URL construction
+        if self._proxy_url_base:
+            # For proxy URLs
+            base = self._proxy_url_base.rstrip('/')
+            
+            # Always add auth credentials
+            username, password = self._basic_auth
+            url = urlparse(base)
+            base = url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
+        else:
+            # For local URLs
+            if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                host = "localhost"
+            else:
+                host = self.host
+                
+            # Always include auth credentials
+            username, password = self._basic_auth
+            base = f"http://{username}:{password}@{host}:{self.port}"
         
-    def _build_hangup_hook_url(self) -> str:
+        # Simple path - use the route directly with the endpoint
+        path = f"{self.route}/{endpoint}"
+            
+        # Construct full URL
+        url = f"{base}{path}"
+        
+        # Add query parameters if any (only if they have values)
+        if query_params:
+            # Filter out empty parameters
+            valid_params = {k: v for k, v in query_params.items() if v}
+            if valid_params:
+                params = "&".join([f"{k}={v}" for k, v in valid_params.items()])
+                url = f"{url}?{params}"
+            
+        return url
+
+    def _create_tool_token(self, tool_name: str, call_id: str) -> str:
         """
-        Build the hangup hook URL
+        Create a token for a SWAIG function
         
+        Args:
+            tool_name: Name of the tool/function
+            call_id: Call session ID
+            
         Returns:
-            Hangup hook URL
+            Token string for the function
         """
-        return f"{self.get_full_url()}/tools/hangup_hook"
-    
+        # If using session manager, generate a token through it
+        if self._enable_state_tracking:
+            return self._session_manager.generate_token(function_name=tool_name, call_id=call_id)
+        
+        # Otherwise, use a simpler approach - just use the password as the token
+        # Since all requests are authenticated with basic auth anyway
+        return self._basic_auth[1]
+
     def _render_swml(self, call_id: str = None) -> str:
         """
         Render the complete SWML document
@@ -627,60 +711,157 @@ class AgentBase:
         # Get post-prompt
         post_prompt = self.get_post_prompt()
         
-        # Calculate URLs
-        post_prompt_url = self._build_post_prompt_url() if post_prompt else None
-        
         # Generate a call ID if needed
-        if self._per_call_sessions and call_id is None:
+        if self._enable_state_tracking and call_id is None:
             call_id = self._session_manager.create_session()
             
-        # Prepare SWAIG functions
-        swaig_functions = []
-        for name, func in self._swaig_functions.items():
-            if self._per_call_sessions and call_id:
-                token = self._session_manager.generate_token(call_id, name)
-                swaig_functions.append(func.to_swaig(
-                    base_url=self.get_full_url(),
-                    token=token,
-                    call_id=call_id
-                ))
-            else:
-                swaig_functions.append(func.to_swaig(
-                    base_url=self.get_full_url()
-                ))
+        # Query params with call_id (if available)
+        query_params = {}
+        if call_id:
+            query_params["call_id"] = call_id
         
-        # Create tokens and hook URLs
+        # Get the default webhook URL with auth
+        default_webhook_url = self._build_webhook_url("swaig", query_params)
+        
+        # Prepare SWAIG sections
+        swaig_sections = []
+        
+        # Add defaults section first if we have functions
+        if self._swaig_functions:
+            swaig_sections.append({
+                "defaults": {
+                    "web_hook_url": default_webhook_url
+                }
+            })
+        
+        # Add each function
+        for name, func in self._swaig_functions.items():
+            # Get token for secure functions when we have a call_id
+            token = None
+            if func.secure and call_id:
+                token = self._create_tool_token(tool_name=name, call_id=call_id)
+                
+            # Prepare function entry
+            function_entry = {
+                "function": name,
+                "description": func.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": func.parameters
+                }
+            }
+            
+            # Add fillers if present
+            if func.fillers:
+                function_entry["filler"] = func.fillers
+                
+            # Add token to URL if we have one
+            if token:
+                # Create a copy of query_params and add token
+                token_params = query_params.copy()
+                token_params["token"] = token
+                function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
+                
+            swaig_sections.append(function_entry)
+            
+        # Add post-prompt URL if we have a post-prompt
+        post_prompt_url = None
+        if post_prompt:
+            post_prompt_url = self._build_webhook_url("post_prompt", query_params)
+        
+        # Get hooks for state tracking
         startup_hook_url = None
         hangup_hook_url = None
         
-        if self._per_call_sessions and call_id:
-            startup_token = self._session_manager.generate_token(call_id, "startup_hook")
-            hangup_token = self._session_manager.generate_token(call_id, "hangup_hook")
+        if self._enable_state_tracking and call_id:
+            # Create tokens for hooks
+            startup_token = self._create_tool_token("startup_hook", call_id)
+            hangup_token = self._create_tool_token("hangup_hook", call_id)
             
-            # We're passing the full URL including token for the hooks
-            startup_hook_url = f"{self._build_startup_hook_url()}?token={startup_token}&call_id={call_id}"
-            hangup_hook_url = f"{self._build_hangup_hook_url()}?token={hangup_token}&call_id={call_id}"
+            # Create params with tokens
+            startup_params = query_params.copy()
+            startup_params["token"] = startup_token
+            
+            hangup_params = query_params.copy()
+            hangup_params["token"] = hangup_token
+            
+            # Build URLs
+            startup_hook_url = self._build_webhook_url("swaig", startup_params)
+            hangup_hook_url = self._build_webhook_url("swaig", hangup_params)
+            
+        # Construct SWML
+        swml = {
+            "version": "1.0.0",
+            "sections": {
+                "main": [
+                    {
+                        "answer": {}
+                    },
+                    {
+                        "ai": {
+                            "prompt": {}
+                        }
+                    }
+                ]
+            }
+        }
         
-        # Get the default webhook URL (either from the instance or construct a default)
-        default_webhook_url = self._default_webhook_url
-        if not default_webhook_url:
-            default_webhook_url = f"{self.get_full_url()}/swaig"
+        # Add post-prompt if set
+        if post_prompt:
+            swml["sections"]["main"][1]["ai"]["post_prompt"] = {
+                "text": post_prompt
+            }
+            if post_prompt_url:
+                swml["sections"]["main"][1]["ai"]["post_prompt_url"] = post_prompt_url
+        
+        # Add prompt based on type
+        if prompt_is_pom:
+            swml["sections"]["main"][1]["ai"]["prompt"]["pom"] = prompt
+        else:
+            swml["sections"]["main"][1]["ai"]["prompt"]["text"] = prompt
+        
+        # Add SWAIG if we have functions
+        if swaig_sections:
+            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_sections
             
-        # Render SWML
-        return SwmlRenderer.render_swml(
-            prompt=prompt,
-            post_prompt=post_prompt,
-            post_prompt_url=post_prompt_url,
-            swaig_functions=swaig_functions,
-            startup_hook_url=startup_hook_url,
-            hangup_hook_url=hangup_hook_url,
-            prompt_is_pom=prompt_is_pom,
-            add_answer=self._auto_answer,
-            record_call=self._record_call,
-            record_format=self._record_format,
-            record_stereo=self._record_stereo,
-            default_webhook_url=default_webhook_url
-        )
+        # Add hooks for state tracking
+        if startup_hook_url:
+            swml["sections"]["main"][1]["ai"]["SWML"] = {
+                "stack": [
+                    {
+                        "function": "startup_hook"
+                    }
+                ],
+                "functions": {
+                    "startup_hook": {
+                        "curl": {
+                            "url": startup_hook_url,
+                            "method": "POST",
+                            "content_type": "application/json",
+                            "body": {
+                                "function": "startup_hook",
+                                "call_id": call_id
+                            }
+                        }
+                    }
+                }
+            }
+            
+        if hangup_hook_url:
+            swml["on_hangup"] = {
+                "curl": {
+                    "url": hangup_hook_url,
+                    "method": "POST", 
+                    "content_type": "application/json",
+                    "body": {
+                        "function": "hangup_hook",
+                        "call_id": call_id
+                    }
+                }
+            }
+            
+        # Return SWML as a string (will be converted to JSON by the endpoint)
+        return json.dumps(swml)
     
     def _check_basic_auth(self, request: Request) -> bool:
         """
@@ -787,19 +968,27 @@ class AgentBase:
                 return {"status": "ok"}
             except Exception as e:
                 return {"status": "error", "message": str(e)}
-        
-        # Tool/function calls
-        @router.post("/tools/{function_name}")
-        async def handle_tool(function_name: str, request: Request):
-            # Parse the request body for all tool calls
+                
+        # Single SWAIG endpoint that handles all function calls
+        @router.post("/swaig")
+        async def handle_swaig(request: Request):
+            # Parse the request body
             body = await self._parse_request_body(request)
             
-            # Get call_id from query or body
+            # Get call_id and token from query params or body
             call_id = request.query_params.get("call_id", body.get("call_id"))
             token = request.query_params.get("token", body.get("token"))
             
-            # Special hooks for session management
+            # Extract function name from the request body
+            function_name = body.get("function")
+            if not function_name:
+                return HTTPException(status_code=400, detail="Function name not provided")
+            
+            # Special hooks for state tracking
             if function_name == "startup_hook":
+                if not self._enable_state_tracking:
+                    return {"status": "skipped", "message": "State tracking is disabled"}
+                
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
                     
@@ -812,6 +1001,9 @@ class AgentBase:
                 return {"status": "ok"}
                 
             if function_name == "hangup_hook":
+                if not self._enable_state_tracking:
+                    return {"status": "skipped", "message": "State tracking is disabled"}
+                
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
                     
@@ -828,31 +1020,29 @@ class AgentBase:
                 if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
                     return HTTPException(status_code=401, detail="Unauthorized")
             
-            # Merge body with query params for arguments
-            args = body
-            
-            # Add call state to context if available
-            if call_id:
-                # Get state for this call
-                state = self.get_state(call_id)
-                
-                # Log this function call in state
-                if state:
-                    events = state.setdefault("events", [])
-                    events.append({
-                        "type": "function_call",
-                        "function": function_name,
-                        "timestamp": datetime.now().isoformat(),
-                        "args": args
-                    })
-                    self.update_state(call_id, state)
+            # Extract arguments from the request body
+            # In SWAIG, arguments come in an "argument" object with "parsed" and "raw" properties
+            args = {}
+            if "argument" in body and isinstance(body["argument"], dict):
+                # Get the parsed arguments
+                if "parsed" in body["argument"] and isinstance(body["argument"]["parsed"], list) and body["argument"]["parsed"]:
+                    # Use the first item from the parsed array
+                    args = body["argument"]["parsed"][0]
+                elif "raw" in body["argument"]:
+                    # Try to parse the raw string as JSON
+                    try:
+                        args = json.loads(body["argument"]["raw"])
+                    except:
+                        pass
             
             # Call the function
             try:
-                result = self.on_function_call(function_name, args)
+                # Pass the full request body and extracted arguments to the handler
+                result = self.on_function_call(function_name, args, body)
                 
                 # Log the result if we have state
-                if call_id and state:
+                if call_id:
+                    state = self.get_state(call_id) or {}
                     events = state.setdefault("events", [])
                     events.append({
                         "type": "function_result",
@@ -970,6 +1160,7 @@ class AgentBase:
         if self._app is None:
             app = FastAPI()
             router = self.as_router()
+            # Mount the router with the route prefix to ensure endpoints work correctly
             app.include_router(router, prefix=self.route)
             self._app = app
         
@@ -1122,6 +1313,9 @@ class AgentBase:
         """
         Called when a call starts (from startup_hook)
         
+        This method is part of the state tracking system and initializes state storage
+        when a call officially begins.
+        
         Args:
             call_id: Call session ID
             call_data: Initial call data
@@ -1166,6 +1360,9 @@ class AgentBase:
         """
         Called when a call ends (from hangup_hook)
         
+        This method is part of the state tracking system and records the call end time
+        when a call officially ends.
+        
         Args:
             call_id: Call session ID
             
@@ -1182,3 +1379,29 @@ class AgentBase:
             state["ended_at"] = datetime.now().isoformat()
             state["active"] = False
             self.update_state(call_id, state)
+
+    def _register_class_decorated_tools(self):
+        """
+        Register tools defined with the class method decorator
+        """
+        for _, func in inspect.getmembers(self, lambda m: hasattr(m, "_is_tool") and m._is_tool):
+            if hasattr(func, "_tool_name") and hasattr(func, "_tool_params"):
+                # Get the name from _tool_name attribute
+                name = func._tool_name
+                
+                # Get the parameters from _tool_params
+                tool_params = func._tool_params
+                description = tool_params.get("description", func.__doc__ or f"Function {name}")
+                parameters = tool_params.get("parameters", {})
+                secure = tool_params.get("secure", True)
+                fillers = tool_params.get("fillers", None)
+                
+                # Define the tool
+                self.define_tool(
+                    name=name,
+                    description=description,
+                    parameters=parameters,
+                    handler=func,
+                    secure=secure,
+                    fillers=fillers
+                )
