@@ -817,7 +817,7 @@ class AgentBase(SWMLService):
 
     def _render_swml(self, call_id: str = None, modifications: Optional[dict] = None) -> str:
         """
-        Render the complete SWML document
+        Render the complete SWML document using SWMLService methods
         
         Args:
             call_id: Optional call ID for session-specific tokens
@@ -826,6 +826,9 @@ class AgentBase(SWMLService):
         Returns:
             SWML document as a string
         """
+        # Reset the document to a clean state
+        self.reset_document()
+        
         # Get prompt
         prompt = self.get_prompt()
         prompt_is_pom = isinstance(prompt, list)
@@ -843,7 +846,7 @@ class AgentBase(SWMLService):
         # Get the default webhook URL with auth
         default_webhook_url = self._build_webhook_url("swaig", query_params)
         
-        # Prepare SWAIG object
+        # Prepare SWAIG object (correct format)
         swaig_obj = {}
         
         # Add defaults if we have functions
@@ -891,49 +894,58 @@ class AgentBase(SWMLService):
         # Add functions array to SWAIG object if we have any
         if functions:
             swaig_obj["functions"] = functions
-            
+        
         # Add post-prompt URL if we have a post-prompt
         post_prompt_url = None
         if post_prompt:
             post_prompt_url = self._build_webhook_url("post_prompt", {})
         
-        # Construct SWML
-        swml = {
-            "version": "1.0.0",
-            "sections": {
-                "main": [
-                    {
-                        "answer": {}
-                    },
-                    {
-                        "ai": {
-                            "prompt": {}
-                        }
-                    }
-                ]
-            }
-        }
+        # Add answer verb with auto-answer enabled
+        self.add_answer_verb()
         
-        # Add post-prompt if set
-        if post_prompt:
-            swml["sections"]["main"][1]["ai"]["post_prompt"] = {
-                "text": post_prompt
-            }
-            if post_prompt_url:
-                swml["sections"]["main"][1]["ai"]["post_prompt_url"] = post_prompt_url
+        # Use the AI verb handler to build and validate the AI verb config
+        ai_config = {}
         
-        # Add prompt based on type
-        if prompt_is_pom:
-            swml["sections"]["main"][1]["ai"]["prompt"]["pom"] = prompt
+        # Get the AI verb handler
+        ai_handler = self.verb_registry.get_handler("ai")
+        if ai_handler:
+            try:
+                # Build AI config using the proper handler
+                ai_config = ai_handler.build_config(
+                    prompt_text=None if prompt_is_pom else prompt,
+                    prompt_pom=prompt if prompt_is_pom else None,
+                    post_prompt=post_prompt,
+                    post_prompt_url=post_prompt_url,
+                    swaig=swaig_obj if swaig_obj else None
+                )
+            except ValueError as e:
+                if not self._suppress_logs:
+                    print(f"Error building AI verb configuration: {str(e)}")
         else:
-            swml["sections"]["main"][1]["ai"]["prompt"]["text"] = prompt
-        
-        # Add SWAIG if we have functions
-        if swaig_obj:
-            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_obj
+            # Fallback if no handler (shouldn't happen but just in case)
+            ai_config = {
+                "prompt": {
+                    "text" if not prompt_is_pom else "pom": prompt
+                }
+            }
             
+            if post_prompt:
+                ai_config["post_prompt"] = {"text": post_prompt}
+                if post_prompt_url:
+                    ai_config["post_prompt_url"] = post_prompt_url
+                
+            if swaig_obj:
+                ai_config["SWAIG"] = swaig_obj
+        
+        # Add the AI verb to the document
+        self.add_verb("ai", ai_config)
+        
         # Apply any modifications from the callback
         if modifications and isinstance(modifications, dict):
+            # We need a way to apply modifications to the document
+            # Get the current document
+            document = self.get_document()
+            
             # Simple recursive update function
             def update_dict(target, source):
                 for key, value in source.items():
@@ -942,10 +954,25 @@ class AgentBase(SWMLService):
                     else:
                         target[key] = value
             
-            update_dict(swml, modifications)
+            # Apply modifications to the document
+            update_dict(document, modifications)
             
-        # Return SWML as a string (will be converted to JSON by the endpoint)
-        return json.dumps(swml)
+            # Since we can't directly set the document in SWMLService, 
+            # we'll need to reset and rebuild if there are modifications
+            self.reset_document()
+            
+            # Add the modified document's sections
+            for section_name, section_content in document["sections"].items():
+                if section_name != "main":  # Main section is created by default
+                    self.add_section(section_name)
+                
+                # Add each verb to the section
+                for verb_obj in section_content:
+                    for verb_name, verb_config in verb_obj.items():
+                        self.add_verb_to_section(section_name, verb_name, verb_config)
+        
+        # Return the rendered document as a string
+        return self.render_document()
     
     def _check_basic_auth(self, request: Request) -> bool:
         """
