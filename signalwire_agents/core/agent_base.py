@@ -208,6 +208,13 @@ class AgentBase(SWMLService):
         # Register state tracking tools if enabled
         if enable_state_tracking:
             self._register_state_tracking_tools()
+        
+        # Initialize new configuration containers
+        self._hints = []
+        self._languages = []
+        self._pronounce = []
+        self._params = {}
+        self._global_data = {}
     
     def _process_prompt_sections(self):
         """
@@ -918,6 +925,29 @@ class AgentBase(SWMLService):
                     post_prompt_url=post_prompt_url,
                     swaig=swaig_obj if swaig_obj else None
                 )
+                
+                # Add new configuration parameters to the AI config
+                
+                # Add hints if any
+                if self._hints:
+                    ai_config["hints"] = self._hints
+                
+                # Add languages if any
+                if self._languages:
+                    ai_config["languages"] = self._languages
+                
+                # Add pronunciation rules if any
+                if self._pronounce:
+                    ai_config["pronounce"] = self._pronounce
+                
+                # Add params if any
+                if self._params:
+                    ai_config["params"] = self._params
+                
+                # Add global_data if any
+                if self._global_data:
+                    ai_config["global_data"] = self._global_data
+                    
             except ValueError as e:
                 if not self._suppress_logs:
                     print(f"Error building AI verb configuration: {str(e)}")
@@ -936,6 +966,22 @@ class AgentBase(SWMLService):
                 
             if swaig_obj:
                 ai_config["SWAIG"] = swaig_obj
+        
+        # Add the new configurations if not already added by the handler
+        if self._hints and "hints" not in ai_config:
+            ai_config["hints"] = self._hints
+        
+        if self._languages and "languages" not in ai_config:
+            ai_config["languages"] = self._languages
+        
+        if self._pronounce and "pronounce" not in ai_config:
+            ai_config["pronounce"] = self._pronounce
+        
+        if self._params and "params" not in ai_config:
+            ai_config["params"] = self._params
+        
+        if self._global_data and "global_data" not in ai_config:
+            ai_config["global_data"] = self._global_data
         
         # Add the AI verb to the document
         self.add_verb("ai", ai_config)
@@ -1468,15 +1514,6 @@ class AgentBase(SWMLService):
                             print("SUMMARY_FOUND_DATA_TEXT: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_DATA_TEXT: {summary}")
                         return summary
         
-            # Try other common fields
-            if isinstance(post_prompt_data, dict):
-                for field in ["content", "text", "summary", "result", "output"]:
-                    if field in post_prompt_data:
-                        summary = post_prompt_data.get(field)
-                        if not self._suppress_logs:
-                            print(f"SUMMARY_FOUND_FIELD_{field}: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_FIELD_{field}: {summary}")
-                        return summary
-        
         # 2. Check ai_response (legacy location)
         ai_response = body.get("ai_response", {})
         if ai_response and isinstance(ai_response, dict):
@@ -1949,3 +1986,211 @@ class AgentBase(SWMLService):
         except KeyboardInterrupt:
             self.log.info("server_shutdown")
             print("\nStopping the agent.")
+
+    # ----------------------------------------------------------------------
+    # AI Verb Configuration Methods
+    # ----------------------------------------------------------------------
+
+    def add_hint(self, hint: str) -> 'AgentBase':
+        """
+        Add a simple string hint to help the AI agent understand certain words better
+        
+        Args:
+            hint: The hint string to add
+            
+        Returns:
+            Self for method chaining
+        """
+        if isinstance(hint, str) and hint:
+            self._hints.append(hint)
+        return self
+
+    def add_hints(self, hints: List[str]) -> 'AgentBase':
+        """
+        Add multiple string hints
+        
+        Args:
+            hints: List of hint strings
+            
+        Returns:
+            Self for method chaining
+        """
+        if hints and isinstance(hints, list):
+            for hint in hints:
+                if isinstance(hint, str) and hint:
+                    self._hints.append(hint)
+        return self
+
+    def add_pattern_hint(self, 
+                         hint: str, 
+                         pattern: str, 
+                         replace: str, 
+                         ignore_case: bool = False) -> 'AgentBase':
+        """
+        Add a complex hint with pattern matching
+        
+        Args:
+            hint: The hint to match
+            pattern: Regular expression pattern
+            replace: Text to replace the hint with
+            ignore_case: Whether to ignore case when matching
+            
+        Returns:
+            Self for method chaining
+        """
+        if hint and pattern and replace:
+            self._hints.append({
+                "hint": hint,
+                "pattern": pattern,
+                "replace": replace,
+                "ignore_case": ignore_case
+            })
+        return self
+
+    def add_language(self, 
+                     name: str, 
+                     code: str, 
+                     voice: str,
+                     speech_fillers: Optional[List[str]] = None,
+                     function_fillers: Optional[List[str]] = None) -> 'AgentBase':
+        """
+        Add a language configuration to support multilingual conversations
+        
+        Args:
+            name: Name of the language (e.g., "English", "French")
+            code: Language code (e.g., "en-US", "fr-FR")
+            voice: TTS voice to use (e.g., "en-US-Neural2-F")
+            speech_fillers: Optional list of filler phrases for natural speech
+            function_fillers: Optional list of filler phrases during function calls
+            
+        Returns:
+            Self for method chaining
+        """
+        language = {
+            "name": name,
+            "code": code,
+            "voice": voice
+        }
+        
+        # Add fillers if provided
+        if speech_fillers and function_fillers:
+            language["speech_fillers"] = speech_fillers
+            language["function_fillers"] = function_fillers
+        elif speech_fillers or function_fillers:
+            # If only one type of fillers is provided, use the deprecated "fillers" field
+            fillers = speech_fillers or function_fillers
+            language["fillers"] = fillers
+        
+        self._languages.append(language)
+        return self
+
+    def set_languages(self, languages: List[Dict[str, Any]]) -> 'AgentBase':
+        """
+        Set all language configurations at once
+        
+        Args:
+            languages: List of language configuration dictionaries
+            
+        Returns:
+            Self for method chaining
+        """
+        if languages and isinstance(languages, list):
+            self._languages = languages
+        return self
+
+    def add_pronunciation(self, 
+                         replace: str, 
+                         with_text: str, 
+                         ignore_case: bool = False) -> 'AgentBase':
+        """
+        Add a pronunciation rule to help the AI speak certain words correctly
+        
+        Args:
+            replace: The expression to replace
+            with_text: The phonetic spelling to use instead
+            ignore_case: Whether to ignore case when matching
+            
+        Returns:
+            Self for method chaining
+        """
+        if replace and with_text:
+            rule = {
+                "replace": replace,
+                "with": with_text
+            }
+            if ignore_case:
+                rule["ignore_case"] = True
+            
+            self._pronounce.append(rule)
+        return self
+
+    def set_pronunciations(self, pronunciations: List[Dict[str, Any]]) -> 'AgentBase':
+        """
+        Set all pronunciation rules at once
+        
+        Args:
+            pronunciations: List of pronunciation rule dictionaries
+            
+        Returns:
+            Self for method chaining
+        """
+        if pronunciations and isinstance(pronunciations, list):
+            self._pronounce = pronunciations
+        return self
+
+    def set_param(self, key: str, value: Any) -> 'AgentBase':
+        """
+        Set a single AI parameter
+        
+        Args:
+            key: Parameter name
+            value: Parameter value
+            
+        Returns:
+            Self for method chaining
+        """
+        if key:
+            self._params[key] = value
+        return self
+
+    def set_params(self, params: Dict[str, Any]) -> 'AgentBase':
+        """
+        Set multiple AI parameters at once
+        
+        Args:
+            params: Dictionary of parameter name/value pairs
+            
+        Returns:
+            Self for method chaining
+        """
+        if params and isinstance(params, dict):
+            self._params.update(params)
+        return self
+
+    def set_global_data(self, data: Dict[str, Any]) -> 'AgentBase':
+        """
+        Set the global data available to the AI throughout the conversation
+        
+        Args:
+            data: Dictionary of global data
+            
+        Returns:
+            Self for method chaining
+        """
+        if data and isinstance(data, dict):
+            self._global_data = data
+        return self
+
+    def update_global_data(self, data: Dict[str, Any]) -> 'AgentBase':
+        """
+        Update the global data with new values
+        
+        Args:
+            data: Dictionary of global data to update
+            
+        Returns:
+            Self for method chaining
+        """
+        if data and isinstance(data, dict):
+            self._global_data.update(data)
+        return self

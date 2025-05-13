@@ -60,6 +60,7 @@ class SimpleAgent(AgentBase):
     1. How to create an agent with a structured prompt using POM
     2. How to define SWAIG functions that the AI can call
     3. How to return results from SWAIG functions
+    4. How to configure various AI verb parameters
     """
     
     def __init__(self, suppress_logs=False):
@@ -114,6 +115,63 @@ class SimpleAgent(AgentBase):
             "follow_up_needed": true/false
         }
         """)
+        
+        # Configure hints to help the AI understand certain words
+        self.add_hints([
+            "SignalWire", 
+            "SWML", 
+            "SWAIG"
+        ])
+        
+        # Add a pattern hint for pronunciation
+        self.add_pattern_hint(
+            hint="AI Agent", 
+            pattern="AI\\s+Agent", 
+            replace="A.I. Agent", 
+            ignore_case=True
+        )
+        
+        # Add pronunciation rules
+        self.add_pronunciation("API", "A P I", ignore_case=False)
+        self.add_pronunciation("SIP", "sip", ignore_case=True)
+        
+        # Configure language support
+        self.add_language(
+            name="English",
+            code="en-US",
+            voice="en-US-Neural2-F",
+            speech_fillers=["Let me think about that...", "One moment please..."],
+            function_fillers=["I'm looking that up for you...", "Let me check that..."]
+        )
+        
+        # Add a second language (Spanish)
+        self.add_language(
+            name="Spanish",
+            code="es",
+            voice="es-ES-Neural2-A",
+            speech_fillers=["Un momento por favor...", "Estoy pensando..."],
+            function_fillers=["Estoy buscando esa información...", "Déjame verificar..."]
+        )
+        
+        # Set AI behavior parameters
+        self.set_params({
+            "wait_for_user": False,
+            "end_of_speech_timeout": 1000,
+            "ai_volume": 5,
+            "languages_enabled": True,
+            "local_tz": "America/Los_Angeles"
+        })
+        
+        # Add global data available to the AI
+        self.set_global_data({
+            "company_name": "SignalWire",
+            "product": "AI Agent SDK",
+            "supported_features": [
+                "Voice AI",
+                "Telephone integration",
+                "SWAIG functions"
+            ]
+        })
         
         logger.info("agent_initialized", agent_name=self.name, route=self.route)
     
