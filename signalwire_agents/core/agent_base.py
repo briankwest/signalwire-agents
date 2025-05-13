@@ -2060,25 +2060,63 @@ class AgentBase(SWMLService):
                      code: str, 
                      voice: str,
                      speech_fillers: Optional[List[str]] = None,
-                     function_fillers: Optional[List[str]] = None) -> 'AgentBase':
+                     function_fillers: Optional[List[str]] = None,
+                     engine: Optional[str] = None,
+                     model: Optional[str] = None) -> 'AgentBase':
         """
         Add a language configuration to support multilingual conversations
         
         Args:
             name: Name of the language (e.g., "English", "French")
             code: Language code (e.g., "en-US", "fr-FR")
-            voice: TTS voice to use (e.g., "en-US-Neural2-F")
+            voice: TTS voice to use. Can be a simple name (e.g., "en-US-Neural2-F") 
+                  or a combined format "engine.voice:model" (e.g., "elevenlabs.josh:eleven_turbo_v2_5")
             speech_fillers: Optional list of filler phrases for natural speech
             function_fillers: Optional list of filler phrases during function calls
+            engine: Optional explicit engine name (e.g., "elevenlabs", "rime")
+            model: Optional explicit model name (e.g., "eleven_turbo_v2_5", "arcana")
             
         Returns:
             Self for method chaining
+            
+        Examples:
+            # Simple voice name
+            agent.add_language("English", "en-US", "en-US-Neural2-F")
+            
+            # Explicit parameters
+            agent.add_language("English", "en-US", "josh", engine="elevenlabs", model="eleven_turbo_v2_5")
+            
+            # Combined format
+            agent.add_language("English", "en-US", "elevenlabs.josh:eleven_turbo_v2_5")
         """
         language = {
             "name": name,
-            "code": code,
-            "voice": voice
+            "code": code
         }
+        
+        # Handle voice formatting (either explicit params or combined string)
+        if engine or model:
+            # Use explicit parameters if provided
+            language["voice"] = voice
+            if engine:
+                language["engine"] = engine
+            if model:
+                language["model"] = model
+        elif "." in voice and ":" in voice:
+            # Parse combined string format: "engine.voice:model"
+            try:
+                engine_voice, model_part = voice.split(":", 1)
+                engine_part, voice_part = engine_voice.split(".", 1)
+                
+                language["voice"] = voice_part
+                language["engine"] = engine_part
+                language["model"] = model_part
+            except ValueError:
+                # If parsing fails, use the voice string as-is
+                language["voice"] = voice
+        else:
+            # Simple voice string
+            language["voice"] = voice
         
         # Add fillers if provided
         if speech_fillers and function_fillers:

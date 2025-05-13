@@ -137,21 +137,48 @@ class SimpleAgent(AgentBase):
         self.add_pronunciation("SIP", "sip", ignore_case=True)
         
         # Configure language support
+        # Example 1: Simple format
         self.add_language(
             name="English",
             code="en-US",
-            voice="en-US-Neural2-F",
+            voice="elevenlabs.josh",
             speech_fillers=["Let me think about that...", "One moment please..."],
             function_fillers=["I'm looking that up for you...", "Let me check that..."]
         )
-        
-        # Add a second language (Spanish)
+
+        # Example 2: Explicit parameters with engine and model
+        self.add_language(
+            name="British English",
+            code="en-GB",
+            voice="emma",
+            engine="elevenlabs",
+            model="eleven_turbo_v2",
+            speech_fillers=["Just a moment...", "Thinking..."]
+        )
+
+        # Example 3: Combined string format
         self.add_language(
             name="Spanish",
             code="es",
-            voice="es-ES-Neural2-A",
+            voice="elevenlabs.antonio:eleven_multilingual_v2",
             speech_fillers=["Un momento por favor...", "Estoy pensando..."],
             function_fillers=["Estoy buscando esa información...", "Déjame verificar..."]
+        )
+
+        # Example 4: Rime engine with explicit parameters
+        self.add_language(
+            name="French",
+            code="fr-FR",
+            voice="claire",
+            engine="rime",
+            model="arcana"
+        )
+
+        # Example 5: Rime engine with combined format
+        self.add_language(
+            name="German",
+            code="de-DE",
+            voice="rime.hans:arcana"
         )
         
         # Set AI behavior parameters
