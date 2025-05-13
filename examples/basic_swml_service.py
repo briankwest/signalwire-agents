@@ -19,40 +19,14 @@ import json
 import argparse
 import logging
 
-# Import structlog for proper structured logging
+# Import structlog for logger instance creation
 import structlog
 
-# Import the SWMLService class
+# Import the SWMLService class - this will set up the logging configuration
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_builder import SWMLBuilder
 
-# Configure structlog
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.stdlib.BoundLogger,
-    cache_logger_on_first_use=True,
-)
-
-# Set up the root logger with structlog
-logging.basicConfig(
-    format="%(message)s",
-    stream=sys.stdout,
-    level=logging.INFO,
-)
-
-# Create structured logger
+# Create structured logger for this example
 logger = structlog.get_logger("basic_swml")
 
 
@@ -68,10 +42,6 @@ class VoicemailService(SWMLService):
             host=host,
             port=port
         )
-        
-        # Set up logger for this instance
-        self.log = logger.bind(service=self.name)
-        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the SWML document
         self.build_voicemail_document()
@@ -130,10 +100,6 @@ class IvrMenuService(SWMLService):
             host=host,
             port=port
         )
-        
-        # Set up logger for this instance
-        self.log = logger.bind(service=self.name)
-        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the SWML document
         self.build_ivr_document()
@@ -237,10 +203,6 @@ class CallTransferService(SWMLService):
             port=port
         )
         
-        # Set up logger for this instance
-        self.log = logger.bind(service=self.name)
-        self.log.info("service_initializing", route=self.route, host=host, port=port)
-        
         # Build the SWML document
         self.build_transfer_document()
     
@@ -308,10 +270,6 @@ class CallRecordingService(SWMLService):
             host=host,
             port=port
         )
-        
-        # Set up logger for this instance
-        self.log = logger.bind(service=self.name)
-        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the SWML document
         self.build_recording_document()

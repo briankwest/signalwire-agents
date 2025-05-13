@@ -10,7 +10,55 @@ import inspect
 import json
 import secrets
 import base64
+import logging
+import sys
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type
+
+# Import and configure structlog
+try:
+    import structlog
+    
+    # Only configure if not already configured
+    if not hasattr(structlog, "_configured") or not structlog._configured:
+        structlog.configure(
+            processors=[
+                structlog.stdlib.filter_by_level,
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.UnicodeDecoder(),
+                structlog.processors.JSONRenderer()
+            ],
+            context_class=dict,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+        
+        # Set up root logger with structlog
+        logging.basicConfig(
+            format="%(message)s",
+            stream=sys.stdout,
+            level=logging.INFO,
+        )
+        
+        # Mark as configured to avoid duplicate configuration
+        structlog._configured = True
+    
+    # Create the module logger
+    logger = structlog.get_logger("swml_service")
+    
+except ImportError:
+    # Fallback to standard logging if structlog is not available
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stdout
+    )
+    logger = logging.getLogger("swml_service")
 
 try:
     import fastapi
@@ -65,6 +113,10 @@ class SWMLService:
         self.host = host
         self.port = port
         
+        # Initialize logger for this instance
+        self.log = logger.bind(service=name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
+        
         # Set basic auth credentials
         if basic_auth is not None:
             # Use provided credentials
@@ -87,9 +139,9 @@ class SWMLService:
         if schema_path is None:
             schema_path = self._find_schema_path()
             if schema_path:
-                print(f"Found schema.json at: {schema_path}")
+                self.log.debug("schema_found", path=schema_path)
             else:
-                print("Warning: Could not find schema.json file")
+                self.log.warning("schema_not_found")
         
         # Initialize schema utils
         self.schema_utils = SchemaUtils(schema_path)
