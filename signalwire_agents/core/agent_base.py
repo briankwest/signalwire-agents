@@ -135,6 +135,12 @@ class AgentBase(SWMLService):
             schema_path: Optional path to the schema file
             suppress_logs: Whether to suppress structured logs
         """
+        # Import SWMLService here to avoid circular imports
+        from signalwire_agents.core.swml_service import SWMLService
+        
+        # If schema_path is not provided, we'll let SWMLService find it through its _find_schema_path method
+        # which will be called in its __init__
+        
         # Initialize the SWMLService base class
         super().__init__(
             name=name,
@@ -144,6 +150,10 @@ class AgentBase(SWMLService):
             basic_auth=basic_auth,
             schema_path=schema_path
         )
+        
+        # Log the schema path if found and not suppressing logs
+        if self.schema_utils and self.schema_utils.schema_path and not suppress_logs:
+            print(f"Using schema.json at: {self.schema_utils.schema_path}")
         
         # Setup logger for this instance
         self.log = logger.bind(agent=name)

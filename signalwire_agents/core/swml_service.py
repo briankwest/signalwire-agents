@@ -83,27 +83,13 @@ class SWMLService:
                 password = secrets.token_urlsafe(16)
                 self._basic_auth = (username, password)
         
-        # Try to find the schema file if not provided
+        # Find the schema file if not provided
         if schema_path is None:
-            # Try different locations
-            import sys
-            
-            # Get package directory
-            package_dir = os.path.dirname(os.path.dirname(__file__))
-            
-            # Potential locations for schema.json
-            potential_paths = [
-                os.path.join(os.getcwd(), "schema.json"),  # Current working directory
-                os.path.join(package_dir, "schema.json"),  # Package directory
-                os.path.join(os.path.dirname(package_dir), "schema.json"),  # Parent of package directory
-                os.path.join(sys.prefix, "schema.json"),  # Python installation directory
-            ]
-            
-            # Try to find the schema file
-            for path in potential_paths:
-                if os.path.exists(path):
-                    schema_path = path
-                    break
+            schema_path = self._find_schema_path()
+            if schema_path:
+                print(f"Found schema.json at: {schema_path}")
+            else:
+                print("Warning: Could not find schema.json file")
         
         # Initialize schema utils
         self.schema_utils = SchemaUtils(schema_path)
@@ -119,6 +105,57 @@ class SWMLService:
         # Initialize SWML document state
         self._current_document = self._create_empty_document()
         
+    def _find_schema_path(self) -> Optional[str]:
+        """
+        Find the schema.json file location
+        
+        Returns:
+            Path to schema.json if found, None otherwise
+        """
+        # Try package resources first (most reliable after pip install)
+        try:
+            import importlib.resources
+            try:
+                # Python 3.9+
+                with importlib.resources.files("signalwire_agents").joinpath("schema.json") as path:
+                    return str(path)
+            except AttributeError:
+                # Python 3.7-3.8
+                with importlib.resources.path("signalwire_agents", "schema.json") as path:
+                    return str(path)
+        except (ImportError, ModuleNotFoundError):
+            pass
+            
+        # Fall back to pkg_resources for older Python or alternative lookup
+        try:
+            import pkg_resources
+            return pkg_resources.resource_filename("signalwire_agents", "schema.json")
+        except (ImportError, ModuleNotFoundError, pkg_resources.DistributionNotFound):
+            pass
+
+        # Fall back to manual search in various locations
+        import sys
+        
+        # Get package directory
+        package_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        # Potential locations for schema.json
+        potential_paths = [
+            os.path.join(os.getcwd(), "schema.json"),  # Current working directory
+            os.path.join(package_dir, "schema.json"),  # Package directory
+            os.path.join(os.path.dirname(package_dir), "schema.json"),  # Parent of package directory
+            os.path.join(sys.prefix, "schema.json"),  # Python installation directory
+            os.path.join(package_dir, "data", "schema.json"),  # Data subdirectory
+            os.path.join(os.path.dirname(package_dir), "data", "schema.json"),  # Parent's data subdirectory
+        ]
+        
+        # Try to find the schema file
+        for path in potential_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
     def _create_empty_document(self) -> Dict[str, Any]:
         """
         Create an empty SWML document
