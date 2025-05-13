@@ -11,8 +11,41 @@ import os
 import sys
 import json
 import argparse
+import logging
+
+# Import structlog for proper structured logging
+import structlog
 
 from signalwire_agents.core.swml_service import SWMLService
+
+# Configure structlog
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+# Set up the root logger with structlog
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.INFO,
+)
+
+# Create structured logger
+logger = structlog.get_logger("dynamic_swml")
 
 
 class DynamicGreetingService(SWMLService):
@@ -27,6 +60,10 @@ class DynamicGreetingService(SWMLService):
             host=host,
             port=port
         )
+        
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the default SWML document
         self.build_default_document()
@@ -53,6 +90,8 @@ class DynamicGreetingService(SWMLService):
         
         # Add hang up
         self.add_hangup_verb()
+        
+        self.log.debug("default_document_built")
     
     def on_request(self, request_data: dict = None) -> dict:
         """
@@ -66,7 +105,13 @@ class DynamicGreetingService(SWMLService):
         """
         # If there's no request data, use the default document
         if not request_data:
+            self.log.debug("no_request_data_using_default")
             return None
+        
+        self.log.debug("customizing_document", 
+                      caller_name=request_data.get("caller_name"),
+                      caller_type=request_data.get("caller_type"),
+                      department=request_data.get("department"))
         
         # Reset the document to start fresh
         self.reset_document()
@@ -151,6 +196,11 @@ class DynamicGreetingService(SWMLService):
         # Add hang up as fallback
         self.add_hangup_verb()
         
+        self.log.info("document_customized", 
+                     caller_type=caller_type,
+                     department=department,
+                     has_name=caller_name is not None)
+        
         # Return None to use the document we just built
         return None  # The document has already been modified
 
@@ -167,6 +217,10 @@ class CallRouterService(SWMLService):
             host=host,
             port=port
         )
+        
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the default SWML document
         self.build_default_document()
@@ -192,6 +246,8 @@ class CallRouterService(SWMLService):
         
         # Add hang up
         self.add_hangup_verb()
+        
+        self.log.debug("default_document_built")
     
     def on_request(self, request_data: dict = None) -> dict:
         """
@@ -205,7 +261,14 @@ class CallRouterService(SWMLService):
         """
         # If there's no request data, use the default document
         if not request_data:
+            self.log.debug("no_request_data_using_default")
             return None
+        
+        self.log.debug("customizing_routing", 
+                      region=request_data.get("region"),
+                      high_volume=request_data.get("high_volume"),
+                      queue_length=request_data.get("queue_length"),
+                      callback_number=request_data.get("callback_number"))
         
         # Create a new document
         self.reset_document()
@@ -225,6 +288,7 @@ class CallRouterService(SWMLService):
         
         # Handle callback requests
         if callback_number:
+            self.log.info("processing_callback_request", callback_number=callback_number)
             self.add_verb("play", {
                 "url": "say:We'll call you back at the number you provided. Thank you for your patience."
             })
@@ -233,6 +297,7 @@ class CallRouterService(SWMLService):
         
         # Inform caller if we're experiencing high volume
         if high_volume or queue_length > 10:
+            self.log.info("high_volume_detected", queue_length=queue_length)
             self.add_verb("play", {
                 "url": "say:We're currently experiencing higher than normal call volume. Your wait time may be extended."
             })
@@ -264,6 +329,7 @@ class CallRouterService(SWMLService):
         
         # Route based on region if provided
         if region:
+            self.log.info("routing_by_region", region=region)
             region_numbers = {
                 "east": ["+15551112222", "+15551113333"],
                 "west": ["+15552223333", "+15552224444"],
@@ -275,6 +341,7 @@ class CallRouterService(SWMLService):
             
             # If we have multiple numbers for the region, try them in parallel
             if len(numbers) > 1:
+                self.log.debug("using_parallel_connection", numbers=numbers)
                 parallel_targets = [{"to": num} for num in numbers]
                 self.add_verb("connect", {
                     "parallel": parallel_targets,
@@ -283,6 +350,7 @@ class CallRouterService(SWMLService):
                 })
             else:
                 # Just one number, connect directly
+                self.log.debug("using_direct_connection", number=numbers[0])
                 self.add_verb("connect", {
                     "to": numbers[0],
                     "timeout": 30,
@@ -290,6 +358,7 @@ class CallRouterService(SWMLService):
                 })
         else:
             # No region specified, use default routing
+            self.log.info("using_default_routing")
             self.add_verb("connect", {
                 "to": "+15551234567",  # Default number
                 "timeout": 30
@@ -311,8 +380,13 @@ def main():
                         default="greeting", help="Which service to run")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=3000, help="Port to bind to")
+    parser.add_argument("--suppress-logs", action="store_true", help="Suppress structured logs")
     
     args = parser.parse_args()
+    
+    # Set log level based on suppress-logs flag
+    if args.suppress_logs:
+        logging.getLogger().setLevel(logging.WARNING)
     
     # Create the selected service
     if args.service == "greeting":
@@ -322,6 +396,12 @@ def main():
     
     # Get auth credentials
     username, password = service.get_basic_auth_credentials()
+    
+    logger.info("starting_service", 
+               service=args.service, 
+               url=f"http://{args.host}:{args.port}{service.route}",
+               username=username,
+               password_length=len(password))
     
     print(f"Starting {args.service} service on http://{args.host}:{args.port}{service.route}")
     print(f"Basic Auth: {username}:{password}")
@@ -348,6 +428,7 @@ def main():
     try:
         service.serve(host=args.host, port=args.port)
     except KeyboardInterrupt:
+        logger.info("server_shutdown")
         print("\nShutting down...")
 
 

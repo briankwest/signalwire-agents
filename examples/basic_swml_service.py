@@ -17,10 +17,43 @@ import os
 import sys
 import json
 import argparse
+import logging
+
+# Import structlog for proper structured logging
+import structlog
 
 # Import the SWMLService class
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_builder import SWMLBuilder
+
+# Configure structlog
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+# Set up the root logger with structlog
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.INFO,
+)
+
+# Create structured logger
+logger = structlog.get_logger("basic_swml")
 
 
 class VoicemailService(SWMLService):
@@ -35,6 +68,10 @@ class VoicemailService(SWMLService):
             host=host,
             port=port
         )
+        
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the SWML document
         self.build_voicemail_document()
@@ -77,6 +114,8 @@ class VoicemailService(SWMLService):
         
         # Hang up
         self.add_hangup_verb()
+        
+        self.log.debug("voicemail_document_built")
 
 
 class IvrMenuService(SWMLService):
@@ -92,6 +131,10 @@ class IvrMenuService(SWMLService):
             port=port
         )
         
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
+        
         # Build the SWML document
         self.build_ivr_document()
     
@@ -105,6 +148,7 @@ class IvrMenuService(SWMLService):
         
         # Add main menu section
         self.add_section("main_menu")
+        self.log.debug("adding_section", section="main_menu")
         
         # Add prompt verb for the main menu
         self.add_verb_to_section("main_menu", "prompt", {
@@ -137,6 +181,7 @@ class IvrMenuService(SWMLService):
         
         # Add sales section
         self.add_section("sales")
+        self.log.debug("adding_section", section="sales")
         self.add_verb_to_section("sales", "play", {
             "url": "say:Connecting you to sales. Please hold."
         })
@@ -146,6 +191,7 @@ class IvrMenuService(SWMLService):
         
         # Add support section
         self.add_section("support")
+        self.log.debug("adding_section", section="support")
         self.add_verb_to_section("support", "play", {
             "url": "say:Connecting you to support. Please hold."
         })
@@ -155,6 +201,7 @@ class IvrMenuService(SWMLService):
         
         # Add voicemail section
         self.add_section("voicemail")
+        self.log.debug("adding_section", section="voicemail")
         self.add_verb_to_section("voicemail", "play", {
             "url": "say:Please leave a message after the beep."
         })
@@ -173,6 +220,8 @@ class IvrMenuService(SWMLService):
         self.add_verb("transfer", {
             "dest": "main_menu"
         })
+        
+        self.log.debug("ivr_document_built")
 
 
 class CallTransferService(SWMLService):
@@ -187,6 +236,10 @@ class CallTransferService(SWMLService):
             host=host,
             port=port
         )
+        
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
         
         # Build the SWML document
         self.build_transfer_document()
@@ -205,6 +258,7 @@ class CallTransferService(SWMLService):
         })
         
         # Add connect verb with parallel dialing
+        self.log.debug("setting_up_parallel_dialing", agents=3)
         self.add_verb("connect", {
             "from": "+15551234567",  # Replace with your from number
             "timeout": 30,  # 30 seconds timeout
@@ -238,6 +292,8 @@ class CallTransferService(SWMLService):
         
         # Hang up
         self.add_hangup_verb()
+        
+        self.log.debug("transfer_document_built")
 
 
 class CallRecordingService(SWMLService):
@@ -253,6 +309,10 @@ class CallRecordingService(SWMLService):
             port=port
         )
         
+        # Set up logger for this instance
+        self.log = logger.bind(service=self.name)
+        self.log.info("service_initializing", route=self.route, host=host, port=port)
+        
         # Build the SWML document
         self.build_recording_document()
     
@@ -265,6 +325,7 @@ class CallRecordingService(SWMLService):
         self.add_answer_verb()
         
         # Start recording the call in the background
+        self.log.debug("starting_call_recording", format="mp3", stereo=True)
         self.add_verb("record_call", {
             "control_id": "call_recording",
             "format": "mp3",
@@ -295,6 +356,7 @@ class CallRecordingService(SWMLService):
         self.add_verb("sleep", 30000)  # 30 seconds
         
         # Stop recording
+        self.log.debug("stopping_call_recording", control_id="call_recording")
         self.add_verb("stop_record_call", {
             "control_id": "call_recording"
         })
@@ -306,6 +368,8 @@ class CallRecordingService(SWMLService):
         
         # Hang up
         self.add_hangup_verb()
+        
+        self.log.debug("recording_document_built")
 
 
 def main():
@@ -316,8 +380,13 @@ def main():
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=3000, help="Port to bind to")
     parser.add_argument("--show-swml", action="store_true", help="Show SWML document only, don't start server")
+    parser.add_argument("--suppress-logs", action="store_true", help="Suppress structured logs")
     
     args = parser.parse_args()
+    
+    # Set log level based on suppress-logs flag
+    if args.suppress_logs:
+        logging.getLogger().setLevel(logging.WARNING)
     
     # Create the selected service
     if args.service == "voicemail":
@@ -331,10 +400,18 @@ def main():
     
     # Either show the SWML or start the server
     if args.show_swml:
-        print(json.dumps(json.loads(service.render_document()), indent=2))
+        swml_doc = service.render_document()
+        logger.info("displaying_swml_document", service=args.service, size=len(swml_doc))
+        print(json.dumps(json.loads(swml_doc), indent=2))
     else:
         # Get auth credentials
         username, password = service.get_basic_auth_credentials()
+        
+        logger.info("starting_service", 
+                   service=args.service, 
+                   url=f"http://{args.host}:{args.port}{service.route}",
+                   username=username,
+                   password_length=len(password))
         
         print(f"Starting {args.service} service on http://{args.host}:{args.port}{service.route}")
         print(f"Basic Auth: {username}:{password}")
@@ -349,6 +426,7 @@ def main():
         try:
             service.serve(host=args.host, port=args.port)
         except KeyboardInterrupt:
+            logger.info("server_shutdown")
             print("\nShutting down...")
 
 
