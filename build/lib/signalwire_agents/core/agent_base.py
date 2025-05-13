@@ -363,7 +363,8 @@ class AgentBase(SWMLService):
         body: str = "", 
         bullets: Optional[List[str]] = None,
         numbered: bool = False,
-        numbered_bullets: bool = False
+        numbered_bullets: bool = False,
+        subsections: Optional[List[Dict[str, Any]]] = None
     ) -> 'AgentBase':
         """
         Add a section to the prompt
@@ -374,28 +375,42 @@ class AgentBase(SWMLService):
             bullets: Optional list of bullet points
             numbered: Whether this section should be numbered
             numbered_bullets: Whether bullets should be numbered
+            subsections: Optional list of subsection objects
             
         Returns:
             Self for method chaining
         """
         if self._use_pom and self.pom:
-            # Check if the POM implementation supports numbered_bullets
-            if hasattr(self.pom, 'add_section') and 'numbered_bullets' in inspect.signature(self.pom.add_section).parameters:
-                self.pom.add_section(
-                    title=title,
-                    body=body,
-                    bullets=bullets,
-                    numbered=numbered,
-                    numbered_bullets=numbered_bullets
-                )
-            else:
-                # Fall back to compatible parameters only
-                self.pom.add_section(
-                    title=title,
-                    body=body,
-                    bullets=bullets,
-                    numbered=numbered
-                )
+            # Create parameters for add_section based on what's supported
+            kwargs = {}
+            
+            # Start with basic parameters
+            kwargs['title'] = title
+            kwargs['body'] = body
+            if bullets:
+                kwargs['bullets'] = bullets
+            
+            # Add optional parameters if they look supported
+            if hasattr(self.pom, 'add_section'):
+                sig = inspect.signature(self.pom.add_section)
+                if 'numbered' in sig.parameters:
+                    kwargs['numbered'] = numbered
+                if 'numberedBullets' in sig.parameters:
+                    kwargs['numberedBullets'] = numbered_bullets
+            
+            # Create the section
+            section = self.pom.add_section(**kwargs)
+            
+            # Now add subsections if provided, by calling add_subsection on the section
+            if subsections:
+                for subsection in subsections:
+                    if 'title' in subsection:
+                        section.add_subsection(
+                            title=subsection.get('title'),
+                            body=subsection.get('body', ''),
+                            bullets=subsection.get('bullets', [])
+                        )
+                
         return self
         
     def prompt_add_to_section(
@@ -446,12 +461,27 @@ class AgentBase(SWMLService):
             Self for method chaining
         """
         if self._use_pom and self.pom:
-            self.pom.add_subsection(
-                parent_title=parent_title,
+            # First find or create the parent section
+            parent_section = None
+            
+            # Try to find the parent section by title
+            if hasattr(self.pom, 'sections'):
+                for section in self.pom.sections:
+                    if hasattr(section, 'title') and section.title == parent_title:
+                        parent_section = section
+                        break
+            
+            # If parent section not found, create it
+            if not parent_section:
+                parent_section = self.pom.add_section(title=parent_title)
+            
+            # Now call add_subsection on the parent section object, not on POM
+            parent_section.add_subsection(
                 title=title,
                 body=body,
-                bullets=bullets
+                bullets=bullets or []
             )
+            
         return self
     
     # ----------------------------------------------------------------------

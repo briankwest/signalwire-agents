@@ -33,7 +33,8 @@ class PomBuilder:
         self._sections: Dict[str, Section] = {}
     
     def add_section(self, title: str, body: str = "", bullets: Optional[List[str]] = None, 
-                    numbered: bool = False, numbered_bullets: bool = False) -> 'PomBuilder':
+                    numbered: bool = False, numbered_bullets: bool = False, 
+                    subsections: Optional[List[Dict[str, Any]]] = None) -> 'PomBuilder':
         """
         Add a new section to the POM
         
@@ -43,6 +44,7 @@ class PomBuilder:
             bullets: Optional list of bullet points
             numbered: Whether to number this section
             numbered_bullets: Whether to number bullet points
+            subsections: Optional list of subsection objects
             
         Returns:
             Self for method chaining
@@ -55,6 +57,21 @@ class PomBuilder:
             numberedBullets=numbered_bullets
         )
         self._sections[title] = section
+        
+        # Process subsections if provided
+        if subsections:
+            for subsection_data in subsections:
+                if 'title' in subsection_data:
+                    subsection_title = subsection_data['title']
+                    subsection_body = subsection_data.get('body', '')
+                    subsection_bullets = subsection_data.get('bullets', [])
+                    
+                    section.add_subsection(
+                        title=subsection_title,
+                        body=subsection_body,
+                        bullets=subsection_bullets or []
+                    )
+        
         return self
     
     def add_to_section(self, title: str, body: Optional[str] = None, bullet: Optional[str] = None, bullets: Optional[List[str]] = None) -> 'PomBuilder':

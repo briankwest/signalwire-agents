@@ -3,7 +3,10 @@ README.md
 pyproject.toml
 schema.json
 setup.py
+docs/agent_guide.md
+docs/swml_service_guide.md
 examples/basic_swml_service.py
+examples/concierge_agent_example.py
 examples/declarative_agent.py
 examples/dynamic_swml_service.py
 examples/env_auth_simple.py
@@ -12,6 +15,7 @@ examples/faq_bot_agent.py
 examples/multi_agent_server.py
 examples/simple_agent.py
 examples/stateful_agent.py
+examples/survey_agent_example.py
 examples/swaig_features_agent.py
 examples/swml_service_example.py
 examples/test_swaig_function.py
