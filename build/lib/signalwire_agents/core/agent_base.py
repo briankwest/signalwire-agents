@@ -171,6 +171,9 @@ class AgentBase:
         
         # Add native_functions parameter
         self.native_functions = native_functions or []
+        
+        # Register state tracking tools if enabled
+        self._register_state_tracking_tools()
     
     def _process_prompt_sections(self):
         """
@@ -733,25 +736,6 @@ class AgentBase:
             
         return url
 
-    def _create_tool_token(self, tool_name: str, call_id: str) -> str:
-        """
-        Create a token for a SWAIG function
-        
-        Args:
-            tool_name: Name of the tool/function
-            call_id: Call session ID
-            
-        Returns:
-            Token string for the function
-        """
-        # If using session manager, generate a token through it
-        if self._enable_state_tracking:
-            return self._session_manager.generate_token(function_name=tool_name, call_id=call_id)
-        
-        # Otherwise, use a simpler approach - just use the password as the token
-        # Since all requests are authenticated with basic auth anyway
-        return self._basic_auth[1]
-
     def _render_swml(self, call_id: str = None) -> str:
         """
         Render the complete SWML document
@@ -773,10 +757,8 @@ class AgentBase:
         if self._enable_state_tracking and call_id is None:
             call_id = self._session_manager.create_session()
             
-        # Query params with call_id (if available)
+        # Query params without call_id as it's not supported in query params
         query_params = {}
-        if call_id:
-            query_params["call_id"] = call_id
         
         # Get the default webhook URL with auth
         default_webhook_url = self._build_webhook_url("swaig", query_params)
@@ -799,11 +781,6 @@ class AgentBase:
         
         # Add each function to the functions array
         for name, func in self._swaig_functions.items():
-            # Get token for secure functions when we have a call_id
-            token = None
-            if func.secure and call_id:
-                token = self._create_tool_token(tool_name=name, call_id=call_id)
-                
             # Prepare function entry
             function_entry = {
                 "function": name,
@@ -817,14 +794,7 @@ class AgentBase:
             # Add fillers if present
             if func.fillers:
                 function_entry["filler"] = func.fillers
-                
-            # Add token to URL if we have one
-            if token:
-                # Create a copy of query_params and add token
-                token_params = query_params.copy()
-                token_params["token"] = token
-                function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
-                
+            
             swaig_functions.append(function_entry)
             
         # Add functions array to SWAIG object if we have any
@@ -836,26 +806,6 @@ class AgentBase:
         if post_prompt:
             post_prompt_url = self._build_webhook_url("post_prompt", query_params)
         
-        # Get hooks for state tracking
-        startup_hook_url = None
-        hangup_hook_url = None
-        
-        if self._enable_state_tracking and call_id:
-            # Create tokens for hooks
-            startup_token = self._create_tool_token("startup_hook", call_id)
-            hangup_token = self._create_tool_token("hangup_hook", call_id)
-            
-            # Create params with tokens
-            startup_params = query_params.copy()
-            startup_params["token"] = startup_token
-            
-            hangup_params = query_params.copy()
-            hangup_params["token"] = hangup_token
-            
-            # Build URLs
-            startup_hook_url = self._build_webhook_url("swaig", startup_params)
-            hangup_hook_url = self._build_webhook_url("swaig", hangup_params)
-            
         # Construct SWML
         swml = {
             "version": "1.0.0",
@@ -891,41 +841,7 @@ class AgentBase:
         if swaig_obj:
             swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_obj
             
-        # Add hooks for state tracking
-        if startup_hook_url:
-            swml["sections"]["main"][1]["ai"]["SWML"] = {
-                "stack": [
-                    {
-                        "function": "startup_hook"
-                    }
-                ],
-                "functions": {
-                    "startup_hook": {
-                        "curl": {
-                            "url": startup_hook_url,
-                            "method": "POST",
-                            "content_type": "application/json",
-                            "body": {
-                                "function": "startup_hook",
-                                "call_id": call_id
-                            }
-                        }
-                    }
-                }
-            }
-            
-        if hangup_hook_url:
-            swml["on_hangup"] = {
-                "curl": {
-                    "url": hangup_hook_url,
-                    "method": "POST", 
-                    "content_type": "application/json",
-                    "body": {
-                        "function": "hangup_hook",
-                        "call_id": call_id
-                    }
-                }
-            }
+ 
             
         # Return SWML as a string (will be converted to JSON by the endpoint)
         return json.dumps(swml)
@@ -972,8 +888,8 @@ class AgentBase:
                 response.headers["WWW-Authenticate"] = "Basic"
                 return HTTPException(status_code=401, detail="Unauthorized")
                 
-            # Generate SWML
-            call_id = request.query_params.get("call_id")
+            # Generate SWML - call_id should come from the body not query params
+            call_id = None
             swml_string = self._render_swml(call_id)
             
             # Parse the string to get the actual JSON object
@@ -994,8 +910,8 @@ class AgentBase:
                 # Parse the request body JSON (if any)
                 body = await self._parse_request_body(request)
                 
-                # Get call_id from query params or body
-                call_id = request.query_params.get("call_id", body.get("call_id"))
+                # Get call_id from body only, not query params
+                call_id = body.get("call_id")
                 
                 # Just store the body for now, actual state initialization happens 
                 # through startup_hook, not through main endpoint
@@ -1023,7 +939,7 @@ class AgentBase:
             try:
                 summary = await request.json()
                 
-                # Save the summary to state if call_id is present
+                # Save the summary to state if call_id is present in the body
                 call_id = summary.get("call_id")
                 if call_id:
                     state = self.get_state(call_id) or {}
@@ -1048,9 +964,8 @@ class AgentBase:
             # Parse the request body
             body = await self._parse_request_body(request)
             
-            # Get call_id and token from query params or body
-            call_id = request.query_params.get("call_id", body.get("call_id"))
-            token = request.query_params.get("token", body.get("token"))
+            # Get call_id from body only
+            call_id = body.get("call_id")
             
             # Extract function name from the request body
             function_name = body.get("function")
@@ -1060,49 +975,7 @@ class AgentBase:
                 print(f"DEBUG: SWAIG missing function name in request")
                 return HTTPException(status_code=400, detail="Function name not provided")
             
-            # Special hooks for state tracking
-            if function_name == "startup_hook":
-                if not self._enable_state_tracking:
-                    return {"status": "skipped", "message": "State tracking is disabled"}
-                
-                if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
-                    return HTTPException(status_code=401, detail="Unauthorized")
-                    
-                # Activate the session
-                self._session_manager.activate_session(call_id)
-                
-                # Call the hook method with the request data
-                self.on_call_start(call_id, body)
-                
-                return {"status": "ok"}
-                
-            if function_name == "hangup_hook":
-                if not self._enable_state_tracking:
-                    return {"status": "skipped", "message": "State tracking is disabled"}
-                
-                if not call_id or not token or not self.validate_tool_token(function_name, token, call_id):
-                    return HTTPException(status_code=401, detail="Unauthorized")
-                    
-                # End the session
-                self._session_manager.end_session(call_id)
-                
-                # Call the hook method
-                self.on_call_end(call_id)
-                
-                return {"status": "ok"}
-            
-            # Regular tool calls
-            if function_name in self._swaig_functions and self._swaig_functions[function_name].secure:
-                # First check if basic auth was successful (we've already passed that check to get here)
-                # This allows either basic auth or token auth to work
-                has_basic_auth = self._check_basic_auth(request)
-                has_token_auth = call_id and token and self.validate_tool_token(function_name, token, call_id)
-                
-                if not (has_basic_auth or has_token_auth):
-                    print(f"DEBUG: SWAIG authentication failed for {function_name}: basic_auth={has_basic_auth}, token_auth={has_token_auth}")
-                    return HTTPException(status_code=401, detail="Unauthorized")
-                    
-                print(f"DEBUG: SWAIG authentication successful for {function_name} via {'basic auth' if has_basic_auth else 'token'}")
+            # All SWAIG functions are authorized via basic auth, which we already checked above
             
             # Extract arguments from the request body
             # In SWAIG, arguments come in an "argument" object with "parsed" and "raw" properties
@@ -1240,6 +1113,7 @@ class AgentBase:
     def _process_request_data(self, call_id: str, data: Dict[str, Any]) -> None:
         """
         Process incoming request data for an active call
+        
         
         This is called after a call has been established via startup_hook
         and can be used to update state or trigger other behaviors.
@@ -1434,76 +1308,7 @@ class AgentBase:
     # Hook methods for call lifecycle
     # ----------------------------------------------------------------------
     
-    def on_call_start(self, call_id: str, call_data: Dict[str, Any]) -> None:
-        """
-        Called when a call starts (from startup_hook)
-        
-        This method is part of the state tracking system and initializes state storage
-        when a call officially begins.
-        
-        Args:
-            call_id: Call session ID
-            call_data: Initial call data
-            
-        Override this in subclasses to customize behavior.
-        The base implementation initializes state storage.
-        """
-        # Check for existing pending requests
-        existing_state = self.get_state(call_id)
-        pending_requests = []
-        
-        if existing_state:
-            # Save any pending requests to process after initialization
-            pending_requests = existing_state.get("pending_requests", [])
-        
-        # Initialize fresh state with call data
-        self.set_state(call_id, {
-            "call_data": call_data,
-            "started_at": datetime.now().isoformat(),
-            "events": [{"type": "call_start", "timestamp": datetime.now().isoformat()}],
-            "active": True
-        })
-        
-        # Process any pending requests that were received before the call officially started
-        if pending_requests:
-            state = self.get_state(call_id)
-            state["pending_requests"] = pending_requests
-            
-            # Process each pending request
-            for request in pending_requests:
-                request_data = request.get("data", {})
-                if request_data:
-                    self._process_request_data(call_id, request_data)
-                    
-            # Clear pending requests since they've been processed
-            state = self.get_state(call_id)
-            if "pending_requests" in state:
-                del state["pending_requests"]
-                self.update_state(call_id, state)
-    
-    def on_call_end(self, call_id: str) -> None:
-        """
-        Called when a call ends (from hangup_hook)
-        
-        This method is part of the state tracking system and records the call end time
-        when a call officially ends.
-        
-        Args:
-            call_id: Call session ID
-            
-        Override this in subclasses to customize behavior.
-        The base implementation records the end time but keeps the state.
-        """
-        # Update state with end time
-        state = self.get_state(call_id)
-        if state:
-            state.setdefault("events", []).append({
-                "type": "call_end", 
-                "timestamp": datetime.now().isoformat()
-            })
-            state["ended_at"] = datetime.now().isoformat()
-            state["active"] = False
-            self.update_state(call_id, state)
+    # These methods have been removed in favor of using SWAIG tools
 
     def _register_class_decorated_tools(self):
         """
@@ -1581,3 +1386,67 @@ class AgentBase:
         if self._use_pom and self.pom:
             return self.pom.find_section(title) is not None
         return False
+
+    def _register_state_tracking_tools(self):
+        """
+        Register state tracking tools if enabled
+        """
+        if self._enable_state_tracking:
+            # Add startup_hook tool only if it doesn't already exist
+            if "startup_hook" not in self._swaig_functions:
+                self.define_tool(
+                    name="startup_hook",
+                    description="Called when a new conversation starts",
+                    parameters={},
+                    handler=self._startup_hook_handler,
+                    secure=True
+                )
+            
+            # Add hangup_hook tool only if it doesn't already exist
+            if "hangup_hook" not in self._swaig_functions:
+                self.define_tool(
+                    name="hangup_hook",
+                    description="Called when a conversation ends",
+                    parameters={},
+                    handler=self._hangup_hook_handler,
+                    secure=True
+                )
+    
+    def _startup_hook_handler(self, args, raw_data):
+        """Default handler for startup_hook"""
+        call_id = raw_data.get("call_id")
+        if call_id:
+            # Activate the session
+            self._session_manager.activate_session(call_id)
+            
+            # Initialize state storage with call data
+            self.set_state(call_id, {
+                "call_data": raw_data,
+                "started_at": datetime.now().isoformat(),
+                "events": [{"type": "call_start", "timestamp": datetime.now().isoformat()}],
+                "active": True
+            })
+            
+            return SwaigFunctionResult("Call started")
+        return SwaigFunctionResult("No call ID provided")
+    
+    def _hangup_hook_handler(self, args, raw_data):
+        """Default handler for hangup_hook"""
+        call_id = raw_data.get("call_id")
+        if call_id:
+            # End the session
+            self._session_manager.end_session(call_id)
+            
+            # Update state with end time
+            state = self.get_state(call_id)
+            if state:
+                state.setdefault("events", []).append({
+                    "type": "call_end", 
+                    "timestamp": datetime.now().isoformat()
+                })
+                state["ended_at"] = datetime.now().isoformat()
+                state["active"] = False
+                self.update_state(call_id, state)
+                
+            return SwaigFunctionResult("Call ended")
+        return SwaigFunctionResult("No call ID provided")
