@@ -61,6 +61,7 @@ class SimpleAgent(AgentBase):
     2. How to define SWAIG functions that the AI can call
     3. How to return results from SWAIG functions
     4. How to configure various AI verb parameters
+    5. How to configure SWAIG with native functions and remote includes
     """
     
     def __init__(self, suppress_logs=False):
@@ -172,6 +173,28 @@ class SimpleAgent(AgentBase):
                 "SWAIG functions"
             ]
         })
+        
+        # Configure native functions (built-in functions)
+        self.set_native_functions([
+            "check_time",
+            "wait_seconds"
+        ])
+        
+        # Add remote function includes
+        self.add_function_include(
+            url="https://api.example.com/remote-functions",
+            functions=["get_weather_extended", "get_traffic", "get_news"],
+            meta_data={
+                "auth_type": "bearer",
+                "region": "us-west"
+            }
+        )
+        
+        # Add another remote function include with a different URL
+        self.add_function_include(
+            url="https://ai-tools.example.org/functions",
+            functions=["translate_text", "summarize_document"]
+        )
         
         logger.info("agent_initialized", agent_name=self.name, route=self.route)
     

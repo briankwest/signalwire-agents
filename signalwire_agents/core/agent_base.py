@@ -215,6 +215,7 @@ class AgentBase(SWMLService):
         self._pronounce = []
         self._params = {}
         self._global_data = {}
+        self._function_includes = []
     
     def _process_prompt_sections(self):
         """
@@ -865,6 +866,10 @@ class AgentBase(SWMLService):
         # Add native_functions if any are defined
         if self.native_functions:
             swaig_obj["native_functions"] = self.native_functions
+        
+        # Add includes if any are defined
+        if self._function_includes:
+            swaig_obj["includes"] = self._function_includes
         
         # Create functions array
         functions = []
@@ -1874,18 +1879,21 @@ class AgentBase(SWMLService):
         
     def add_native_function(self, function_name: str) -> 'AgentBase':
         """
-        Add a native function to the SWAIG object
+        Add a native function to the list of enabled native functions
         
         Args:
-            function_name: Name of the native function
+            function_name: Name of native function to enable
             
         Returns:
             Self for method chaining
         """
-        if function_name not in self.native_functions:
-            self.native_functions.append(function_name)
+        if function_name and isinstance(function_name, str):
+            if not self.native_functions:
+                self.native_functions = []
+            if function_name not in self.native_functions:
+                self.native_functions.append(function_name)
         return self
-        
+
     def remove_native_function(self, function_name: str) -> 'AgentBase':
         """
         Remove a native function from the SWAIG object
@@ -2193,4 +2201,62 @@ class AgentBase(SWMLService):
         """
         if data and isinstance(data, dict):
             self._global_data.update(data)
+        return self
+
+    def set_native_functions(self, function_names: List[str]) -> 'AgentBase':
+        """
+        Set the list of native functions to enable
+        
+        Args:
+            function_names: List of native function names
+            
+        Returns:
+            Self for method chaining
+        """
+        if function_names and isinstance(function_names, list):
+            self.native_functions = [name for name in function_names if isinstance(name, str)]
+        return self
+
+    def add_function_include(self, url: str, functions: List[str], meta_data: Optional[Dict[str, Any]] = None) -> 'AgentBase':
+        """
+        Add a remote function include to the SWAIG configuration
+        
+        Args:
+            url: URL to fetch remote functions from
+            functions: List of function names to include
+            meta_data: Optional metadata to include with the function include
+            
+        Returns:
+            Self for method chaining
+        """
+        if url and functions and isinstance(functions, list):
+            include = {
+                "url": url,
+                "functions": functions
+            }
+            if meta_data and isinstance(meta_data, dict):
+                include["meta_data"] = meta_data
+            
+            self._function_includes.append(include)
+        return self
+
+    def set_function_includes(self, includes: List[Dict[str, Any]]) -> 'AgentBase':
+        """
+        Set the complete list of function includes
+        
+        Args:
+            includes: List of include objects, each with url and functions properties
+            
+        Returns:
+            Self for method chaining
+        """
+        if includes and isinstance(includes, list):
+            # Validate each include has required properties
+            valid_includes = []
+            for include in includes:
+                if isinstance(include, dict) and "url" in include and "functions" in include:
+                    if isinstance(include["functions"], list):
+                        valid_includes.append(include)
+            
+            self._function_includes = valid_includes
         return self
