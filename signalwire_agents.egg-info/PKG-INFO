@@ -1,22 +1,25 @@
 Metadata-Version: 2.1
-Name: signalwire-agents
+Name: signalwire_agents
 Version: 0.1.0
-Summary: Python SDK for creating and hosting SignalWire AI Agents
-Home-page: https://github.com/signalwire/signalwire-agents
+Summary: SignalWire AI Agents SDK
+Home-page: https://github.com/signalwire/signalwire-ai-agents
 Author: SignalWire Team
 Author-email: info@signalwire.com
 Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Developers
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.7
 Classifier: Programming Language :: Python :: 3.8
 Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
-Requires-Python: >=3.8
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.7
 Requires-Dist: fastapi>=0.68.0
 Requires-Dist: uvicorn>=0.15.0
 Requires-Dist: pydantic>=1.9.0
 Requires-Dist: requests>=2.26.0
 Requires-Dist: pyyaml>=6.0
 Requires-Dist: python-dotenv>=0.19.1
+Requires-Dist: structlog>=23.1.0
 Requires-Dist: signalwire-pom>=0.1.0

@@ -23,12 +23,12 @@ class SchemaUtils:
     
     def __init__(self, schema_path: Optional[str] = None):
         """
-        Initialize with an optional schema path
+        Initialize the SchemaUtils with the provided schema
         
         Args:
-            schema_path: Path to the schema file. If not provided, the default path will be used.
+            schema_path: Path to the schema file (optional)
         """
-        self.schema_path = schema_path or self._get_default_schema_path()
+        self.schema_path = schema_path
         self.schema = self.load_schema()
         self.verbs = self._extract_verb_definitions()
         
@@ -45,13 +45,24 @@ class SchemaUtils:
         
     def load_schema(self) -> Dict[str, Any]:
         """
-        Load the schema from a file
+        Load the JSON schema from the specified path
         
         Returns:
             The schema as a dictionary
         """
-        with open(self.schema_path, "r") as f:
-            return json.load(f)
+        if not self.schema_path:
+            print(f"Warning: No schema path provided. Using empty schema.")
+            return {}
+            
+        try:
+            with open(self.schema_path, "r") as f:
+                schema = json.load(f)
+            print(f"Successfully loaded schema from {self.schema_path}")
+            return schema
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            print(f"Error loading schema: {e}")
+            print(f"Using empty schema as fallback")
+            return {}
     
     def _extract_verb_definitions(self) -> Dict[str, Dict[str, Any]]:
         """

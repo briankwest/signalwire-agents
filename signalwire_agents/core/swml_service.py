@@ -65,29 +65,51 @@ class SWMLService:
         self.host = host
         self.port = port
         
-        # Initialize schema utilities
-        self.schema_utils = SchemaUtils(schema_path)
-        
-        # Initialize verb handler registry
-        self.verb_registry = VerbHandlerRegistry()
-        
         # Set basic auth credentials
         if basic_auth is not None:
             # Use provided credentials
             self._basic_auth = basic_auth
         else:
-            # Check environment variables first - be explicit about getting them
+            # Check environment variables first
             env_user = os.environ.get('SWML_BASIC_AUTH_USER')
             env_pass = os.environ.get('SWML_BASIC_AUTH_PASSWORD')
             
             if env_user and env_pass:
-                # Use environment variables - create a new tuple to avoid reference issues
-                self._basic_auth = (str(env_user), str(env_pass))
+                # Use environment variables
+                self._basic_auth = (env_user, env_pass)
             else:
                 # Generate random credentials as fallback
                 username = f"user_{secrets.token_hex(4)}"
                 password = secrets.token_urlsafe(16)
                 self._basic_auth = (username, password)
+        
+        # Try to find the schema file if not provided
+        if schema_path is None:
+            # Try different locations
+            import sys
+            
+            # Get package directory
+            package_dir = os.path.dirname(os.path.dirname(__file__))
+            
+            # Potential locations for schema.json
+            potential_paths = [
+                os.path.join(os.getcwd(), "schema.json"),  # Current working directory
+                os.path.join(package_dir, "schema.json"),  # Package directory
+                os.path.join(os.path.dirname(package_dir), "schema.json"),  # Parent of package directory
+                os.path.join(sys.prefix, "schema.json"),  # Python installation directory
+            ]
+            
+            # Try to find the schema file
+            for path in potential_paths:
+                if os.path.exists(path):
+                    schema_path = path
+                    break
+        
+        # Initialize schema utils
+        self.schema_utils = SchemaUtils(schema_path)
+        
+        # Initialize verb handler registry
+        self.verb_registry = VerbHandlerRegistry()
         
         # Server state
         self._app = None

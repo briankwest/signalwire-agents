@@ -1,4 +1,5 @@
 README.md
+schema.json
 setup.py
 signalwire_agents/__init__.py
 signalwire_agents/agent_server.py
