@@ -5,14 +5,16 @@ AgentBase - Core foundation class for all SignalWire AI Agents
 import functools
 import inspect
 import os
+import sys
 import uuid
+import tempfile
+import traceback
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type, TypeVar
 import base64
 import secrets
 from urllib.parse import urlparse
 import json
 from datetime import datetime
-import traceback
 
 try:
     import fastapi
@@ -24,6 +26,39 @@ except ImportError:
         "fastapi is required. Install it with: pip install fastapi"
     )
 
+try:
+    import uvicorn
+except ImportError:
+    raise ImportError(
+        "uvicorn is required. Install it with: pip install uvicorn"
+    )
+
+try:
+    import structlog
+    # Configure structlog only if not already configured
+    if not structlog.is_configured():
+        structlog.configure(
+            processors=[
+                structlog.stdlib.filter_by_level,
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.UnicodeDecoder(),
+                structlog.processors.JSONRenderer()
+            ],
+            context_class=dict,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+except ImportError:
+    raise ImportError(
+        "structlog is required. Install it with: pip install structlog"
+    )
+
 from signalwire_agents.core.pom_builder import PomBuilder
 from signalwire_agents.core.swaig_function import SWAIGFunction
 from signalwire_agents.core.function_result import SwaigFunctionResult
@@ -33,6 +68,8 @@ from signalwire_agents.core.state import StateManager, FileStateManager
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_handler import AIVerbHandler
 
+# Create a logger
+logger = structlog.get_logger("agent_base")
 
 class AgentBase(SWMLService):
     """
@@ -72,7 +109,8 @@ class AgentBase(SWMLService):
         default_webhook_url: Optional[str] = None,
         agent_id: Optional[str] = None,
         native_functions: Optional[List[str]] = None,
-        schema_path: Optional[str] = None
+        schema_path: Optional[str] = None,
+        suppress_logs: bool = False
     ):
         """
         Initialize a new agent
@@ -95,6 +133,7 @@ class AgentBase(SWMLService):
             agent_id: Optional unique ID for this agent, generated if not provided
             native_functions: Optional list of native functions to include in the SWAIG object
             schema_path: Optional path to the schema file
+            suppress_logs: Whether to suppress structured logs
         """
         # Initialize the SWMLService base class
         super().__init__(
@@ -106,8 +145,13 @@ class AgentBase(SWMLService):
             schema_path=schema_path
         )
         
+        # Setup logger for this instance
+        self.log = logger.bind(agent=name)
+        self.log.info("agent_initializing", route=route, host=host, port=port)
+        
         # Store agent-specific parameters
         self._default_webhook_url = default_webhook_url
+        self._suppress_logs = suppress_logs
         
         # Generate or use the provided agent ID
         self.agent_id = agent_id or str(uuid.uuid4())
@@ -556,12 +600,13 @@ class AgentBase(SWMLService):
         """
         return list(self._swaig_functions.values())
     
-    def on_summary(self, summary: Dict[str, Any]) -> None:
+    def on_summary(self, summary: Optional[Dict[str, Any]], raw_data: Optional[Dict[str, Any]] = None) -> None:
         """
         Called when a post-prompt summary is received
         
         Args:
-            summary: The summary object
+            summary: The summary object or None if no summary was found
+            raw_data: The complete raw POST data from the request
         """
         # Default implementation does nothing
         pass
@@ -770,30 +815,17 @@ class AgentBase(SWMLService):
             
         return url
 
-    def _render_swml(self, call_id: str = None) -> str:
+    def _render_swml(self, call_id: str = None, modifications: Optional[dict] = None) -> str:
         """
         Render the complete SWML document
         
         Args:
             call_id: Optional call ID for session-specific tokens
+            modifications: Optional dict of modifications to apply to the SWML
             
         Returns:
             SWML document as a string
         """
-        # Reset the document
-        self.reset_document()
-        
-        # Add answer verb if enabled
-        if self._auto_answer:
-            self.add_answer_verb()
-        
-        # Add record_call verb if enabled
-        if self._record_call:
-            self.add_verb("record_call", {
-                "format": self._record_format,
-                "stereo": self._record_stereo
-            })
-        
         # Get prompt
         prompt = self.get_prompt()
         prompt_is_pom = isinstance(prompt, list)
@@ -865,17 +897,55 @@ class AgentBase(SWMLService):
         if post_prompt:
             post_prompt_url = self._build_webhook_url("post_prompt", {})
         
-        # Add AI verb
-        self.add_ai_verb(
-            prompt_text=None if prompt_is_pom else prompt,
-            prompt_pom=prompt if prompt_is_pom else None,
-            post_prompt=post_prompt,
-            post_prompt_url=post_prompt_url,
-            swaig=swaig_obj if swaig_obj else None
-        )
+        # Construct SWML
+        swml = {
+            "version": "1.0.0",
+            "sections": {
+                "main": [
+                    {
+                        "answer": {}
+                    },
+                    {
+                        "ai": {
+                            "prompt": {}
+                        }
+                    }
+                ]
+            }
+        }
         
-        # Return the rendered document
-        return self.render_document()
+        # Add post-prompt if set
+        if post_prompt:
+            swml["sections"]["main"][1]["ai"]["post_prompt"] = {
+                "text": post_prompt
+            }
+            if post_prompt_url:
+                swml["sections"]["main"][1]["ai"]["post_prompt_url"] = post_prompt_url
+        
+        # Add prompt based on type
+        if prompt_is_pom:
+            swml["sections"]["main"][1]["ai"]["prompt"]["pom"] = prompt
+        else:
+            swml["sections"]["main"][1]["ai"]["prompt"]["text"] = prompt
+        
+        # Add SWAIG if we have functions
+        if swaig_obj:
+            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_obj
+            
+        # Apply any modifications from the callback
+        if modifications and isinstance(modifications, dict):
+            # Simple recursive update function
+            def update_dict(target, source):
+                for key, value in source.items():
+                    if isinstance(value, dict) and key in target and isinstance(target[key], dict):
+                        update_dict(target[key], value)
+                    else:
+                        target[key] = value
+            
+            update_dict(swml, modifications)
+            
+        # Return SWML as a string (will be converted to JSON by the endpoint)
+        return json.dumps(swml)
     
     def _check_basic_auth(self, request: Request) -> bool:
         """
@@ -923,30 +993,36 @@ class AgentBase(SWMLService):
             
         # Debug endpoint - without trailing slash
         @router.get("/debug")
+        @router.post("/debug")
         async def handle_debug_no_slash(request: Request):
             return await self._handle_debug_request(request)
             
         # Debug endpoint - with trailing slash
         @router.get("/debug/")
+        @router.post("/debug/")
         async def handle_debug_with_slash(request: Request):
             return await self._handle_debug_request(request)
             
         # SWAIG endpoint - without trailing slash
+        @router.get("/swaig")
         @router.post("/swaig")
         async def handle_swaig_no_slash(request: Request):
             return await self._handle_swaig_request(request)
             
         # SWAIG endpoint - with trailing slash
+        @router.get("/swaig/")
         @router.post("/swaig/")
         async def handle_swaig_with_slash(request: Request):
             return await self._handle_swaig_request(request)
             
         # Post-prompt endpoint - without trailing slash
+        @router.get("/post_prompt")
         @router.post("/post_prompt")
         async def handle_post_prompt_no_slash(request: Request):
             return await self._handle_post_prompt_request(request)
             
         # Post-prompt endpoint - with trailing slash
+        @router.get("/post_prompt/")
         @router.post("/post_prompt/")
         async def handle_post_prompt_with_slash(request: Request):
             return await self._handle_post_prompt_request(request)
@@ -956,12 +1032,18 @@ class AgentBase(SWMLService):
     
     async def _handle_root_request(self, request: Request):
         """Handle GET/POST requests to the root endpoint"""
-        print(f"ROOT ENDPOINT CALLED WITH METHOD: {request.method}")
-        print(f"PATH: {request.url.path}")
+        req_log = self.log.bind(
+            endpoint="root",
+            method=request.method,
+            path=request.url.path
+        )
+        
+        req_log.debug("endpoint_called")
         
         try:
             # Check auth
             if not self._check_basic_auth(request):
+                req_log.warning("unauthorized_access_attempt")
                 return Response(
                     content=json.dumps({"error": "Unauthorized"}),
                     status_code=401,
@@ -971,59 +1053,78 @@ class AgentBase(SWMLService):
             
             # Try to parse request body for POST
             body = {}
+            call_id = None
+            
             if request.method == "POST":
-                try:
-                    body = await request.json()
-                    print(f"Received POST data: {body}")
-                except Exception as e:
-                    print(f"Error parsing POST data: {str(e)}")
+                # Check if body is empty first
+                raw_body = await request.body()
+                if raw_body:
                     try:
-                        body_text = await request.body()
-                        print(f"Raw POST body: {body_text}")
-                    except:
-                        pass
-                        
+                        body = await request.json()
+                        req_log.debug("request_body_received", body_size=len(str(body)))
+                        if body:
+                            req_log.debug("request_body", body=json.dumps(body, indent=2))
+                    except Exception as e:
+                        req_log.warning("error_parsing_request_body", error=str(e), traceback=traceback.format_exc())
+                        req_log.debug("raw_request_body", body=raw_body.decode('utf-8', errors='replace'))
+                        # Continue processing with empty body
+                        body = {}
+                else:
+                    req_log.debug("empty_request_body")
+                    
                 # Get call_id from body if present
                 call_id = body.get("call_id")
             else:
                 # Get call_id from query params for GET
                 call_id = request.query_params.get("call_id")
                 
-            # Print the call_id if any
+            # Add call_id to logger if any
             if call_id:
-                print(f"Call ID: {call_id}")
+                req_log = req_log.bind(call_id=call_id)
+                req_log.debug("call_id_identified")
             
             # Allow subclasses to inspect/modify the request
             modifications = None
             if body:
-                modifications = self.on_swml_request(body)
+                try:
+                    modifications = self.on_swml_request(body)
+                    if modifications:
+                        req_log.debug("request_modifications_applied")
+                except Exception as e:
+                    req_log.error("error_in_request_modifier", error=str(e), traceback=traceback.format_exc())
             
             # Render SWML
             swml = self._render_swml(call_id, modifications)
-            print(f"ROOT: Rendered SWML, length: {len(swml)}")
+            req_log.debug("swml_rendered", swml_size=len(swml))
             
             # Return as JSON
+            req_log.info("request_successful")
             return Response(
                 content=swml,
                 media_type="application/json"
             )
         except Exception as e:
-            print("ROOT ERROR:", str(e))
-            traceback.print_exc()
+            req_log.error("request_failed", error=str(e), traceback=traceback.format_exc())
             return Response(
-                content=json.dumps({"error": str(e)}),
+                content=json.dumps({"error": str(e), "traceback": traceback.format_exc()}),
                 status_code=500,
                 media_type="application/json"
             )
     
     async def _handle_debug_request(self, request: Request):
-        """Handle GET requests to the debug endpoint"""
-        print("DEBUG ENDPOINT CALLED!")
-        print(f"PATH: {request.url.path}")
+        """Handle GET/POST requests to the debug endpoint"""
+        req_log = self.log.bind(
+            endpoint="debug",
+            method=request.method,
+            path=request.url.path
+        )
+        
+        req_log.debug("endpoint_called")
         
         try:
             # Check auth
             if not self._check_basic_auth(request):
+                req_log.warning("unauthorized_access_attempt")
                 return Response(
                     content=json.dumps({"error": "Unauthorized"}),
                     status_code=401,
@@ -1031,34 +1132,72 @@ class AgentBase(SWMLService):
                     media_type="application/json"
                 )
             
+            # Get call_id from either query params (GET) or body (POST)
+            call_id = None
+            body = {}
+            
+            if request.method == "POST":
+                try:
+                    body = await request.json()
+                    req_log.debug("request_body_received", body_size=len(str(body)))
+                    if body:
+                        req_log.debug("request_body", body=json.dumps(body, indent=2))
+                    call_id = body.get("call_id")
+                except Exception as e:
+                    req_log.warning("error_parsing_request_body", error=str(e), traceback=traceback.format_exc())
+                    try:
+                        body_text = await request.body()
+                        req_log.debug("raw_request_body", body=body_text.decode('utf-8', errors='replace'))
+                    except:
+                        pass
+            else:
+                call_id = request.query_params.get("call_id")
+            
+            # Add call_id to logger if any
+            if call_id:
+                req_log = req_log.bind(call_id=call_id)
+                req_log.debug("call_id_identified")
+                
+            # Allow subclasses to inspect/modify the request
+            modifications = None
+            if body:
+                modifications = self.on_swml_request(body)
+                if modifications:
+                    req_log.debug("request_modifications_applied")
+                
             # Render SWML
-            swml = self._render_swml()
-            print(f"DEBUG: Rendered SWML, length: {len(swml)}")
-            print(f"DEBUG: SWML first 200 chars: {swml[:200]}")
+            swml = self._render_swml(call_id, modifications)
+            req_log.debug("swml_rendered", swml_size=len(swml))
             
             # Return as JSON
+            req_log.info("request_successful")
             return Response(
                 content=swml,
                 media_type="application/json",
                 headers={"X-Debug": "true"}
             )
         except Exception as e:
-            print("DEBUG ERROR:", str(e))
-            traceback.print_exc()
+            req_log.error("request_failed", error=str(e), traceback=traceback.format_exc())
             return Response(
-                content=json.dumps({"error": str(e)}),
+                content=json.dumps({"error": str(e), "traceback": traceback.format_exc()}),
                 status_code=500,
                 media_type="application/json"
             )
     
     async def _handle_swaig_request(self, request: Request):
-        """Handle POST requests to the SWAIG endpoint"""
-        print("SWAIG ENDPOINT CALLED!")
-        print(f"PATH: {request.url.path}")
+        """Handle GET/POST requests to the SWAIG endpoint"""
+        req_log = self.log.bind(
+            endpoint="swaig",
+            method=request.method,
+            path=request.url.path
+        )
+        
+        req_log.debug("endpoint_called")
         
         try:
             # Check auth
             if not self._check_basic_auth(request):
+                req_log.warning("unauthorized_access_attempt")
                 return Response(
                     content=json.dumps({"error": "Unauthorized"}),
                     status_code=401,
@@ -1066,191 +1205,364 @@ class AgentBase(SWMLService):
                     media_type="application/json"
                 )
             
-            # Parse request
+            # Handle differently based on method
+            if request.method == "GET":
+                # For GET requests, return the SWML document (same as root endpoint)
+                call_id = request.query_params.get("call_id")
+                swml = self._render_swml(call_id)
+                req_log.debug("swml_rendered", swml_size=len(swml))
+                return Response(
+                    content=swml,
+                    media_type="application/json"
+                )
+            
+            # For POST requests, process SWAIG function calls
             try:
                 body = await request.json()
-            except Exception:
+                req_log.debug("request_body_received", body_size=len(str(body)))
+                if body:
+                    req_log.debug("request_body", body=json.dumps(body, indent=2))
+            except Exception as e:
+                req_log.error("error_parsing_request_body", error=str(e), traceback=traceback.format_exc())
                 body = {}
             
             # Extract function name
             function_name = body.get("function")
             if not function_name:
+                req_log.warning("missing_function_name")
                 return Response(
                     content=json.dumps({"error": "Missing function name"}),
                     status_code=400,
                     media_type="application/json"
                 )
             
-            print(f"Function called: {function_name}")
+            # Add function info to logger
+            req_log = req_log.bind(function=function_name)
+            req_log.debug("function_call_received")
             
             # Extract arguments
             args = {}
             if "argument" in body and isinstance(body["argument"], dict):
                 if "parsed" in body["argument"] and isinstance(body["argument"]["parsed"], list) and body["argument"]["parsed"]:
                     args = body["argument"]["parsed"][0]
+                    req_log.debug("parsed_arguments", args=json.dumps(args, indent=2))
                 elif "raw" in body["argument"]:
                     try:
                         args = json.loads(body["argument"]["raw"])
-                    except:
-                        pass
+                        req_log.debug("raw_arguments_parsed", args=json.dumps(args, indent=2))
+                    except Exception as e:
+                        req_log.error("error_parsing_raw_arguments", error=str(e), raw=body["argument"]["raw"])
+            
+            # Get call_id from body
+            call_id = body.get("call_id")
+            if call_id:
+                req_log = req_log.bind(call_id=call_id)
+                req_log.debug("call_id_identified")
             
             # Call the function
-            result = self.on_function_call(function_name, args, body)
-            
-            # Convert result to dict if needed
-            if isinstance(result, SwaigFunctionResult):
-                result_dict = result.to_dict()
-            elif isinstance(result, dict):
-                result_dict = result
-            else:
-                result_dict = {"response": str(result)}
-            
-            return result_dict
+            try:
+                result = self.on_function_call(function_name, args, body)
+                
+                # Convert result to dict if needed
+                if isinstance(result, SwaigFunctionResult):
+                    result_dict = result.to_dict()
+                elif isinstance(result, dict):
+                    result_dict = result
+                else:
+                    result_dict = {"response": str(result)}
+                
+                req_log.info("function_executed_successfully")
+                req_log.debug("function_result", result=json.dumps(result_dict, indent=2))
+                return result_dict
+            except Exception as e:
+                req_log.error("function_execution_error", error=str(e), traceback=traceback.format_exc())
+                return {"error": str(e), "function": function_name}
+                
         except Exception as e:
-            print("SWAIG ERROR:", str(e))
-            traceback.print_exc()
+            req_log.error("request_failed", error=str(e), traceback=traceback.format_exc())
+            return Response(
+                content=json.dumps({"error": str(e)}),
+                status_code=500,
+                media_type="application/json"
+            )
+            
+    async def _handle_post_prompt_request(self, request: Request):
+        """Handle GET/POST requests to the post_prompt endpoint"""
+        req_log = self.log.bind(
+            endpoint="post_prompt",
+            method=request.method,
+            path=request.url.path
+        )
+        
+        # Only log if not suppressed
+        if not self._suppress_logs:
+            req_log.debug("endpoint_called")
+        
+        try:
+            # Check auth
+            if not self._check_basic_auth(request):
+                req_log.warning("unauthorized_access_attempt")
+                return Response(
+                    content=json.dumps({"error": "Unauthorized"}),
+                    status_code=401,
+                    headers={"WWW-Authenticate": "Basic"},
+                    media_type="application/json"
+                )
+            
+            # For GET requests, return the SWML document (same as root endpoint)
+            if request.method == "GET":
+                call_id = request.query_params.get("call_id")
+                swml = self._render_swml(call_id)
+                req_log.debug("swml_rendered", swml_size=len(swml))
+                return Response(
+                    content=swml,
+                    media_type="application/json"
+                )
+            
+            # For POST requests, process the post-prompt data
+            try:
+                body = await request.json()
+                
+                # Only log if not suppressed
+                if not self._suppress_logs:
+                    req_log.debug("request_body_received", body_size=len(str(body)))
+                    # Log the raw body as properly formatted JSON (not Python dict representation)
+                    print("POST_PROMPT_BODY: " + json.dumps(body))
+            except Exception as e:
+                req_log.error("error_parsing_request_body", error=str(e), traceback=traceback.format_exc())
+                body = {}
+                
+            # Extract summary from the correct location in the request
+            summary = self._find_summary_in_post_data(body, req_log)
+            
+            # Save state if call_id is provided
+            call_id = body.get("call_id")
+            if call_id and summary:
+                req_log = req_log.bind(call_id=call_id)
+                
+                # Check if state manager has the right methods
+                try:
+                    if hasattr(self._state_manager, 'get_state'):
+                        state = self._state_manager.get_state(call_id) or {}
+                        state["summary"] = summary
+                        if hasattr(self._state_manager, 'update_state'):
+                            self._state_manager.update_state(call_id, state)
+                            req_log.debug("state_updated_with_summary")
+                except Exception as e:
+                    req_log.warning("state_update_failed", error=str(e))
+            
+            # Call the summary handler with the summary and the full body
+            try:
+                if summary:
+                    self.on_summary(summary, body)
+                    req_log.debug("summary_handler_called_successfully")
+                else:
+                    # If no summary found but still want to process the data
+                    self.on_summary(None, body)
+                    req_log.debug("summary_handler_called_with_null_summary")
+            except Exception as e:
+                req_log.error("error_in_summary_handler", error=str(e), traceback=traceback.format_exc())
+            
+            # Return success
+            req_log.info("request_successful")
+            return {"success": True}
+        except Exception as e:
+            req_log.error("request_failed", error=str(e), traceback=traceback.format_exc())
             return Response(
                 content=json.dumps({"error": str(e)}),
                 status_code=500,
                 media_type="application/json"
             )
 
-    def _check_basic_auth(self, request):
-        """Check if the request has valid basic auth credentials"""
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Basic "):
-            return False
+    def _find_summary_in_post_data(self, body, logger):
+        """
+        Extensive search for the summary in the post data
+        
+        Args:
+            body: The POST request body
+            logger: The logger instance to use
             
-        try:
-            # Extract and decode credentials
-            auth_data = auth_header.replace("Basic ", "")
-            decoded = base64.b64decode(auth_data).decode("utf-8")
-            username, password = decoded.split(":", 1)
+        Returns:
+            The summary if found, None otherwise
+        """
+        summary = None
+        
+        # Check all the locations where the summary might be found
+        
+        # 1. First check post_prompt_data.parsed array (new standard location)
+        post_prompt_data = body.get("post_prompt_data", {})
+        if post_prompt_data:
+            if not self._suppress_logs:
+                logger.debug("checking_post_prompt_data", data_type=type(post_prompt_data).__name__)
             
-            # Check against expected credentials
-            expected_username, expected_password = self._basic_auth
-            return username == expected_username and password == expected_password
-        except Exception as e:
-            print(f"Auth error: {str(e)}")
-            return False
+            # Check for parsed array first (this is the most common location)
+            if isinstance(post_prompt_data, dict) and "parsed" in post_prompt_data:
+                parsed = post_prompt_data.get("parsed")
+                if isinstance(parsed, list) and len(parsed) > 0:
+                    # The summary is the first item in the parsed array
+                    summary = parsed[0]
+                    print("SUMMARY_FOUND: " + json.dumps(summary))
+                    return summary
+            
+            # Check raw field - it might contain a JSON string
+            if isinstance(post_prompt_data, dict) and "raw" in post_prompt_data:
+                raw = post_prompt_data.get("raw")
+                if isinstance(raw, str):
+                    try:
+                        # Try to parse the raw field as JSON
+                        parsed_raw = json.loads(raw)
+                        if not self._suppress_logs:
+                            print("SUMMARY_FOUND_RAW: " + json.dumps(parsed_raw))
+                        return parsed_raw
+                    except:
+                        pass
+            
+            # Direct access to substituted field
+            if isinstance(post_prompt_data, dict) and "substituted" in post_prompt_data:
+                summary = post_prompt_data.get("substituted")
+                if not self._suppress_logs:
+                    print("SUMMARY_FOUND_SUBSTITUTED: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_SUBSTITUTED: {summary}")
+                return summary
+            
+            # Check for nested data structure
+            if isinstance(post_prompt_data, dict) and "data" in post_prompt_data:
+                data = post_prompt_data.get("data")
+                if isinstance(data, dict):
+                    if "substituted" in data:
+                        summary = data.get("substituted")
+                        if not self._suppress_logs:
+                            print("SUMMARY_FOUND_DATA_SUBSTITUTED: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_DATA_SUBSTITUTED: {summary}")
+                        return summary
+                    
+                    # Try text field
+                    if "text" in data:
+                        summary = data.get("text")
+                        if not self._suppress_logs:
+                            print("SUMMARY_FOUND_DATA_TEXT: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_DATA_TEXT: {summary}")
+                        return summary
+        
+            # Try other common fields
+            if isinstance(post_prompt_data, dict):
+                for field in ["content", "text", "summary", "result", "output"]:
+                    if field in post_prompt_data:
+                        summary = post_prompt_data.get(field)
+                        if not self._suppress_logs:
+                            print(f"SUMMARY_FOUND_FIELD_{field}: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_FIELD_{field}: {summary}")
+                        return summary
+        
+        # 2. Check ai_response (legacy location)
+        ai_response = body.get("ai_response", {})
+        if ai_response and isinstance(ai_response, dict):
+            if "summary" in ai_response:
+                summary = ai_response.get("summary")
+                if not self._suppress_logs:
+                    print("SUMMARY_FOUND_AI_RESPONSE: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_AI_RESPONSE: {summary}")
+                return summary
+        
+        # 3. Look for direct fields at the top level
+        for field in ["substituted", "summary", "content", "text", "result", "output"]:
+            if field in body:
+                summary = body.get(field)
+                if not self._suppress_logs:
+                    print(f"SUMMARY_FOUND_TOP_LEVEL_{field}: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_TOP_LEVEL_{field}: {summary}")
+                return summary
+        
+        # 4. Recursively search for summary-like fields up to 3 levels deep
+        def recursive_search(data, path="", depth=0):
+            if depth > 3 or not isinstance(data, dict):  # Limit recursion depth
+                return None
+            
+            # Check if any key looks like it might contain a summary
+            for key in data.keys():
+                if key.lower() in ["summary", "substituted", "output", "result", "content", "text"]:
+                    value = data.get(key)
+                    curr_path = f"{path}.{key}" if path else key
+                    if not self._suppress_logs:
+                        logger.info(f"potential_summary_found_at_{curr_path}", 
+                                  value_type=type(value).__name__)
+                    if isinstance(value, (str, dict, list)):
+                        return value
+                    
+            # Recursively check nested dictionaries
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    curr_path = f"{path}.{key}" if path else key
+                    result = recursive_search(value, curr_path, depth + 1)
+                    if result:
+                        return result
+                    
+            return None
+        
+        # Perform recursive search
+        recursive_result = recursive_search(body)
+        if recursive_result:
+            summary = recursive_result
+            if not self._suppress_logs:
+                print("SUMMARY_FOUND_RECURSIVE: " + json.dumps(summary) if isinstance(summary, (dict, list)) else f"SUMMARY_FOUND_RECURSIVE: {summary}")
+            return summary
+        
+        # No summary found
+        if not self._suppress_logs:
+            print("NO_SUMMARY_FOUND")
+        return None
 
-    # ----------------------------------------------------------------------
-    # Call Settings
-    # ----------------------------------------------------------------------
-    
-    def set_auto_answer(self, enabled: bool) -> 'AgentBase':
-        """
-        Set whether to automatically answer calls
+    def _register_routes(self, app):
+        """Register all routes for the agent, with both slash variants and both HTTP methods"""
         
-        Args:
-            enabled: Whether to auto-answer
-            
-        Returns:
-            Self for method chaining
-        """
-        self._auto_answer = enabled
-        return self
-    
-    def set_call_recording(self, 
-                          enabled: bool, 
-                          format: str = "mp4", 
-                          stereo: bool = True) -> 'AgentBase':
-        """
-        Set call recording parameters
+        self.log.info("registering_routes", path=self.route)
         
-        Args:
-            enabled: Whether to record calls
-            format: Recording format
-            stereo: Whether to record in stereo
+        # Root endpoint - without trailing slash
+        @app.get(f"{self.route}")
+        @app.post(f"{self.route}")
+        async def handle_root_no_slash(request: Request):
+            return await self._handle_root_request(request)
             
-        Returns:
-            Self for method chaining
-        """
-        self._record_call = enabled
-        self._record_format = format
-        self._record_stereo = stereo
-        return self
+        # Root endpoint - with trailing slash
+        @app.get(f"{self.route}/")
+        @app.post(f"{self.route}/")
+        async def handle_root_with_slash(request: Request):
+            return await self._handle_root_request(request)
+            
+        # Debug endpoint - without trailing slash
+        @app.get(f"{self.route}/debug")
+        @app.post(f"{self.route}/debug")
+        async def handle_debug_no_slash(request: Request):
+            return await self._handle_debug_request(request)
+            
+        # Debug endpoint - with trailing slash
+        @app.get(f"{self.route}/debug/")
+        @app.post(f"{self.route}/debug/")
+        async def handle_debug_with_slash(request: Request):
+            return await self._handle_debug_request(request)
+            
+        # SWAIG endpoint - without trailing slash
+        @app.get(f"{self.route}/swaig")
+        @app.post(f"{self.route}/swaig")
+        async def handle_swaig_no_slash(request: Request):
+            return await self._handle_swaig_request(request)
+            
+        # SWAIG endpoint - with trailing slash
+        @app.get(f"{self.route}/swaig/")
+        @app.post(f"{self.route}/swaig/")
+        async def handle_swaig_with_slash(request: Request):
+            return await self._handle_swaig_request(request)
+        
+        # Post-prompt endpoint - without trailing slash
+        @app.get(f"{self.route}/post_prompt")
+        @app.post(f"{self.route}/post_prompt")
+        async def handle_post_prompt_no_slash(request: Request):
+            return await self._handle_post_prompt_request(request)
+            
+        # Post-prompt endpoint - with trailing slash
+        @app.get(f"{self.route}/post_prompt/")
+        @app.post(f"{self.route}/post_prompt/")
+        async def handle_post_prompt_with_slash(request: Request):
+            return await self._handle_post_prompt_request(request)
+        
+        # Log all registered routes
+        routes = [f"{route.methods} {route.path}" for route in app.routes]
+        self.log.debug("routes_registered", routes=routes)
 
-    def set_post_prompt(self, text: str) -> 'AgentBase':
-        """
-        Set the post-prompt for the agent
-        
-        Args:
-            text: Post-prompt text
-            
-        Returns:
-            Self for method chaining
-        """
-        self._post_prompt = text
-        return self
-
-    # ----------------------------------------------------------------------
-    # State Management Methods
-    # ----------------------------------------------------------------------
-    
-    def get_state(self, call_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get the state for a call
-        
-        Args:
-            call_id: Call ID to get state for
-            
-        Returns:
-            Call state or None if not found
-        """
-        return self._state_manager.get_state(call_id)
-        
-    def set_state(self, call_id: str, data: Dict[str, Any]) -> bool:
-        """
-        Set the state for a call
-        
-        Args:
-            call_id: Call ID to set state for
-            data: State data to set
-            
-        Returns:
-            True if state was set, False otherwise
-        """
-        return self._state_manager.set_state(call_id, data)
-        
-    def update_state(self, call_id: str, data: Dict[str, Any]) -> bool:
-        """
-        Update the state for a call
-        
-        Args:
-            call_id: Call ID to update state for
-            data: State data to update
-            
-        Returns:
-            True if state was updated, False otherwise
-        """
-        return self._state_manager.update_state(call_id, data)
-        
-    def clear_state(self, call_id: str) -> bool:
-        """
-        Clear the state for a call
-        
-        Args:
-            call_id: Call ID to clear state for
-            
-        Returns:
-            True if state was cleared, False otherwise
-        """
-        return self._state_manager.clear_state(call_id)
-        
-    def cleanup_expired_state(self) -> int:
-        """
-        Clean up expired state
-        
-        Returns:
-            Number of expired state entries removed
-        """
-        return self._state_manager.cleanup_expired()
-    
-    # ----------------------------------------------------------------------
-    # Hook methods for call lifecycle
-    # ----------------------------------------------------------------------
-    
     def _register_class_decorated_tools(self):
         """
         Register all tools decorated with @AgentBase.tool
@@ -1285,57 +1597,95 @@ class AgentBase(SWMLService):
                     fillers=fillers
                 )
 
-    def add_native_function(self, function_name: str) -> 'AgentBase':
+    # State Management Methods
+    def get_state(self, call_id: str) -> Optional[Dict[str, Any]]:
         """
-        Add a native function to the SWAIG object
+        Get the state for a call
         
         Args:
-            function_name: Name of the native function
+            call_id: Call ID to get state for
             
         Returns:
-            Self for method chaining
+            Call state or None if not found
         """
-        if function_name not in self.native_functions:
-            self.native_functions.append(function_name)
-        return self
+        try:
+            if hasattr(self._state_manager, 'get_state'):
+                return self._state_manager.get_state(call_id)
+            return None
+        except Exception as e:
+            logger.warning("get_state_failed", error=str(e))
+            return None
         
-    def remove_native_function(self, function_name: str) -> 'AgentBase':
+    def set_state(self, call_id: str, data: Dict[str, Any]) -> bool:
         """
-        Remove a native function from the SWAIG object
+        Set the state for a call
         
         Args:
-            function_name: Name of the native function
+            call_id: Call ID to set state for
+            data: State data to set
             
         Returns:
-            Self for method chaining
+            True if state was set, False otherwise
         """
-        if function_name in self.native_functions:
-            self.native_functions.remove(function_name)
-        return self
-        
-    def get_native_functions(self) -> List[str]:
-        """
-        Get the list of native functions
-        
-        Returns:
-            List of native function names
-        """
-        return self.native_functions.copy()
-
-    def has_section(self, title: str) -> bool:
-        """
-        Check if a section exists in the prompt
-        
-        Args:
-            title: Section title
-            
-        Returns:
-            True if the section exists, False otherwise
-        """
-        if not self._use_pom or not self.pom:
+        try:
+            if hasattr(self._state_manager, 'set_state'):
+                return self._state_manager.set_state(call_id, data)
             return False
+        except Exception as e:
+            logger.warning("set_state_failed", error=str(e))
+            return False
+        
+    def update_state(self, call_id: str, data: Dict[str, Any]) -> bool:
+        """
+        Update the state for a call
+        
+        Args:
+            call_id: Call ID to update state for
+            data: State data to update
             
-        return self.pom.has_section(title)
+        Returns:
+            True if state was updated, False otherwise
+        """
+        try:
+            if hasattr(self._state_manager, 'update_state'):
+                return self._state_manager.update_state(call_id, data)
+            return self.set_state(call_id, data)
+        except Exception as e:
+            logger.warning("update_state_failed", error=str(e))
+            return False
+        
+    def clear_state(self, call_id: str) -> bool:
+        """
+        Clear the state for a call
+        
+        Args:
+            call_id: Call ID to clear state for
+            
+        Returns:
+            True if state was cleared, False otherwise
+        """
+        try:
+            if hasattr(self._state_manager, 'clear_state'):
+                return self._state_manager.clear_state(call_id)
+            return False
+        except Exception as e:
+            logger.warning("clear_state_failed", error=str(e))
+            return False
+        
+    def cleanup_expired_state(self) -> int:
+        """
+        Clean up expired state
+        
+        Returns:
+            Number of expired state entries removed
+        """
+        try:
+            if hasattr(self._state_manager, 'cleanup_expired'):
+                return self._state_manager.cleanup_expired()
+            return 0
+        except Exception as e:
+            logger.warning("cleanup_expired_state_failed", error=str(e))
+            return 0
 
     def _register_state_tracking_tools(self):
         """
@@ -1412,6 +1762,104 @@ class AgentBase(SWMLService):
         
         return SwaigFunctionResult("Call ended and session deactivated")
 
+    def set_post_prompt(self, text: str) -> 'AgentBase':
+        """
+        Set the post-prompt for the agent
+        
+        Args:
+            text: Post-prompt text
+            
+        Returns:
+            Self for method chaining
+        """
+        self._post_prompt = text
+        return self
+        
+    def set_auto_answer(self, enabled: bool) -> 'AgentBase':
+        """
+        Set whether to automatically answer calls
+        
+        Args:
+            enabled: Whether to auto-answer
+            
+        Returns:
+            Self for method chaining
+        """
+        self._auto_answer = enabled
+        return self
+    
+    def set_call_recording(self, 
+                          enabled: bool, 
+                          format: str = "mp4", 
+                          stereo: bool = True) -> 'AgentBase':
+        """
+        Set call recording parameters
+        
+        Args:
+            enabled: Whether to record calls
+            format: Recording format
+            stereo: Whether to record in stereo
+            
+        Returns:
+            Self for method chaining
+        """
+        self._record_call = enabled
+        self._record_format = format
+        self._record_stereo = stereo
+        return self
+        
+    def add_native_function(self, function_name: str) -> 'AgentBase':
+        """
+        Add a native function to the SWAIG object
+        
+        Args:
+            function_name: Name of the native function
+            
+        Returns:
+            Self for method chaining
+        """
+        if function_name not in self.native_functions:
+            self.native_functions.append(function_name)
+        return self
+        
+    def remove_native_function(self, function_name: str) -> 'AgentBase':
+        """
+        Remove a native function from the SWAIG object
+        
+        Args:
+            function_name: Name of the native function
+            
+        Returns:
+            Self for method chaining
+        """
+        if function_name in self.native_functions:
+            self.native_functions.remove(function_name)
+        return self
+        
+    def get_native_functions(self) -> List[str]:
+        """
+        Get the list of native functions
+        
+        Returns:
+            List of native function names
+        """
+        return self.native_functions.copy()
+
+    def has_section(self, title: str) -> bool:
+        """
+        Check if a section exists in the prompt
+        
+        Args:
+            title: Section title
+            
+        Returns:
+            True if the section exists, False otherwise
+        """
+        if not self._use_pom or not self.pom:
+            return False
+            
+        return self.pom.has_section(title)
+        
     def on_swml_request(self, request_data: Optional[dict] = None) -> Optional[dict]:
         """
         Called when SWML is requested, with request data when available.
@@ -1427,240 +1875,50 @@ class AgentBase(SWMLService):
         # Default implementation does nothing
         return None
 
-    def _render_swml(self, call_id: str = None, modifications: Optional[dict] = None) -> str:
+    def serve(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
         """
-        Render the complete SWML document
+        Start a web server for this agent
         
         Args:
-            call_id: Optional call ID for session-specific tokens
-            modifications: Optional dict of modifications to apply to the SWML
-            
-        Returns:
-            SWML document as a string
+            host: Optional host to override the default
+            port: Optional port to override the default
         """
-        # Get prompt
-        prompt = self.get_prompt()
-        prompt_is_pom = isinstance(prompt, list)
+        import uvicorn
         
-        # Get post-prompt
-        post_prompt = self.get_post_prompt()
+        # Create a FastAPI app with no automatic redirects
+        app = FastAPI(redirect_slashes=False)
         
-        # Generate a call ID if needed
-        if self._enable_state_tracking and call_id is None:
-            call_id = self._session_manager.create_session()
-            
-        # Empty query params - no need to include call_id in URLs
-        query_params = {}
+        # Register all routes
+        self._register_routes(app)
         
-        # Get the default webhook URL with auth
-        default_webhook_url = self._build_webhook_url("swaig", query_params)
+        host = host or self.host
+        port = port or self.port
         
-        # Prepare SWAIG object (correct format)
-        swaig_obj = {}
+        # Print the auth credentials with source
+        username, password, source = self.get_basic_auth_credentials(include_source=True)
+        self.log.info("starting_server", 
+                     url=f"http://{host}:{port}{self.route}",
+                     username=username,
+                     password="*" * len(password),
+                     auth_source=source)
         
-        # Add defaults if we have functions
-        if self._swaig_functions:
-            swaig_obj["defaults"] = {
-                "web_hook_url": default_webhook_url
-            }
-            
-        # Add native_functions if any are defined
-        if self.native_functions:
-            swaig_obj["native_functions"] = self.native_functions
+        print(f"Agent '{self.name}' is available at:")
+        print(f"URL: http://{host}:{port}{self.route}")
+        print(f"Basic Auth: {username}:{password} (source: {source})")
         
-        # Create functions array
-        swaig_functions = []
-        
-        # Add each function to the functions array
-        for name, func in self._swaig_functions.items():
-            # Get token for secure functions when we have a call_id
-            token = None
-            if func.secure and call_id:
-                token = self._session_manager.create_token(tool_name=name, call_id=call_id)
-                
-            # Prepare function entry
-            function_entry = {
-                "function": name,
-                "description": func.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": func.parameters
-                }
-            }
-            
-            # Add fillers if present
-            if func.fillers:
-                function_entry["fillers"] = func.fillers
-                
-            # Add token to URL if we have one
-            if token:
-                # Create token params without call_id
-                token_params = {"token": token}
-                function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
-                
-            swaig_functions.append(function_entry)
-            
-        # Add functions array to SWAIG object if we have any
-        if swaig_functions:
-            swaig_obj["functions"] = swaig_functions
-            
-        # Add post-prompt URL if we have a post-prompt
-        post_prompt_url = None
-        if post_prompt:
-            post_prompt_url = self._build_webhook_url("post_prompt", {})
-        
-        # Construct SWML
-        swml = {
-            "version": "1.0.0",
-            "sections": {
-                "main": [
-                    {
-                        "answer": {}
-                    },
-                    {
-                        "ai": {
-                            "prompt": {}
-                        }
-                    }
-                ]
-            }
-        }
-        
-        # Add post-prompt if set
-        if post_prompt:
-            swml["sections"]["main"][1]["ai"]["post_prompt"] = {
-                "text": post_prompt
-            }
-            if post_prompt_url:
-                swml["sections"]["main"][1]["ai"]["post_prompt_url"] = post_prompt_url
-        
-        # Add prompt based on type
-        if prompt_is_pom:
-            swml["sections"]["main"][1]["ai"]["prompt"]["pom"] = prompt
-        else:
-            swml["sections"]["main"][1]["ai"]["prompt"]["text"] = prompt
-        
-        # Add SWAIG if we have functions
-        if swaig_obj:
-            swml["sections"]["main"][1]["ai"]["SWAIG"] = swaig_obj
-            
-        # Apply any modifications from the callback
-        if modifications and isinstance(modifications, dict):
-            # Simple recursive update function
-            def update_dict(target, source):
-                for key, value in source.items():
-                    if isinstance(value, dict) and key in target and isinstance(target[key], dict):
-                        update_dict(target[key], value)
-                    else:
-                        target[key] = value
-            
-            update_dict(swml, modifications)
-            
-        # Return SWML as a string (will be converted to JSON by the endpoint)
-        return json.dumps(swml)
-
-    async def _handle_post_prompt_request(self, request: Request):
-        """Handle POST requests to the post_prompt endpoint"""
-        print("POST_PROMPT ENDPOINT CALLED!")
-        print(f"PATH: {request.url.path}")
+        # Configure Uvicorn for production
+        uvicorn_log_config = uvicorn.config.LOGGING_CONFIG
+        uvicorn_log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        uvicorn_log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         
         try:
-            # Check auth
-            if not self._check_basic_auth(request):
-                return Response(
-                    content=json.dumps({"error": "Unauthorized"}),
-                    status_code=401,
-                    headers={"WWW-Authenticate": "Basic"},
-                    media_type="application/json"
-                )
-            
-            # Parse request body
-            try:
-                body = await request.json()
-                print(f"POST_PROMPT body: {body}")
-            except Exception as e:
-                print(f"Error parsing POST_PROMPT data: {str(e)}")
-                body = {}
-                
-            # Extract summary from the request
-            ai_response = body.get("ai_response", {})
-            summary = ai_response.get("summary")
-            
-            # Log the summary
-            print(f"Received summary: {summary}")
-            
-            # Save state if call_id is provided
-            call_id = body.get("call_id")
-            if call_id and summary:
-                state = self.get_state(call_id) or {}
-                state["summary"] = summary
-                self.update_state(call_id, state)
-            
-            # Call the summary handler
-            if summary:
-                self.on_summary(summary)
-            
-            # Return success
-            return {"success": True}
-        except Exception as e:
-            print("POST_PROMPT ERROR:", str(e))
-            traceback.print_exc()
-            return Response(
-                content=json.dumps({"error": str(e)}),
-                status_code=500,
-                media_type="application/json"
+            # Run the server
+            uvicorn.run(
+                app, 
+                host=host, 
+                port=port,
+                log_config=uvicorn_log_config
             )
-
-    def _register_routes(self, app):
-        """Register all routes for the agent, with both slash variants and both HTTP methods"""
-        
-        print(f"Registering routes for agent '{self.name}' at path '{self.route}'")
-        
-        # Root endpoint - without trailing slash
-        @app.get(f"{self.route}")
-        @app.post(f"{self.route}")
-        async def handle_root_no_slash(request: Request):
-            return await self._handle_root_request(request)
-            
-        # Root endpoint - with trailing slash
-        @app.get(f"{self.route}/")
-        @app.post(f"{self.route}/")
-        async def handle_root_with_slash(request: Request):
-            return await self._handle_root_request(request)
-            
-        # Debug endpoint - without trailing slash
-        @app.get(f"{self.route}/debug")
-        async def handle_debug_no_slash(request: Request):
-            return await self._handle_debug_request(request)
-            
-        # Debug endpoint - with trailing slash
-        @app.get(f"{self.route}/debug/")
-        async def handle_debug_with_slash(request: Request):
-            return await self._handle_debug_request(request)
-            
-        # SWAIG endpoint - without trailing slash
-        @app.post(f"{self.route}/swaig")
-        async def handle_swaig_no_slash(request: Request):
-            return await self._handle_swaig_request(request)
-            
-        # SWAIG endpoint - with trailing slash
-        @app.post(f"{self.route}/swaig/")
-        async def handle_swaig_with_slash(request: Request):
-            return await self._handle_swaig_request(request)
-        
-        print(f"Registering post_prompt routes for: {self.route}/post_prompt and {self.route}/post_prompt/")
-            
-        # Post-prompt endpoint - without trailing slash
-        @app.post(f"{self.route}/post_prompt")
-        async def handle_post_prompt_no_slash(request: Request):
-            return await self._handle_post_prompt_request(request)
-            
-        # Post-prompt endpoint - with trailing slash
-        @app.post(f"{self.route}/post_prompt/")
-        async def handle_post_prompt_with_slash(request: Request):
-            return await self._handle_post_prompt_request(request)
-        
-        # Print all registered routes for debugging
-        print("Registered routes:")
-        for route in app.routes:
-            print(f"  {route.methods} {route.path}")
+        except KeyboardInterrupt:
+            self.log.info("server_shutdown")
+            print("\nStopping the agent.")

@@ -9,20 +9,17 @@ This uses the refactored AgentBase class that internally uses SWMLService.
 """
 
 from datetime import datetime
-import json
-import traceback
+import os
 import logging
 import sys
-from typing import Optional
-import os
+import json
+import argparse
 
 # Import structlog for proper structured logging
 import structlog
 
 from signalwire_agents import AgentBase
 from signalwire_agents.core.function_result import SwaigFunctionResult
-from fastapi import FastAPI, Request, Response, APIRouter
-import uvicorn
 
 # Configure structlog
 structlog.configure(
@@ -53,12 +50,6 @@ logging.basicConfig(
 # Create structured logger
 logger = structlog.get_logger("simple_agent")
 
-# Create a direct FastAPI app instead of using the AgentBase serve method
-app = FastAPI(
-    # Disable automatic redirection for trailing slashes
-    redirect_slashes=False
-)
-
 class SimpleAgent(AgentBase):
     """
     A simple agent that demonstrates using explicit methods
@@ -71,7 +62,7 @@ class SimpleAgent(AgentBase):
     3. How to return results from SWAIG functions
     """
     
-    def __init__(self):
+    def __init__(self, suppress_logs=False):
         # Find schema.json in the current directory or parent directory
         current_dir = os.path.dirname(os.path.abspath(__file__))
         parent_dir = os.path.dirname(current_dir)
@@ -87,11 +78,11 @@ class SimpleAgent(AgentBase):
         for loc in schema_locations:
             if os.path.exists(loc):
                 schema_path = loc
-                logger.info(f"Found schema.json at: {schema_path}")
+                logger.info("schema_found", path=schema_path)
                 break
                 
         if not schema_path:
-            logger.warning("Could not find schema.json in expected locations")
+            logger.warning("schema_not_found", locations=schema_locations)
             
         # Initialize the agent with a name and route
         super().__init__(
@@ -100,7 +91,8 @@ class SimpleAgent(AgentBase):
             host="0.0.0.0",
             port=3000,
             use_pom=True,  # Ensure we're using POM
-            schema_path=schema_path  # Pass the explicit schema path
+            schema_path=schema_path,  # Pass the explicit schema path
+            suppress_logs=suppress_logs  # Suppress extra logs
         )
         
         # Initialize POM sections using explicit methods
@@ -189,266 +181,52 @@ class SimpleAgent(AgentBase):
         
         return result
     
-    def on_summary(self, summary):
-        """Handle the conversation summary"""
-        logger.info("conversation_summary_received", summary=summary)
-
-
-# Create a global instance of the agent
-agent = SimpleAgent()
-
-# Root endpoints - support both with and without trailing slash, and both GET and POST
-@app.get("/simple")
-@app.post("/simple")
-@app.get("/simple/")
-@app.post("/simple/")
-async def handle_root(request: Request):
-    req_logger = logger.bind(
-        endpoint="root",
-        method=request.method,
-        path=request.url.path,
-        client=request.client.host if request.client else "unknown"
-    )
-    
-    req_logger.info("endpoint_called")
-    
-    try:
-        # Check auth
-        if not agent._check_basic_auth(request):
-            req_logger.warning("unauthorized_access_attempt")
-            return Response(
-                content=json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                headers={"WWW-Authenticate": "Basic"},
-                media_type="application/json"
-            )
+    def on_summary(self, summary, raw_data=None):
+        """
+        Handle the conversation summary
         
-        # Try to parse request body for POST
-        body = {}
-        if request.method == "POST":
-            try:
-                body = await request.json()
-                req_logger.debug("request_body_received", body_size=len(str(body)))
-            except Exception as e:
-                req_logger.warning("error_parsing_request_body", error=str(e))
-                try:
-                    body_text = await request.body()
-                    req_logger.debug("raw_request_body", size=len(body_text))
-                except:
-                    pass
-                    
-            # Get call_id from body if present
-            call_id = body.get("call_id")
-        else:
-            # Get call_id from query params for GET
-            call_id = request.query_params.get("call_id")
-            
-        # Add call_id to logger if present
-        if call_id:
-            req_logger = req_logger.bind(call_id=call_id)
-        
-        # Render SWML
-        swml = agent._render_swml(call_id)
-        req_logger.debug("swml_rendered", swml_size=len(swml))
-        
-        # Return as JSON
-        req_logger.info("request_successful")
-        return Response(
-            content=swml,
-            media_type="application/json"
-        )
-    except Exception as e:
-        req_logger.error("request_failed", 
-                        error=str(e), 
-                        traceback=traceback.format_exc())
-        return Response(
-            content=json.dumps({"error": str(e)}),
-            status_code=500,
-            media_type="application/json"
-        )
-
-# Debug endpoint - support both with and without trailing slash
-@app.get("/simple/debug")
-@app.get("/simple/debug/")
-async def get_debug(request: Request):
-    req_logger = logger.bind(
-        endpoint="debug",
-        method=request.method,
-        path=request.url.path,
-        client=request.client.host if request.client else "unknown"
-    )
-    
-    req_logger.info("endpoint_called")
-    
-    try:
-        # Check auth
-        if not agent._check_basic_auth(request):
-            req_logger.warning("unauthorized_access_attempt")
-            return Response(
-                content=json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                headers={"WWW-Authenticate": "Basic"},
-                media_type="application/json"
-            )
-        
-        # Render SWML
-        swml = agent._render_swml()
-        req_logger.debug("swml_rendered", swml_size=len(swml))
-        
-        # Return as JSON
-        req_logger.info("request_successful")
-        return Response(
-            content=swml,
-            media_type="application/json",
-            headers={"X-Debug": "true"}
-        )
-    except Exception as e:
-        req_logger.error("request_failed", 
-                        error=str(e), 
-                        traceback=traceback.format_exc())
-        return Response(
-            content=json.dumps({"error": str(e)}),
-            status_code=500,
-            media_type="application/json"
-        )
-
-# Function endpoint - support both with and without trailing slash
-@app.post("/simple/swaig/")
-@app.post("/simple/swaig")
-async def post_swaig(request: Request):
-    req_logger = logger.bind(
-        endpoint="swaig",
-        method=request.method,
-        path=request.url.path,
-        client=request.client.host if request.client else "unknown"
-    )
-    
-    req_logger.info("endpoint_called")
-    
-    try:
-        # Check auth
-        if not agent._check_basic_auth(request):
-            req_logger.warning("unauthorized_access_attempt")
-            return Response(
-                content=json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                headers={"WWW-Authenticate": "Basic"},
-                media_type="application/json"
-            )
-        
-        # Parse request
-        try:
-            body = await request.json()
-            req_logger.debug("request_body_received", body_size=len(str(body)))
-        except Exception:
-            req_logger.warning("error_parsing_request_body")
-            body = {}
-        
-        # Extract function name
-        function_name = body.get("function")
-        if not function_name:
-            req_logger.warning("missing_function_name")
-            return Response(
-                content=json.dumps({"error": "Missing function name"}),
-                status_code=400,
-                media_type="application/json"
-            )
-        
-        # Add function info to logger
-        req_logger = req_logger.bind(function=function_name)
-        
-        # Extract arguments
-        args = {}
-        if "argument" in body and isinstance(body["argument"], dict):
-            if "parsed" in body["argument"] and isinstance(body["argument"]["parsed"], list) and body["argument"]["parsed"]:
-                args = body["argument"]["parsed"][0]
-                req_logger.debug("function_args_parsed", args=args)
-        
-        # Call the function
-        result = agent.on_function_call(function_name, args, body)
-        
-        # Convert result to dict if needed
-        if isinstance(result, SwaigFunctionResult):
-            result_dict = result.to_dict()
-        elif isinstance(result, dict):
-            result_dict = result
-        else:
-            result_dict = {"response": str(result)}
-        
-        req_logger.info("function_executed_successfully")
-        return result_dict
-    except Exception as e:
-        req_logger.error("function_execution_failed", 
-                        error=str(e), 
-                        traceback=traceback.format_exc())
-        return Response(
-            content=json.dumps({"error": str(e)}),
-            status_code=500,
-            media_type="application/json"
-        )
-
-# Post-prompt endpoint - support both with and without trailing slash
-@app.post("/simple/post_prompt/")
-@app.post("/simple/post_prompt")
-async def post_post_prompt(request: Request):
-    req_logger = logger.bind(
-        endpoint="post_prompt",
-        method=request.method,
-        path=request.url.path,
-        client=request.client.host if request.client else "unknown"
-    )
-    
-    req_logger.info("endpoint_called")
-    
-    try:
-        # Check auth
-        if not agent._check_basic_auth(request):
-            req_logger.warning("unauthorized_access_attempt")
-            return Response(
-                content=json.dumps({"error": "Unauthorized"}),
-                status_code=401,
-                headers={"WWW-Authenticate": "Basic"},
-                media_type="application/json"
-            )
-        
-        # Parse request
-        try:
-            body = await request.json()
-            req_logger.debug("request_body_received", body_size=len(str(body)))
-        except Exception as e:
-            req_logger.warning("error_parsing_request_body", error=str(e))
-            body = {}
-        
-        # Extract summary from the request
-        ai_response = body.get("ai_response", {})
-        summary = ai_response.get("summary")
-        
-        # Call the summary handler
+        Args:
+            summary: The summary object or None if no summary was found
+            raw_data: The complete raw POST data from the request
+        """
+        # Print summary as properly formatted JSON (not Python dict representation)
         if summary:
-            req_logger.debug("summary_received", summary=summary)
-            agent.on_summary(summary)
-        else:
-            req_logger.warning("summary_missing")
+            if isinstance(summary, (dict, list)):
+                print("SUMMARY: " + json.dumps(summary))
+            else:
+                print(f"SUMMARY: {summary}")
         
-        # Return success
-        req_logger.info("request_successful")
-        return {"success": True}
-    except Exception as e:
-        req_logger.error("request_failed", 
-                        error=str(e), 
-                        traceback=traceback.format_exc())
-        return Response(
-            content=json.dumps({"error": str(e)}),
-            status_code=500,
-            media_type="application/json"
-        )
+        # Also directly print parsed array if available
+        if raw_data and 'post_prompt_data' in raw_data:
+            post_prompt_data = raw_data.get('post_prompt_data')
+            if isinstance(post_prompt_data, dict) and 'parsed' in post_prompt_data:
+                parsed = post_prompt_data.get('parsed')
+                if parsed and len(parsed) > 0:
+                    print("PARSED_SUMMARY: " + json.dumps(parsed[0]))
+            
+            # Print raw if available - this is already a JSON string, so print directly
+            if isinstance(post_prompt_data, dict) and 'raw' in post_prompt_data:
+                raw = post_prompt_data.get('raw')
+                if isinstance(raw, str):
+                    print(f"RAW_SUMMARY: {raw}")
 
-# Log all registered routes
-logger.info("routes_registered", routes=[f"{route.methods} {route.path}" for route in app.routes])
 
 if __name__ == "__main__":
-    # Print the auth credentials
-    username, password, _ = agent.get_basic_auth_credentials(include_source=True)
+    parser = argparse.ArgumentParser(description="Run the SimpleAgent")
+    parser.add_argument("--suppress-logs", action="store_true", help="Suppress extra logs")
+    args = parser.parse_args()
+    
+    # Create an agent instance with log suppression if requested
+    agent = SimpleAgent(suppress_logs=args.suppress_logs)
+    
+    # Print credentials
+    username, password, source = agent.get_basic_auth_credentials(include_source=True)
+    
+    logger.info("starting_agent", 
+               url=f"http://localhost:3000/simple", 
+               username=username, 
+               password_length=len(password),
+               auth_source=source)
     
     print("Starting the agent. Press Ctrl+C to stop.")
     print(f"Agent 'simple' is available at:")
@@ -456,17 +234,8 @@ if __name__ == "__main__":
     print(f"Basic Auth: {username}:{password}")
     
     try:
-        # Configure Uvicorn for production
-        uvicorn_log_config = uvicorn.config.LOGGING_CONFIG
-        uvicorn_log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        uvicorn_log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        
-        uvicorn.run(
-            app, 
-            host="0.0.0.0", 
-            port=3000,
-            log_config=uvicorn_log_config
-        )
+        # Start the agent's server using the built-in serve method
+        agent.serve()
     except KeyboardInterrupt:
         logger.info("server_shutdown")
         print("\nStopping the agent.") 
