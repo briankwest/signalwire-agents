@@ -55,10 +55,10 @@ class StatefulAgent(AgentBase):
             enable_state_tracking=True
         )
         
-        # Use direct POM API calls instead of PROMPT_SECTIONS
-        self.pom.add_section("Personality", body="You are a helpful assistant that remembers previous interactions.")
-        self.pom.add_section("Goal", body="Help users with their questions and remember context from the conversation.")
-        self.pom.add_section("Instructions", bullets=[
+        # Use AgentBase methods instead of direct POM API calls
+        self.prompt_add_section("Personality", body="You are a helpful assistant that remembers previous interactions.")
+        self.prompt_add_section("Goal", body="Help users with their questions and remember context from the conversation.")
+        self.prompt_add_section("Instructions", bullets=[
             "Keep track of user's preferences and previous questions.",
             "Use the get_time function when asked about the current time.",
             "Use the store_preference function to remember user preferences.",
@@ -145,11 +145,8 @@ class StatefulAgent(AgentBase):
         
         return SwaigFunctionResult(f"Your preferences:\n{preferences_text}")
     
-    @AgentBase.tool(
-        name="startup_hook",
-        description="Called when a new conversation starts",
-        parameters={}
-    )
+    # These methods are automatically registered by enable_state_tracking=True,
+    # so we just provide the implementations without the @AgentBase.tool decorators
     def startup_hook(self, args, raw_data):
         """
         Initialize call state when a new conversation starts
@@ -177,11 +174,6 @@ class StatefulAgent(AgentBase):
         print(f"Call {call_id} started at {datetime.now()}")
         return SwaigFunctionResult("Call initialized successfully")
     
-    @AgentBase.tool(
-        name="hangup_hook",
-        description="Called when a conversation ends",
-        parameters={}
-    )
     def hangup_hook(self, args, raw_data):
         """
         Cleanup and log when a call ends
