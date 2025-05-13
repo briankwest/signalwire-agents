@@ -12,7 +12,10 @@ signalwire_agents/core/agent_base.py
 signalwire_agents/core/function_result.py
 signalwire_agents/core/pom_builder.py
 signalwire_agents/core/swaig_function.py
+signalwire_agents/core/swml_builder.py
+signalwire_agents/core/swml_handler.py
 signalwire_agents/core/swml_renderer.py
+signalwire_agents/core/swml_service.py
 signalwire_agents/core/security/__init__.py
 signalwire_agents/core/security/session_manager.py
 signalwire_agents/core/state/__init__.py
@@ -25,5 +28,6 @@ signalwire_agents/prefabs/info_gatherer.py
 signalwire_agents/prefabs/survey.py
 signalwire_agents/utils/__init__.py
 signalwire_agents/utils/pom_utils.py
+signalwire_agents/utils/schema_utils.py
 signalwire_agents/utils/token_generators.py
 signalwire_agents/utils/validators.py

@@ -75,19 +75,35 @@ class SimpleAgent(AgentBase):
     
     def setPersonality(self, personality_text):
         """Set the AI personality description"""
-        self.pom.add_section("Personality", body=personality_text)
+        self.prompt_add_section("Personality", body=personality_text)
         return self
     
     def setGoal(self, goal_text):
         """Set the primary goal for the AI agent"""
-        self.pom.add_section("Goal", body=goal_text)
+        self.prompt_add_section("Goal", body=goal_text)
         return self
     
     def setInstructions(self, instructions_list):
         """Set the list of instructions for the AI agent"""
         if instructions_list:
-            self.pom.add_section("Instructions", bullets=instructions_list)
+            self.prompt_add_section("Instructions", bullets=instructions_list)
         return self
+    
+    def on_swml_request(self, request_data):
+        """
+        Called when SWML is requested (new callback from base class)
+        
+        Args:
+            request_data: Dictionary containing the parsed POST body
+            
+        Returns:
+            Optional dict to modify the SWML document
+        """
+        print(f"SWML requested with data: {request_data}")
+        
+        # Example of how to modify the SWML based on request data
+        # Here we're not modifying anything, just demonstrating the callback
+        return None
     
     @AgentBase.tool(
         name="get_time",

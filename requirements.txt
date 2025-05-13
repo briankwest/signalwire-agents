@@ -5,3 +5,4 @@ requests>=2.26.0
 pyyaml>=6.0
 python-dotenv>=0.19.1
 signalwire-pom>=0.1.0
+structlog

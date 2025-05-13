@@ -158,3 +158,6 @@ class SWAIGFunction:
             function_def["fillers"] = self.fillers
             
         return function_def
+
+# Add an alias for backward compatibility
+SwaigFunction = SWAIGFunction
