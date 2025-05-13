@@ -80,7 +80,7 @@ class AgentBase:
             port: Port to bind the web server to
             basic_auth: Optional (username, password) tuple for basic auth
             use_pom: Whether to use POM for prompt building
-            enable_state_tracking: Whether to track state across a call lifecycle using startup_hook and hangup_hook
+            enable_state_tracking: Whether to register startup_hook and hangup_hook SWAIG functions to track conversation state
             token_expiry_secs: Seconds until tokens expire
             auto_answer: Whether to automatically answer calls
             record_call: Whether to record calls
@@ -741,10 +741,19 @@ class AgentBase:
         Render the complete SWML document
         
         Args:
-            call_id: Optional call ID for session-specific tokens
+            call_id: Optional call ID for session-specific functions
             
         Returns:
             SWML document as a string
+            
+        This method generates the SWML document for the agent. It includes:
+        - The prompt (text or POM)
+        - Post-prompt if set
+        - SWAIG function definitions
+        - Default webhook URL for functions
+        
+        All function calls are secured via basic auth. Parameters such as call_id
+        should be passed in the body of the request, not as query parameters.
         """
         # Get prompt
         prompt = self.get_prompt()
@@ -955,6 +964,17 @@ class AgentBase:
         # Single SWAIG endpoint that handles all function calls (with trailing slash to avoid redirects)
         @router.post("/swaig/")
         async def handle_swaig(request: Request, response: Response):
+            """
+            Handle SWAIG function calls
+            
+            This endpoint handles all SWAIG function calls from the AI.
+            Authentication is performed using basic auth only. Parameters
+            including call_id must be included in the request body, not as
+            query parameters.
+            
+            The endpoint extracts the function name and arguments from the
+            request body and delegates to on_function_call for execution.
+            """
             # Check basic auth first
             if not self._check_basic_auth(request):
                 response.headers["WWW-Authenticate"] = "Basic"
@@ -1390,6 +1410,16 @@ class AgentBase:
     def _register_state_tracking_tools(self):
         """
         Register state tracking tools if enabled
+        
+        When enable_state_tracking is True, this method registers two special SWAIG functions:
+        
+        1. startup_hook - Called when a conversation starts, initializes the state
+        2. hangup_hook - Called when a conversation ends, updates state with end time
+        
+        The agent can override these functions by defining them with @AgentBase.tool decorator.
+        If a function is already defined, it will not be registered again.
+        
+        State tracking relies on the call_id parameter being present in the request body.
         """
         if self._enable_state_tracking:
             # Add startup_hook tool only if it doesn't already exist
@@ -1413,7 +1443,19 @@ class AgentBase:
                 )
     
     def _startup_hook_handler(self, args, raw_data):
-        """Default handler for startup_hook"""
+        """
+        Default handler for startup_hook SWAIG function
+        
+        This function is called when a conversation starts and initializes the state
+        for the conversation. The call_id must be present in the raw_data.
+        
+        Args:
+            args: Arguments passed to the function (empty in this case)
+            raw_data: Raw request data containing call_id
+            
+        Returns:
+            SwaigFunctionResult with status message
+        """
         call_id = raw_data.get("call_id")
         if call_id:
             # Activate the session
@@ -1431,7 +1473,19 @@ class AgentBase:
         return SwaigFunctionResult("No call ID provided")
     
     def _hangup_hook_handler(self, args, raw_data):
-        """Default handler for hangup_hook"""
+        """
+        Default handler for hangup_hook SWAIG function
+        
+        This function is called when a conversation ends and updates the state
+        with the end time. The call_id must be present in the raw_data.
+        
+        Args:
+            args: Arguments passed to the function (empty in this case)
+            raw_data: Raw request data containing call_id
+            
+        Returns:
+            SwaigFunctionResult with status message
+        """
         call_id = raw_data.get("call_id")
         if call_id:
             # End the session

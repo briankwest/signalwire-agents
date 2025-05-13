@@ -28,6 +28,19 @@ class SimpleAgent(AgentBase):
     """
     A simple agent that demonstrates using explicit methods
     to manipulate the POM structure directly
+    
+    This example shows:
+    
+    1. How to create an agent with a structured prompt using POM
+    2. How to define SWAIG functions that the AI can call
+    3. How to return results from SWAIG functions
+    
+    SWAIG functions:
+    - Are defined using the @AgentBase.tool decorator
+    - Receive parameters in the 'args' dictionary
+    - Can access the complete request data via 'raw_data' 
+    - Return responses using SwaigFunctionResult
+    - Can include optional actions in the response
     """
     
     def __init__(self):
@@ -98,7 +111,20 @@ class SimpleAgent(AgentBase):
         }
     )
     def get_weather(self, args, raw_data):
-        """Get the current weather for a location"""
+        """
+        Get the current weather for a location
+        
+        This SWAIG function is called by the AI when a user asks about weather.
+        Parameters are passed in the args dictionary, while the complete request
+        data is in raw_data. Authentication is handled via basic auth.
+        
+        Args:
+            args: Dictionary containing parsed parameters (location)
+            raw_data: Complete request data including call_id and other metadata
+            
+        Returns:
+            SwaigFunctionResult containing the response text and optional actions
+        """
         # Extract location from the args dictionary 
         location = args.get("location", "Unknown location")
         
