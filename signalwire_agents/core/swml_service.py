@@ -258,22 +258,88 @@ class SWMLService:
         """
         router = APIRouter()
         
+        # Root endpoint - without trailing slash
+        @router.get("")
+        @router.post("")
+        async def handle_root_no_slash(request: Request, response: Response):
+            """Handle GET/POST requests to the root endpoint"""
+            return await self._handle_request(request, response)
+            
+        # Root endpoint - with trailing slash
         @router.get("/")
-        async def get_swml(request: Request, response: Response):
-            """Handle GET requests to the service"""
-            # Check auth
-            if not self._check_basic_auth(request):
-                response.headers["WWW-Authenticate"] = "Basic"
-                raise HTTPException(status_code=401, detail="Unauthorized")
-            
-            # Get the current SWML document
-            swml = self.render_document()
-            
-            # Return the SWML document
-            return Response(content=swml, media_type="application/json")
+        @router.post("/")
+        async def handle_root_with_slash(request: Request, response: Response):
+            """Handle GET/POST requests to the root endpoint with trailing slash"""
+            return await self._handle_request(request, response)
         
         self._router = router
         return router
+    
+    async def _handle_request(self, request: Request, response: Response):
+        """
+        Internal handler for both GET and POST requests
+        
+        Args:
+            request: FastAPI Request object
+            response: FastAPI Response object
+            
+        Returns:
+            Response with SWML document or error
+        """
+        # Check auth
+        if not self._check_basic_auth(request):
+            response.headers["WWW-Authenticate"] = "Basic"
+            return HTTPException(status_code=401, detail="Unauthorized")
+        
+        # Process request body if it's a POST
+        body = {}
+        if request.method == "POST":
+            try:
+                raw_body = await request.body()
+                if raw_body:
+                    body = await request.json()
+            except Exception:
+                # Continue with empty body if parsing fails
+                pass
+        
+        # Allow for customized handling in subclasses
+        modifications = self.on_request(body)
+        
+        # Apply any modifications if needed
+        if modifications and isinstance(modifications, dict):
+            # Get a copy of the current document
+            document = self.get_document()
+            
+            # Apply modifications (simplified implementation)
+            # In a real implementation, you might want a more sophisticated merge strategy
+            for key, value in modifications.items():
+                if key in document:
+                    document[key] = value
+            
+            # Create a new document with the modifications
+            modified_doc = json.dumps(document)
+            return Response(content=modified_doc, media_type="application/json")
+        
+        # Get the current SWML document
+        swml = self.render_document()
+        
+        # Return the SWML document
+        return Response(content=swml, media_type="application/json")
+    
+    def on_request(self, request_data: Optional[dict] = None) -> Optional[dict]:
+        """
+        Called when SWML is requested, with request data when available
+        
+        Subclasses can override this to inspect or modify SWML based on the request
+        
+        Args:
+            request_data: Optional dictionary containing the parsed POST body
+            
+        Returns:
+            Optional dict to modify/augment the SWML document
+        """
+        # Default implementation does nothing
+        return None
     
     def serve(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
         """
