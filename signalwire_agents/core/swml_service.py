@@ -563,6 +563,24 @@ class SWMLService:
             """Handle GET/POST requests to the root endpoint with trailing slash"""
             return await self._handle_request(request, response)
         
+        # Add SIP endpoint if routing callback is configured
+        if self._routing_callback is not None:
+            # SIP endpoint - without trailing slash
+            @router.get("/sip")
+            @router.post("/sip")
+            async def handle_sip_no_slash(request: Request, response: Response):
+                """Handle GET/POST requests to the SIP endpoint"""
+                return await self._handle_request(request, response)
+                
+            # SIP endpoint - with trailing slash
+            @router.get("/sip/")
+            @router.post("/sip/")
+            async def handle_sip_with_slash(request: Request, response: Response):
+                """Handle GET/POST requests to the SIP endpoint with trailing slash"""
+                return await self._handle_request(request, response)
+                
+            self.log.info("sip_endpoint_registered", path="/sip")
+        
         self._router = router
         return router
     
@@ -570,6 +588,10 @@ class SWMLService:
         """
         Register a callback function that will be called to determine routing
         based on POST data.
+        
+        When a routing callback is registered, a global `/sip` endpoint is automatically
+        created that will handle SIP requests. This endpoint will use the callback to
+        determine if the request should be processed by this service or redirected.
         
         The callback should take a request object and request body dictionary and return:
         - A route string if it should be routed to a different endpoint
@@ -725,6 +747,10 @@ class SWMLService:
         print(f"Service '{self.name}' is available at:")
         print(f"URL: http://{host}:{port}{self.route}")
         print(f"Basic Auth: {username}:{password}")
+        
+        # Check if SIP routing is enabled and print additional info
+        if self._routing_callback is not None:
+            print(f"SIP endpoint: http://{host}:{port}/sip")
         
         uvicorn.run(self._app, host=host, port=port)
     

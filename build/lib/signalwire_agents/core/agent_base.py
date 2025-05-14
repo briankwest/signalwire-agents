@@ -2373,6 +2373,8 @@ class AgentBase(SWMLService):
         Enable SIP-based routing for this agent
         
         This allows the agent to automatically route SIP requests based on SIP usernames.
+        When enabled, a global `/sip` endpoint is automatically created that will handle
+        SIP requests and deliver them to this agent.
         
         Args:
             auto_map: Whether to automatically map common SIP usernames to this agent
