@@ -164,7 +164,7 @@ SWML documents have the following basic structure:
 
 - `add_answer_verb(max_duration=None, codecs=None)`: Add an answer verb
 - `add_hangup_verb(reason=None)`: Add a hangup verb
-- `add_ai_verb(prompt_text=None, prompt_pom=None, ...)`: Add an AI verb
+- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None, params=None)`: Add an AI verb
 
 ## Verb Handling
 
@@ -326,7 +326,7 @@ service = SWMLService(
 
 - `add_answer_verb(max_duration=None, codecs=None)`
 - `add_hangup_verb(reason=None)`
-- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None)`
+- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None, params=None)`
 
 ## Examples
 

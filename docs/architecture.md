@@ -55,7 +55,7 @@ The SDK is built around a clear class hierarchy:
 
 1. Client requests the root endpoint
 2. Authentication is validated 
-3. `on_request()` is called to allow customization
+3. `on_swml_request()` is called to allow customization
 4. Current SWML document is rendered and returned
 
 ### SWAIG Function Call (POST /swaig/)
@@ -89,9 +89,15 @@ Components:
 - **StateManager**: Interface for state operations
 - **Implementation Options**: FileStateManager, MemoryStateManager, etc.
 
-State is indexed by call ID and can store arbitrary JSON data. Lifecycle hooks:
+State is indexed by call ID and can store arbitrary JSON data. When `enable_state_tracking=True` is set, the system automatically registers lifecycle hooks:
 - **startup_hook**: Called when a new call/session starts
 - **hangup_hook**: Called when a call/session ends
+
+Common state management methods:
+- `get_state(call_id)`: Retrieve state for a call
+- `update_state(call_id, data)`: Update state for a call
+- `set_state(call_id, data)`: Set state for a call (overriding existing)
+- `clear_state(call_id)`: Remove state for a call
 
 ## Security Model
 
@@ -106,9 +112,10 @@ The SDK implements a multi-layer security model:
    - Configurable via environment variables or programmatically
 
 3. **Authorization**
-   - Per-function security tokens
+   - Function-specific security tokens
    - Token validation for secure function calls
-   - Session-based token scope
+   - SessionManager-based security scope
+   - `secure=True` option on tool definitions (default)
 
 4. **State Isolation**
    - Per-call state separation
@@ -127,7 +134,12 @@ The SDK is designed to be highly extensible:
 
 2. **Tool Registration**: Add new tools using the decorator pattern
    ```python
-   @AgentBase.tool(name="tool_name", parameters={...})
+   @AgentBase.tool(
+       name="tool_name", 
+       description="Tool description",
+       parameters={...},
+       secure=True
+   )
    def my_tool(self, args, raw_data):
        # Tool implementation
    ```
@@ -147,7 +159,7 @@ The SDK is designed to be highly extensible:
 
 5. **Request Handling**: Override request handling methods
    ```python
-   def on_request(self, request_data):
+   def on_swml_request(self, request_data):
        # Custom request handling
    ```
 
@@ -157,7 +169,7 @@ The SDK is designed to be highly extensible:
        def __init__(self, config_param1, config_param2, **kwargs):
            super().__init__(**kwargs)
            # Configure the agent based on parameters
-           self.setPersonality("Customized based on: " + config_param1)
+           self.prompt_add_section("Personality", body=f"Customized based on: {config_param1}")
    ```
 
 ## Prefab Agents
@@ -203,8 +215,8 @@ Key steps for creating custom prefabs:
 2. **Configure defaults**:
    ```python
    # Set standard prompt sections
-   self.setPersonality("I am a specialized agent for...")
-   self.setGoal("Help users with...")
+   self.prompt_add_section("Personality", body="I am a specialized agent for...")
+   self.prompt_add_section("Goal", body="Help users with...")
    
    # Add default tools
    self.register_default_tools()
@@ -212,7 +224,11 @@ Key steps for creating custom prefabs:
 
 3. **Add specialized tools**:
    ```python
-   @AgentBase.tool(name="specialized_function", parameters={...})
+   @AgentBase.tool(
+       name="specialized_function", 
+       description="Do something specialized",
+       parameters={...}
+   )
    def specialized_function(self, args, raw_data):
        # Implementation
        return SwaigFunctionResult("Function result")
@@ -340,13 +356,13 @@ The SDK supports multiple deployment models:
 
 3. **State Management**
    - Store essential conversation context in state
-   - Implement cleanup in hangup_hook
+   - Enable automatic state tracking with `enable_state_tracking=True`
    - Use secure state storage for sensitive data
 
 4. **Security**
    - Use HTTPS in production
    - Set strong authentication credentials
-   - Enable per-function security for sensitive operations
+   - Enable security for sensitive operations with `secure=True`
 
 5. **Deployment**
    - Use environment variables for configuration
@@ -391,4 +407,5 @@ Key environment variables:
 - `SWML_SSL_ENABLED`: Enable HTTPS
 - `SWML_SSL_CERT_PATH`: Path to SSL certificate
 - `SWML_SSL_KEY_PATH`: Path to SSL key
-- `SWML_DOMAIN`: Domain name for the service 
+- `SWML_DOMAIN`: Domain name for the service
+- `SWML_SCHEMA_PATH`: Optional path to override the schema.json location 

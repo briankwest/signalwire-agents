@@ -126,7 +126,7 @@ These convenience methods call `prompt_add_section()` internally with the approp
 For simpler agents, you can set the prompt directly as text:
 
 ```python
-self.set_prompt("""
+self.set_prompt_text("""
 You are a helpful assistant. Your goal is to provide clear and concise information
 to the user. Answer their questions to the best of your ability.
 """)
@@ -160,7 +160,8 @@ from signalwire_agents.core.function_result import SwaigFunctionResult
             "type": "string",
             "description": "The city or location to get weather for"
         }
-    }
+    },
+    secure=True  # Optional, defaults to True
 )
 def get_weather(self, args, raw_data):
     # Extract the location parameter
@@ -357,11 +358,25 @@ Enable state tracking to persist information across interactions:
 # Enable state tracking in the constructor
 super().__init__(
     name="stateful-agent",
-    enable_state_tracking=True
+    enable_state_tracking=True,  # Automatically registers startup_hook and hangup_hook
+    state_manager=FileStateManager(storage_dir="./state")  # Optional custom state manager
 )
 
 # Access and update state
-@AgentBase.tool(name="save_preference")
+@AgentBase.tool(
+    name="save_preference",
+    description="Save a user preference",
+    parameters={
+        "key": {
+            "type": "string",
+            "description": "The preference key"
+        },
+        "value": {
+            "type": "string",
+            "description": "The preference value"
+        }
+    }
+)
 def save_preference(self, args, raw_data):
     # Get the call ID from the raw data
     call_id = raw_data.get("call_id")
@@ -372,15 +387,54 @@ def save_preference(self, args, raw_data):
         
         # Update the state
         preferences = state.get("preferences", {})
-        preferences.update(args)
+        preferences[args.get("key")] = args.get("value")
         state["preferences"] = preferences
         
         # Save the updated state
         self.update_state(call_id, state)
         
-        return SwaigFunctionResult("Preferences saved")
+        return SwaigFunctionResult("Preference saved")
     else:
-        return SwaigFunctionResult("Could not save preferences: No call ID")
+        return SwaigFunctionResult("Could not save preference: No call ID")
+```
+
+### Customizing SWML Requests
+
+You can modify the SWML document based on request data by overriding the `on_swml_request` method:
+
+```python
+def on_swml_request(self, request_data=None):
+    """
+    Customize the SWML document based on request data
+    
+    Args:
+        request_data: The request data (body for POST or query params for GET)
+        
+    Returns:
+        Optional dict with modifications to apply to the document
+    """
+    if request_data and "caller_type" in request_data:
+        # Example: Return modifications to change the AI behavior based on caller type
+        if request_data["caller_type"] == "vip":
+            return {
+                "sections": {
+                    "main": [
+                        # Keep the first verb (answer)
+                        # Modify the AI verb parameters
+                        {
+                            "ai": {
+                                "params": {
+                                    "wait_for_user": False,
+                                    "end_of_speech_timeout": 500  # More responsive
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+    
+    # Return None to use the default document
+    return None
 ```
 
 ### Conversation Summary Handling
@@ -473,6 +527,40 @@ agent = ConciergeAgent(
     greeting="Welcome to SignalWire. How can I help you today?",
     name="concierge",
     route="/concierge"
+)
+
+agent.serve(host="0.0.0.0", port=8000)
+```
+
+#### SurveyAgent
+
+Conducts structured surveys with different question types:
+
+```python
+from signalwire_agents.prefabs import SurveyAgent
+
+agent = SurveyAgent(
+    survey_name="Customer Satisfaction",
+    introduction="We'd like to know about your recent experience with our product.",
+    questions=[
+        {
+            "id": "satisfaction",
+            "text": "How satisfied are you with our product?",
+            "type": "rating",
+            "scale": 5,
+            "labels": {
+                "1": "Very dissatisfied",
+                "5": "Very satisfied"
+            }
+        },
+        {
+            "id": "feedback",
+            "text": "Do you have any specific feedback about how we can improve?",
+            "type": "text"
+        }
+    ],
+    name="satisfaction-survey",
+    route="/survey"
 )
 
 agent.serve(host="0.0.0.0", port=8000)
@@ -607,11 +695,17 @@ class EnhancedGatherer(InfoGathererAgent):
         super().__init__(fields=fields, **kwargs)
         
         # Add an additional instruction
-        self.add_instruction("Verify all information carefully.")
+        self.prompt_add_section("Instructions", bullets=[
+            "Verify all information carefully."
+        ])
         
         # Add an additional custom tool
         
-    @AgentBase.tool(name="check_customer", parameters={"email": {"type": "string"}})
+    @AgentBase.tool(
+        name="check_customer", 
+        description="Check customer status in database",
+        parameters={"email": {"type": "string"}}
+    )
     def check_customer(self, args, raw_data):
         # Implementation...
         return SwaigFunctionResult("Customer status: Active")
@@ -670,13 +764,14 @@ my-prefab-agents/
 - `record_call`: Record calls (default: False)
 - `state_manager`: Custom state manager (default: None)
 - `schema_path`: Optional path to schema.json file
+- `suppress_logs`: Whether to suppress structured logs (default: False)
 
 ### Prompt Methods
 
 - `prompt_add_section(title, body=None, bullets=None, numbered=False, numbered_bullets=False)`
 - `prompt_add_subsection(parent_title, title, body=None, bullets=None)`
 - `prompt_add_to_section(title, body=None, bullet=None, bullets=None)`
-- `set_prompt(prompt_text)` or `set_prompt_text(prompt_text)`
+- `set_prompt_text(prompt_text)` or `set_prompt(prompt_text)`
 - `set_post_prompt(prompt_text)`
 - `setPersonality(text)` - Convenience method that calls prompt_add_section
 - `setGoal(text)` - Convenience method that calls prompt_add_section
@@ -688,6 +783,7 @@ my-prefab-agents/
 - `define_tool(name, description, parameters, handler, secure=True, fillers=None)`
 - `set_native_functions(function_names)`
 - `add_native_function(function_name)`
+- `remove_native_function(function_name)`
 - `add_function_include(url, functions, meta_data=None)`
 
 ### Configuration Methods
@@ -706,6 +802,14 @@ my-prefab-agents/
 - `update_state(call_id, data)`
 - `clear_state(call_id)`
 - `cleanup_expired_state()`
+
+### Service Methods
+
+- `serve(host=None, port=None)`
+- `as_router()`
+- `on_swml_request(request_data=None)`
+- `on_summary(summary, raw_data=None)`
+- `on_function_call(name, args, raw_data=None)`
 
 ## Examples
 

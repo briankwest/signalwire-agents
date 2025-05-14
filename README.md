@@ -7,8 +7,8 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **Self-Contained Agents**: Each agent is both a web app and an AI persona
 - **Prompt Object Model**: Structured prompt composition using POM
 - **SWAIG Integration**: Easily define and handle AI tools/functions
-- **Security Built-In**: Session management, per-call tokens, and basic auth
-- **State Management**: Persistent conversation state with lifecycle hooks
+- **Security Built-In**: Session management, function-specific security tokens, and basic auth
+- **State Management**: Persistent conversation state with automatic tracking
 - **Prefab Archetypes**: Ready-to-use agent types for common scenarios
 - **Multi-Agent Support**: Host multiple agents on a single server
 
@@ -72,8 +72,11 @@ class StatefulAgent(AgentBase):
             enable_state_tracking=True,  # Enable state tracking
             state_manager=state_manager  # Use custom state manager
         )
+        
+        # When enable_state_tracking=True, startup_hook and hangup_hook
+        # are automatically registered to track session lifecycle
     
-    # SWAIG function for accessing and updating state
+    # Custom tool for accessing and updating state
     @AgentBase.tool(
         name="save_preference",
         description="Save a user preference",
@@ -146,6 +149,7 @@ The SDK supports the following environment variables:
 - `SWML_SSL_CERT_PATH`: Path to SSL certificate file
 - `SWML_SSL_KEY_PATH`: Path to SSL private key file
 - `SWML_DOMAIN`: Domain name for SSL certificate and external URLs
+- `SWML_SCHEMA_PATH`: Optional path to override the location of the schema.json file
 
 When the auth environment variables are set, they will be used for all agents instead of generating random credentials. The proxy URL base is useful when your service is behind a reverse proxy or when you need external services to access your webhooks.
 
@@ -153,11 +157,13 @@ To enable HTTPS directly (without a reverse proxy), set `SWML_SSL_ENABLED` to "t
 
 ## Documentation
 
-For more detailed documentation, see:
+The package includes comprehensive documentation in the `docs/` directory:
 
-- [Agent Guide](docs/agent_guide.md) - Comprehensive guide on creating and customizing agents
-- [Architecture](docs/architecture.md) - Architecture overview and core concepts
+- [Agent Guide](docs/agent_guide.md) - Detailed guide to creating and customizing agents
+- [Architecture](docs/architecture.md) - Overview of the SDK architecture and core concepts
 - [SWML Service Guide](docs/swml_service_guide.md) - Guide to the underlying SWML service
+
+These documents provide in-depth explanations of the features, APIs, and usage patterns.
 
 ## License
 
