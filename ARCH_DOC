@@ -18,7 +18,7 @@ boiler-plate.
     ┌───────────────────────────────┐
     │  Custom Agent Classes         │  (User code)
     ├───────────────────────────────┤
-    │  Prefab Archetypes            │  (InfoGatherer, FAQBot, …)
+    │  Prefab Archetypes            │  (InfoGatherer, FAQBot, Concierge...)
     ├───────────────────────────────┤
     │  AgentBase                    │  (Prompt builder, SWML, HTTP, auth)
     ├───────────────────────────────┤
@@ -28,9 +28,9 @@ boiler-plate.
 3. Core Components
 ------------------
 A. AgentBase  
-   •  __init__(name, route, host, port, enable_state_tracking=False, …) – registers router & auth  
+   •  __init__(name, route, host, port, enable_state_tracking=False, ...) – registers router & auth  
    •  Prompt Building  
-      – Direct access to POM API via `self.pom` for structured prompts (recommended)
+      – Structured methods via `prompt_add_section` and `prompt_add_subsection`
       – Raw text prompts (set_prompt_text) for simplicity when needed
       – Declarative PROMPT_SECTIONS for auto-initialization  
    •  SWML Renderer `_render_swml(call_id)`  
@@ -43,14 +43,13 @@ A. AgentBase
       – POST /route/swaig          → SWAIG invocation  
    •  Call-Session Manager  
       – Generates `call_id`, per-function tokens  
-      – `startup_hook` activates, `hangup_hook` invalidates session  
-   •  State Manager  
-      – Persistent storage across interactions (get_state, set_state)  
+      – When state tracking enabled, `startup_hook` activates, `hangup_hook` invalidates session  
+   •  State Manager & Tracking  
+      – Persistent storage across interactions via get_state, set_state, update_state
       – Auto-expiring state with cleanup  
-   •  State Tracking System (optional, disabled by default)  
-      – Lifecycle hooks via startup_hook and hangup_hook  
-      – Tracks call state from initiation to termination  
-      – Stores pending requests for processing when a call activates
+      – Optional lifecycle hooks via startup_hook and hangup_hook methods
+      – Hooks automatically registered when enable_state_tracking=True
+      – Automatic state tracking from call initiation to termination
    •  URL Generation & Proxying
       – Supports SWML_PROXY_URL_BASE environment variable for public-facing URLs
       – Automatically replaces local server URL with public proxy URL in all SWML
@@ -91,7 +90,11 @@ F. Prefab Archetypes
 G. State Management  
    •  Abstract StateManager interface with FileStateManager implementation  
    •  Methods for get_state, set_state, update_state, clear_state  
-   •  1-day expiration with automatic cleanup  
+   •  Automatic state lifecycle with optional tracking:
+      – enable_state_tracking=True automatically registers lifecycle hooks
+      – startup_hook initializes state when conversation begins 
+      – hangup_hook performs cleanup when conversation ends
+   •  Time-based expiration with automatic cleanup  
 
 4. Operational Flow
 -------------------
@@ -110,11 +113,15 @@ G. State Management
 5. Extensibility Points
 -----------------------
 •  Override any of:  
-   – `get_prompt()` or use direct POM API access via `self.pom`  
+   – `get_prompt()` or use prompt_add_section/prompt_add_subsection methods  
    – `define_tools()` or decorated methods  
    – `on_summary(summary)`  
+   – `startup_hook()` and `hangup_hook()` for state lifecycle  
    – `on_function_call(name, args, raw_data)` for catch-all logic  
-•  Directly manipulate the POM structure via `self.pom` API methods.  
+•  Prompt building:
+   – POM structure via prompt_add_section and prompt_add_subsection
+   – Support for nested subsections with title, body and bullets 
+   – Automatic parent section creation when needed
 •  Plug custom authentication/authorisation by overriding
    `validate_basic_auth()` and `validate_tool_token()`.
 
