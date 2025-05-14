@@ -9,6 +9,7 @@
 - [Multilingual Support](#multilingual-support)
 - [Agent Configuration](#agent-configuration)
 - [Advanced Features](#advanced-features)
+- [Prefab Agents](#prefab-agents)
 - [API Reference](#api-reference)
 - [Examples](#examples)
 
@@ -387,6 +388,256 @@ def on_summary(self, summary, raw_data=None):
         
         # Save the summary to a database, send notifications, etc.
         # ...
+```
+
+## Prefab Agents
+
+Prefab agents are pre-configured agent implementations designed for specific use cases. They provide ready-to-use functionality with customization options, saving development time and ensuring consistent patterns.
+
+### Built-in Prefabs
+
+The SDK includes several built-in prefab agents:
+
+#### InfoGathererAgent
+
+Collects structured information from users:
+
+```python
+from signalwire_agents.prefabs import InfoGathererAgent
+
+agent = InfoGathererAgent(
+    fields=[
+        {"name": "full_name", "prompt": "What is your full name?"},
+        {"name": "email", "prompt": "What is your email address?", 
+         "validation": r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"},
+        {"name": "reason", "prompt": "How can I help you today?"}
+    ],
+    confirmation_template="Thanks {full_name}, I'll help you with {reason}. I'll send a confirmation to {email}.",
+    name="info-gatherer",
+    route="/info-gatherer"
+)
+
+agent.serve(host="0.0.0.0", port=8000)
+```
+
+#### KnowledgeBaseAgent
+
+Answers questions based on a knowledge base:
+
+```python
+from signalwire_agents.prefabs import KnowledgeBaseAgent
+
+agent = KnowledgeBaseAgent(
+    knowledge_base_path="./docs",
+    personality="I'm a product documentation assistant.",
+    citation_style="inline",
+    name="knowledge-base",
+    route="/knowledge-base"
+)
+
+agent.serve(host="0.0.0.0", port=8000)
+```
+
+#### ConciergeAgent
+
+Routes users to specialized agents:
+
+```python
+from signalwire_agents.prefabs import ConciergeAgent
+
+agent = ConciergeAgent(
+    routing_map={
+        "technical_support": {
+            "url": "http://tech-support-agent:8001",
+            "criteria": ["error", "broken", "not working"]
+        },
+        "sales": {
+            "url": "http://sales-agent:8002",
+            "criteria": ["pricing", "purchase", "subscribe"]
+        }
+    },
+    greeting="Welcome to SignalWire. How can I help you today?",
+    name="concierge",
+    route="/concierge"
+)
+
+agent.serve(host="0.0.0.0", port=8000)
+```
+
+### Creating Your Own Prefabs
+
+You can create your own prefab agents by extending `AgentBase` or any existing prefab. Custom prefabs can be created directly within your project or packaged as reusable libraries.
+
+#### Basic Prefab Structure
+
+A well-designed prefab should:
+
+1. Extend `AgentBase` or another prefab
+2. Take configuration parameters in the constructor
+3. Apply configuration to set up the agent
+4. Provide appropriate default values
+5. Include domain-specific tools
+
+Example of a custom support agent prefab:
+
+```python
+from signalwire_agents import AgentBase
+from signalwire_agents.core.function_result import SwaigFunctionResult
+
+class CustomerSupportAgent(AgentBase):
+    def __init__(
+        self,
+        product_name,
+        knowledge_base_path=None,
+        support_email=None,
+        escalation_path=None,
+        **kwargs
+    ):
+        # Pass standard params to parent
+        super().__init__(**kwargs)
+        
+        # Store custom configuration
+        self._product_name = product_name
+        self._knowledge_base_path = knowledge_base_path
+        self._support_email = support_email
+        self._escalation_path = escalation_path
+        
+        # Configure prompt
+        self.prompt_add_section("Personality", 
+                               body=f"I am a customer support agent for {product_name}.")
+        self.prompt_add_section("Goal", 
+                               body="Help customers solve their problems effectively.")
+        
+        # Add standard instructions
+        self._configure_instructions()
+        
+        # Register default tools
+        self._register_default_tools()
+    
+    def _configure_instructions(self):
+        """Configure standard instructions based on settings"""
+        instructions = [
+            "Be professional but friendly.",
+            "Verify the customer's identity before sharing account details."
+        ]
+        
+        if self._escalation_path:
+            instructions.append(
+                f"For complex issues, offer to escalate to {self._escalation_path}."
+            )
+            
+        self.prompt_add_section("Instructions", bullets=instructions)
+    
+    def _register_default_tools(self):
+        """Register default tools if appropriate paths are configured"""
+        if self._knowledge_base_path:
+            self.register_knowledge_base_tool()
+    
+    def register_knowledge_base_tool(self):
+        """Register the knowledge base search tool if configured"""
+        # Implementation...
+        pass
+    
+    @AgentBase.tool(
+        name="escalate_issue",
+        description="Escalate a customer issue to a human agent",
+        parameters={
+            "issue_summary": {"type": "string", "description": "Brief summary of the issue"},
+            "customer_email": {"type": "string", "description": "Customer's email address"}
+        }
+    )
+    def escalate_issue(self, args, raw_data):
+        # Implementation...
+        return SwaigFunctionResult("Issue escalated successfully.")
+    
+    @AgentBase.tool(
+        name="send_support_email",
+        description="Send a follow-up email to the customer",
+        parameters={
+            "customer_email": {"type": "string"},
+            "issue_summary": {"type": "string"},
+            "resolution_steps": {"type": "string"}
+        }
+    )
+    def send_support_email(self, args, raw_data):
+        # Implementation...
+        return SwaigFunctionResult("Follow-up email sent successfully.")
+```
+
+#### Using the Custom Prefab
+
+```python
+# Create an instance of the custom prefab
+support_agent = CustomerSupportAgent(
+    product_name="SignalWire Voice API",
+    knowledge_base_path="./product_docs",
+    support_email="support@example.com",
+    escalation_path="tier 2 support",
+    name="voice-support",
+    route="/voice-support"
+)
+
+# Start the agent
+support_agent.serve(host="0.0.0.0", port=8000)
+```
+
+#### Customizing Existing Prefabs
+
+You can also extend and customize the built-in prefabs:
+
+```python
+from signalwire_agents.prefabs import InfoGathererAgent
+
+class EnhancedGatherer(InfoGathererAgent):
+    def __init__(self, fields, **kwargs):
+        super().__init__(fields=fields, **kwargs)
+        
+        # Add an additional instruction
+        self.add_instruction("Verify all information carefully.")
+        
+        # Add an additional custom tool
+        
+    @AgentBase.tool(name="check_customer", parameters={"email": {"type": "string"}})
+    def check_customer(self, args, raw_data):
+        # Implementation...
+        return SwaigFunctionResult("Customer status: Active")
+```
+
+### Best Practices for Prefab Design
+
+1. **Clear Documentation**: Document the purpose, parameters, and extension points
+2. **Sensible Defaults**: Provide working defaults that make sense for the use case
+3. **Error Handling**: Implement robust error handling with helpful messages
+4. **Modular Design**: Keep prefabs focused on a specific use case
+5. **Consistent Interface**: Maintain consistent patterns across related prefabs
+6. **Extension Points**: Provide clear ways for others to extend your prefab
+7. **Configuration Options**: Make all key behaviors configurable
+
+### Making Prefabs Distributable
+
+To create distributable prefabs that can be used across multiple projects:
+
+1. **Package Structure**: Create a proper Python package
+2. **Documentation**: Include clear usage examples 
+3. **Configuration**: Support both code and file-based configuration
+4. **Testing**: Include tests for your prefab
+5. **Publishing**: Publish to PyPI or share via GitHub
+
+Example package structure:
+
+```
+my-prefab-agents/
+├── README.md
+├── setup.py
+├── examples/
+│   └── support_agent_example.py
+└── my_prefab_agents/
+    ├── __init__.py
+    ├── support.py
+    ├── retail.py
+    └── utils/
+        ├── __init__.py
+        └── knowledge_base.py
 ```
 
 ## API Reference
