@@ -68,10 +68,13 @@ class SimpleAgent(AgentBase):
     
     def __init__(self, suppress_logs=False):
         # Find schema.json in the current directory or parent directory
+        # The schema.json file defines the valid structure for SWML documents
+        # and is used for validation during document creation
         current_dir = os.path.dirname(os.path.abspath(__file__))
         parent_dir = os.path.dirname(current_dir)
         
         # Try to find schema.json in several locations
+        # This allows the example to work regardless of where it's run from
         schema_locations = [
             os.path.join(current_dir, "schema.json"),
             os.path.join(parent_dir, "schema.json"),
@@ -89,17 +92,25 @@ class SimpleAgent(AgentBase):
             logger.warning("schema_not_found", locations=schema_locations)
             
         # Initialize the agent with a name and route
+        # The name is used for identification and logging
+        # The route defines the HTTP endpoint path for the agent (e.g., /simple)
         super().__init__(
             name="simple",
             route="/simple",
-            host="0.0.0.0",
-            port=3000,
-            use_pom=True,  # Ensure we're using POM
-            schema_path=schema_path,  # Pass the explicit schema path
-            suppress_logs=suppress_logs  # Suppress extra logs
+            host="0.0.0.0",  # Bind to all interfaces
+            port=3000,       # Listen on port 3000
+            use_pom=True,    # Enable Prompt Object Model for structured prompts
+            schema_path=schema_path,  # Pass the explicit schema path for validation
+            suppress_logs=suppress_logs  # Option to reduce log output
         )
         
-        # Initialize POM sections using explicit methods
+        #------------------------------------------------------------------------
+        # PROMPT CONFIGURATION
+        # Set up the AI's personality, goals, and instructions using POM structure
+        #------------------------------------------------------------------------
+        
+        # Initialize POM sections using convenience methods
+        # These methods call prompt_add_section() internally with appropriate section titles
         self.setPersonality("You are a friendly and helpful assistant.")
         self.setGoal("Help users with basic tasks and answer questions.")
         self.setInstructions([
@@ -109,7 +120,9 @@ class SimpleAgent(AgentBase):
             "Use the get_weather function when asked about the weather."
         ])
         
-        # Add a post-prompt for summary
+        # Add a post-prompt for summary generation
+        # This is processed after the conversation ends to generate a summary
+        # The summary is received in the on_summary method
         self.set_post_prompt("""
         Return a JSON summary of the conversation:
         {
@@ -119,7 +132,13 @@ class SimpleAgent(AgentBase):
         }
         """)
         
+        #------------------------------------------------------------------------
+        # PRONUNCIATION AND HINTS
+        # Help the AI understand and pronounce certain terms correctly
+        #------------------------------------------------------------------------
+        
         # Configure hints to help the AI understand certain words
+        # Hints are used to improve entity recognition in the conversation
         self.add_hints([
             "SignalWire", 
             "SWML", 
@@ -127,24 +146,33 @@ class SimpleAgent(AgentBase):
         ])
         
         # Add a pattern hint for pronunciation
+        # Pattern hints use regex to match text patterns and provide replacements
+        # This helps the AI pronounce terms more naturally
         self.add_pattern_hint(
-            hint="AI Agent", 
-            pattern="AI\\s+Agent", 
-            replace="A.I. Agent", 
-            ignore_case=True
+            hint="AI Agent",           # Term to help with
+            pattern="AI\\s+Agent",     # Regex pattern to match
+            replace="A.I. Agent",      # Replacement for pronunciation
+            ignore_case=True           # Case-insensitive matching
         )
         
-        # Add pronunciation rules
-        self.add_pronunciation("API", "A P I", ignore_case=False)
-        self.add_pronunciation("SIP", "sip", ignore_case=True)
+        # Add simple pronunciation rules
+        # These map exact terms to the phonetic way they should be pronounced
+        self.add_pronunciation("API", "A P I", ignore_case=False)  # Spell out A-P-I
+        self.add_pronunciation("SIP", "sip", ignore_case=True)     # Pronounce as word
         
-        # Configure language support
-        # Example 1: Simple format
+        #------------------------------------------------------------------------
+        # MULTILINGUAL SUPPORT
+        # Configure multiple languages with different voice options
+        #------------------------------------------------------------------------
+        
+        # Example 1: Simple format with ElevenLabs voice
         self.add_language(
-            name="English",
-            code="en-US",
-            voice="elevenlabs.josh",
+            name="English",    # Display name for the language
+            code="en-US",      # ISO language code
+            voice="elevenlabs.josh",  # Voice ID with provider prefix
+            # Phrases to use when the AI needs time to think
             speech_fillers=["Let me think about that...", "One moment please..."],
+            # Phrases to use when the AI is calling a function
             function_fillers=["I'm looking that up for you...", "Let me check that..."]
         )
 
@@ -152,22 +180,23 @@ class SimpleAgent(AgentBase):
         self.add_language(
             name="British English",
             code="en-GB",
-            voice="emma",
-            engine="elevenlabs",
-            model="eleven_turbo_v2",
+            voice="emma",        # Voice ID without provider prefix
+            engine="elevenlabs", # The TTS engine to use
+            model="eleven_turbo_v2",  # Specific model for the voice
             speech_fillers=["Just a moment...", "Thinking..."]
         )
 
-        # Example 3: Combined string format
+        # Example 3: Combined string format (provider.voice:model)
         self.add_language(
             name="Spanish",
             code="es",
+            # Format: provider.voice:model
             voice="elevenlabs.antonio:eleven_multilingual_v2",
             speech_fillers=["Un momento por favor...", "Estoy pensando..."],
             function_fillers=["Estoy buscando esa información...", "Déjame verificar..."]
         )
 
-        # Example 4: Rime engine with explicit parameters
+        # Example 4: Alternative engine (Rime) with explicit parameters
         self.add_language(
             name="French",
             code="fr-FR",
@@ -176,23 +205,29 @@ class SimpleAgent(AgentBase):
             model="arcana"
         )
 
-        # Example 5: Rime engine with combined format
+        # Example 5: Alternative engine with combined format
         self.add_language(
             name="German",
             code="de-DE",
-            voice="rime.hans:arcana"
+            voice="rime.hans:arcana"  # Format: provider.voice:model
         )
         
-        # Set AI behavior parameters
+        #------------------------------------------------------------------------
+        # AI BEHAVIOR PARAMETERS
+        # Configure how the AI interacts with users
+        #------------------------------------------------------------------------
+        
+        # Set AI behavior parameters that control conversation flow
         self.set_params({
-            "wait_for_user": False,
-            "end_of_speech_timeout": 1000,
-            "ai_volume": 5,
-            "languages_enabled": True,
-            "local_tz": "America/Los_Angeles"
+            "wait_for_user": False,          # Start speaking immediately rather than waiting
+            "end_of_speech_timeout": 1000,   # Milliseconds of silence before assuming speech ended
+            "ai_volume": 5,                  # Voice volume level
+            "languages_enabled": True,       # Enable multilingual support
+            "local_tz": "America/Los_Angeles" # Default timezone for time-related functions
         })
         
         # Add global data available to the AI
+        # This provides context that the AI can reference during conversations
         self.set_global_data({
             "company_name": "SignalWire",
             "product": "AI Agent SDK",
@@ -203,49 +238,106 @@ class SimpleAgent(AgentBase):
             ]
         })
         
-        # Configure native functions (built-in functions)
+        #------------------------------------------------------------------------
+        # FUNCTION CONFIGURATION
+        # Set up built-in and remote functions the AI can call
+        #------------------------------------------------------------------------
+        
+        # Configure native functions (built-in functions provided by SignalWire)
+        # These don't require implementation in the agent class
         self.set_native_functions([
-            "check_time",
-            "wait_seconds"
+            "check_time",     # Get the current time in various formats
+            "wait_seconds"    # Pause the conversation for a specified duration
         ])
         
         # Add remote function includes
+        # These are functions hosted at external URLs that the AI can call
+        # First remote endpoint with metadata
         self.add_function_include(
-            url="https://api.example.com/remote-functions",
-            functions=["get_weather_extended", "get_traffic", "get_news"],
-            meta_data={
+            url="https://api.example.com/remote-functions",  # API endpoint
+            functions=[  # List of available functions at this endpoint
+                "get_weather_extended", 
+                "get_traffic", 
+                "get_news"
+            ],
+            meta_data={  # Additional data for the API call
                 "auth_type": "bearer",
                 "region": "us-west"
             }
         )
         
         # Add another remote function include with a different URL
+        # This one doesn't include metadata, using default settings
         self.add_function_include(
             url="https://ai-tools.example.org/functions",
             functions=["translate_text", "summarize_document"]
         )
         
-        # Enable SIP routing for this agent
+        #------------------------------------------------------------------------
+        # SIP ROUTING CONFIGURATION
+        # Enable the agent to be reachable via SIP for voice calls
+        #------------------------------------------------------------------------
+        
+        # Enable SIP routing for this agent with auto_map=True
+        # This allows the agent to be contacted through SIP protocol
+        # auto_map=True creates a default SIP mapping using the agent's name
+        # (e.g., simple@your-sip-domain)
         self.enable_sip_routing(auto_map=True)
         
         # Register additional SIP usernames for this agent
+        # These provide alternative ways to reach the same agent
+        # (e.g., simple_agent@your-sip-domain, assistant@your-sip-domain)
         self.register_sip_username("simple_agent")
         self.register_sip_username("assistant")
         
+        # Log that the agent has been fully initialized
         logger.info("agent_initialized", agent_name=self.name, route=self.route)
     
     def setPersonality(self, personality_text):
-        """Set the AI personality description"""
+        """
+        Set the AI personality description
+        
+        This is a convenience method that adds a Personality section to the prompt.
+        The personality defines the AI's character, tone, and style of interaction.
+        
+        Args:
+            personality_text: The personality description as a string
+            
+        Returns:
+            self: For method chaining
+        """
         self.prompt_add_section("Personality", body=personality_text)
         return self
     
     def setGoal(self, goal_text):
-        """Set the primary goal for the AI agent"""
+        """
+        Set the primary goal for the AI agent
+        
+        This is a convenience method that adds a Goal section to the prompt.
+        The goal defines the AI's primary purpose and objective.
+        
+        Args:
+            goal_text: The goal description as a string
+            
+        Returns:
+            self: For method chaining
+        """
         self.prompt_add_section("Goal", body=goal_text)
         return self
     
     def setInstructions(self, instructions_list):
-        """Set the list of instructions for the AI agent"""
+        """
+        Set the list of instructions for the AI agent
+        
+        This is a convenience method that adds an Instructions section to the prompt.
+        Instructions provide specific guidance for the AI's behavior.
+        
+        Args:
+            instructions_list: List of instruction strings
+            
+        Returns:
+            self: For method chaining
+        """
         if instructions_list:
             self.prompt_add_section("Instructions", bullets=instructions_list)
         return self
@@ -253,10 +345,22 @@ class SimpleAgent(AgentBase):
     @AgentBase.tool(
         name="get_time",
         description="Get the current time",
-        parameters={}
+        parameters={}  # No parameters needed for this function
     )
     def get_time(self, args, raw_data):
-        """Get the current time"""
+        """
+        Get the current time
+        
+        This SWAIG function is called by the AI when a user asks about the current time.
+        It returns the current time in HH:MM:SS format.
+        
+        Args:
+            args: Dictionary containing parsed parameters (empty for this function)
+            raw_data: Complete request data including call_id and other metadata
+            
+        Returns:
+            SwaigFunctionResult containing the current time
+        """
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
         logger.debug("get_time_called", time=formatted_time)
@@ -294,6 +398,8 @@ class SimpleAgent(AgentBase):
         logger.debug("get_weather_called", location=location)
         
         # Create the result with a response
+        # In a real implementation, this would call a weather API
+        # For this example, we return mock data
         result = SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
         
         return result
@@ -301,6 +407,10 @@ class SimpleAgent(AgentBase):
     def on_summary(self, summary, raw_data=None):
         """
         Handle the conversation summary
+        
+        This method is called after the conversation ends when a post_prompt
+        was configured. It processes the summary generated by the AI based on
+        the post_prompt instructions.
         
         Args:
             summary: The summary object or None if no summary was found
@@ -314,14 +424,17 @@ class SimpleAgent(AgentBase):
                 print(f"SUMMARY: {summary}")
         
         # Also directly print parsed array if available
+        # The post_prompt_data contains both raw and parsed versions of the summary
         if raw_data and 'post_prompt_data' in raw_data:
             post_prompt_data = raw_data.get('post_prompt_data')
+            
+            # Print parsed summary data if available (usually a JSON object)
             if isinstance(post_prompt_data, dict) and 'parsed' in post_prompt_data:
                 parsed = post_prompt_data.get('parsed')
                 if parsed and len(parsed) > 0:
                     print("PARSED_SUMMARY: " + json.dumps(parsed[0]))
             
-            # Print raw if available - this is already a JSON string, so print directly
+            # Print raw summary if available (this is the unprocessed text)
             if isinstance(post_prompt_data, dict) and 'raw' in post_prompt_data:
                 raw = post_prompt_data.get('raw')
                 if isinstance(raw, str):
@@ -336,15 +449,19 @@ if __name__ == "__main__":
     # Create an agent instance with log suppression if requested
     agent = SimpleAgent(suppress_logs=args.suppress_logs)
     
-    # Print credentials
+    # Get and print the authentication credentials
+    # include_source=True also returns where the credentials came from
+    # (generated, environment variables, or explicitly provided)
     username, password, source = agent.get_basic_auth_credentials(include_source=True)
     
+    # Log agent startup with structured data
     logger.info("starting_agent", 
                url=f"http://localhost:3000/simple", 
                username=username, 
                password_length=len(password),
                auth_source=source)
     
+    # Print user-friendly startup message with access details
     print("Starting the agent. Press Ctrl+C to stop.")
     print(f"Agent 'simple' is available at:")
     print(f"URL: http://localhost:3000/simple")
@@ -352,7 +469,9 @@ if __name__ == "__main__":
     
     try:
         # Start the agent's server using the built-in serve method
+        # This starts a uvicorn server with the FastAPI app
         agent.serve()
     except KeyboardInterrupt:
+        # Handle clean shutdown on Ctrl+C
         logger.info("server_shutdown")
         print("\nStopping the agent.") 
