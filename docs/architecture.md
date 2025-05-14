@@ -171,7 +171,7 @@ The SDK includes a collection of prefab agents that provide ready-to-use impleme
    - Configuration: Define fields to collect, validation rules, and confirmation templates
    - Use cases: Form filling, survey collection, intake processes
 
-2. **KnowledgeBaseAgent**
+2. **FAQBotAgent**
    - Purpose: Answer questions based on a provided knowledge base
    - Configuration: Data sources, retrieval methods, citation options
    - Use cases: FAQ bots, documentation assistants, support agents
@@ -180,6 +180,11 @@ The SDK includes a collection of prefab agents that provide ready-to-use impleme
    - Purpose: Handle routing and delegation between multiple specialized agents
    - Configuration: Connected agents, routing logic, handoff protocols
    - Use cases: Front-desk services, triage systems, switchboard operators
+
+4. **SurveyAgent**
+   - Purpose: Conduct structured surveys with rating scales and open-ended questions
+   - Configuration: Survey questions, rating scales, branching logic
+   - Use cases: Customer satisfaction surveys, feedback collection, market research
 
 ### Creating Custom Prefabs
 

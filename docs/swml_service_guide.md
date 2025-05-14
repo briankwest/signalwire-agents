@@ -119,6 +119,15 @@ import logging
 logging.getLogger().setLevel(logging.WARNING)  # Only show warnings and above
 ```
 
+You can also pass `suppress_logs=True` when initializing an agent or service:
+
+```python
+service = SWMLService(
+    name="my-service",
+    suppress_logs=True
+)
+```
+
 ## SWML Document Creation
 
 The `SWMLService` class provides methods for creating and manipulating SWML documents.
@@ -232,10 +241,10 @@ You can also set credentials using environment variables:
 
 ### Dynamic SWML Generation
 
-You can override the `on_request` method to customize SWML documents based on request data:
+You can override the `on_swml_request` method to customize SWML documents based on request data:
 
 ```python
-def on_request(self, request_data=None):
+def on_swml_request(self, request_data=None):
     if not request_data:
         return None
         
@@ -253,7 +262,8 @@ def on_request(self, request_data=None):
             "url": "say:Welcome caller!"
         })
     
-    # Return None to use the document we've built
+    # Return modifications to the document
+    # or None to use the document we've built without modifications
     return None
 ```
 
@@ -293,6 +303,7 @@ service = SWMLService(
 - `port`: Port to bind to (default: 3000)
 - `basic_auth`: Optional tuple of (username, password)
 - `schema_path`: Optional path to schema.json
+- `suppress_logs`: Whether to suppress structured logs (default: False)
 
 ### Document Methods
 
@@ -308,14 +319,14 @@ service = SWMLService(
 - `as_router()`
 - `serve(host=None, port=None)`
 - `stop()`
-- `get_basic_auth_credentials()`
-- `on_request(request_data=None)`
+- `get_basic_auth_credentials(include_source=False)`
+- `on_swml_request(request_data=None)`
 
 ### Verb Helper Methods
 
 - `add_answer_verb(max_duration=None, codecs=None)`
 - `add_hangup_verb(reason=None)`
-- `add_ai_verb(prompt_text=None, prompt_pom=None, ...)`
+- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None)`
 
 ## Examples
 
@@ -377,7 +388,7 @@ class VoicemailService(SWMLService):
 
 ```python
 class CallRouterService(SWMLService):
-    def on_request(self, request_data=None):
+    def on_swml_request(self, request_data=None):
         # If there's no request data, use default routing
         if not request_data:
             self.log.debug("no_request_data_using_default")

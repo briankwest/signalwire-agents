@@ -27,12 +27,23 @@ from signalwire_agents.core.function_result import SwaigFunctionResult
 class SimpleAgent(AgentBase):
     def __init__(self):
         super().__init__(name="simple", route="/simple")
-        self.set_personality("You are a helpful assistant.")
-        self.set_goal("Help users with basic questions.")
-        self.add_instruction("Be concise and clear.")
+        
+        # Configure the agent's personality
+        self.prompt_add_section("Personality", body="You are a helpful assistant.")
+        self.prompt_add_section("Goal", body="Help users with basic questions.")
+        self.prompt_add_section("Instructions", bullets=["Be concise and clear."])
+        
+        # Alternative using convenience methods:
+        # self.setPersonality("You are a helpful assistant.")
+        # self.setGoal("Help users with basic questions.")
+        # self.setInstructions(["Be concise and clear."])
     
-    @AgentBase.tool(name="get_time", parameters={})
-    def get_time(self):
+    @AgentBase.tool(
+        name="get_time", 
+        description="Get the current time",
+        parameters={}
+    )
+    def get_time(self, args, raw_data):
         from datetime import datetime
         now = datetime.now().strftime("%H:%M:%S")
         return SwaigFunctionResult(f"The current time is {now}")
@@ -47,6 +58,7 @@ if __name__ == "__main__":
 
 ```python
 from signalwire_agents import AgentBase
+from signalwire_agents.core.function_result import SwaigFunctionResult
 from signalwire_agents.core.state import FileStateManager
 
 class StatefulAgent(AgentBase):
@@ -61,20 +73,40 @@ class StatefulAgent(AgentBase):
             state_manager=state_manager  # Use custom state manager
         )
     
-    # These methods are automatically registered when enable_state_tracking=True
-    def startup_hook(self, args, raw_data):
-        """Called when a conversation starts"""
+    # SWAIG function for accessing and updating state
+    @AgentBase.tool(
+        name="save_preference",
+        description="Save a user preference",
+        parameters={
+            "preference_name": {
+                "type": "string",
+                "description": "Name of the preference to save"
+            },
+            "preference_value": {
+                "type": "string",
+                "description": "Value of the preference"
+            }
+        }
+    )
+    def save_preference(self, args, raw_data):
+        # Get the call ID from the raw data
         call_id = raw_data.get("call_id")
-        state = self.get_state(call_id) or {}
-        state["started_at"] = "2023-01-01T12:00:00Z"
-        self.update_state(call_id, state)
-        return "Call initialized"
         
-    def hangup_hook(self, args, raw_data):
-        """Called when a conversation ends"""
-        call_id = raw_data.get("call_id")
-        state = self.get_state(call_id)
-        return "Call completed"
+        if call_id:
+            # Get current state or empty dict if none exists
+            state = self.get_state(call_id) or {}
+            
+            # Update the state
+            preferences = state.get("preferences", {})
+            preferences[args.get("preference_name")] = args.get("preference_value")
+            state["preferences"] = preferences
+            
+            # Save the updated state
+            self.update_state(call_id, state)
+            
+            return SwaigFunctionResult("Preference saved successfully")
+        else:
+            return SwaigFunctionResult("Could not save preference: No call ID")
 ```
 
 ## Using Prefab Agents
@@ -87,11 +119,19 @@ agent = InfoGathererAgent(
         {"name": "full_name", "prompt": "What is your full name?"},
         {"name": "reason", "prompt": "How can I help you today?"}
     ],
-    confirmation_template="Thanks {full_name}, I'll help you with {reason}."
+    confirmation_template="Thanks {full_name}, I'll help you with {reason}.",
+    name="info-gatherer",
+    route="/info-gatherer"
 )
 
-agent.serve(host="0.0.0.0", port=8000, route="/support")
+agent.serve(host="0.0.0.0", port=8000)
 ```
+
+Available prefabs include:
+- `InfoGathererAgent`: Collects structured information from users
+- `FAQBotAgent`: Answers questions based on a knowledge base
+- `ConciergeAgent`: Routes users to specialized agents
+- `SurveyAgent`: Conducts structured surveys with questions and rating scales
 
 ## Configuration
 
@@ -113,15 +153,11 @@ To enable HTTPS directly (without a reverse proxy), set `SWML_SSL_ENABLED` to "t
 
 ## Documentation
 
-See the [full documentation](https://docs.signalwire.com/ai-agents) for details on:
+For more detailed documentation, see:
 
-- Creating custom agents
-- Using prefab agents
-- SWAIG function definitions
-- State management and persistence
-- Security model
-- Deployment options
-- Multi-agent hosting
+- [Agent Guide](docs/agent_guide.md) - Comprehensive guide on creating and customizing agents
+- [Architecture](docs/architecture.md) - Architecture overview and core concepts
+- [SWML Service Guide](docs/swml_service_guide.md) - Guide to the underlying SWML service
 
 ## License
 

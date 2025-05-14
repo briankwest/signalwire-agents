@@ -107,6 +107,20 @@ self.prompt_add_section("Context",
                                "Check for existing tickets"])
 ```
 
+For convenience, the SDK also provides wrapper methods that some users may prefer:
+
+```python
+# Convenience methods
+self.setPersonality("You are a friendly assistant.") 
+self.setGoal("Help users with their questions.")
+self.setInstructions([
+    "Answer questions clearly",
+    "Be helpful and polite"
+])
+```
+
+These convenience methods call `prompt_add_section()` internally with the appropriate section titles.
+
 ### 2. Using Raw Text Prompts
 
 For simpler agents, you can set the prompt directly as text:
@@ -420,14 +434,14 @@ agent = InfoGathererAgent(
 agent.serve(host="0.0.0.0", port=8000)
 ```
 
-#### KnowledgeBaseAgent
+#### FAQBotAgent
 
 Answers questions based on a knowledge base:
 
 ```python
-from signalwire_agents.prefabs import KnowledgeBaseAgent
+from signalwire_agents.prefabs import FAQBotAgent
 
-agent = KnowledgeBaseAgent(
+agent = FAQBotAgent(
     knowledge_base_path="./docs",
     personality="I'm a product documentation assistant.",
     citation_style="inline",
@@ -655,34 +669,43 @@ my-prefab-agents/
 - `auto_answer`: Auto-answer calls (default: True)
 - `record_call`: Record calls (default: False)
 - `state_manager`: Custom state manager (default: None)
+- `schema_path`: Optional path to schema.json file
 
 ### Prompt Methods
 
-- `prompt_add_section(title, body=None, bullets=None)`
-- `set_prompt(prompt_text)`
+- `prompt_add_section(title, body=None, bullets=None, numbered=False, numbered_bullets=False)`
+- `prompt_add_subsection(parent_title, title, body=None, bullets=None)`
+- `prompt_add_to_section(title, body=None, bullet=None, bullets=None)`
+- `set_prompt(prompt_text)` or `set_prompt_text(prompt_text)`
 - `set_post_prompt(prompt_text)`
+- `setPersonality(text)` - Convenience method that calls prompt_add_section
+- `setGoal(text)` - Convenience method that calls prompt_add_section
+- `setInstructions(bullets)` - Convenience method that calls prompt_add_section
 
 ### SWAIG Methods
 
-- `@AgentBase.tool(name, description, parameters={})`
+- `@AgentBase.tool(name, description, parameters={}, secure=True, fillers=None)`
+- `define_tool(name, description, parameters, handler, secure=True, fillers=None)`
 - `set_native_functions(function_names)`
 - `add_native_function(function_name)`
 - `add_function_include(url, functions, meta_data=None)`
 
 ### Configuration Methods
 
-- `add_hints(hints)`
+- `add_hint(hint)` and `add_hints(hints)`
 - `add_pattern_hint(hint, pattern, replace, ignore_case=False)`
 - `add_pronunciation(replace, with_text, ignore_case=False)`
 - `add_language(name, code, voice, speech_fillers=None, function_fillers=None, engine=None, model=None)`
-- `set_params(params_dict)`
-- `set_global_data(data_dict)`
+- `set_param(key, value)` and `set_params(params_dict)`
+- `set_global_data(data_dict)` and `update_global_data(data_dict)`
 
 ### State Methods
 
 - `get_state(call_id)`
-- `update_state(call_id, state)`
-- `delete_state(call_id)`
+- `set_state(call_id, data)` 
+- `update_state(call_id, data)`
+- `clear_state(call_id)`
+- `cleanup_expired_state()`
 
 ## Examples
 
