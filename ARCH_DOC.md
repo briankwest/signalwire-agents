@@ -13,6 +13,7 @@ The SDK is built around a clear class hierarchy:
 - **SWMLService**: The foundation class providing SWML document creation and HTTP service capabilities
   - **AgentBase**: Extends SWMLService with AI agent-specific functionality
     - **Custom Agent Classes**: User implementations like SimpleAgent
+    - **Prefab Agents**: Ready-to-use agent types for common scenarios
 
 ### Key Components
 
@@ -42,6 +43,11 @@ The SDK is built around a clear class hierarchy:
    - Session-based state tracking
    - Persistence options (file system, memory)
    - State lifecycle hooks (startup, hangup)
+
+6. **Prefab Agents**
+   - Ready-to-use agent implementations
+   - Customizable configurations
+   - Extensible designs for common use cases
 
 ## Request Flow
 
@@ -144,6 +150,98 @@ The SDK is designed to be highly extensible:
    def on_request(self, request_data):
        # Custom request handling
    ```
+
+6. **Custom Prefabs**: Create reusable agent patterns
+   ```python
+   class MyCustomPrefab(AgentBase):
+       def __init__(self, config_param1, config_param2, **kwargs):
+           super().__init__(**kwargs)
+           # Configure the agent based on parameters
+           self.setPersonality("Customized based on: " + config_param1)
+   ```
+
+## Prefab Agents
+
+The SDK includes a collection of prefab agents that provide ready-to-use implementations for common use cases. These prefabs can be used directly or serve as templates for custom implementations.
+
+### Built-in Prefab Types
+
+1. **InfoGathererAgent**
+   - Purpose: Collect specific information from users in a structured conversation
+   - Configuration: Define fields to collect, validation rules, and confirmation templates
+   - Use cases: Form filling, survey collection, intake processes
+
+2. **KnowledgeBaseAgent**
+   - Purpose: Answer questions based on a provided knowledge base
+   - Configuration: Data sources, retrieval methods, citation options
+   - Use cases: FAQ bots, documentation assistants, support agents
+
+3. **ConciergeAgent**
+   - Purpose: Handle routing and delegation between multiple specialized agents
+   - Configuration: Connected agents, routing logic, handoff protocols
+   - Use cases: Front-desk services, triage systems, switchboard operators
+
+### Creating Custom Prefabs
+
+Users can create their own prefab agents by extending `AgentBase` or any existing prefab. Custom prefabs can be created within your project or packaged as reusable libraries.
+
+Key steps for creating custom prefabs:
+
+1. **Extend the base class**:
+   ```python
+   class MyCustomPrefab(AgentBase):
+       def __init__(self, custom_param, **kwargs):
+           super().__init__(**kwargs)
+           self._custom_param = custom_param
+   ```
+
+2. **Configure defaults**:
+   ```python
+   # Set standard prompt sections
+   self.setPersonality("I am a specialized agent for...")
+   self.setGoal("Help users with...")
+   
+   # Add default tools
+   self.register_default_tools()
+   ```
+
+3. **Add specialized tools**:
+   ```python
+   @AgentBase.tool(name="specialized_function", parameters={...})
+   def specialized_function(self, args, raw_data):
+       # Implementation
+       return SwaigFunctionResult("Function result")
+   ```
+
+4. **Create a factory method** (optional):
+   ```python
+   @classmethod
+   def create(cls, config_dict, **kwargs):
+       """Create an instance from a configuration dictionary"""
+       return cls(
+           custom_param=config_dict.get("custom_param", "default"),
+           name=config_dict.get("name", "custom_prefab"),
+           **kwargs
+       )
+   ```
+
+### Prefab Customization Points
+
+When designing prefabs, consider exposing these customization points:
+
+1. **Constructor parameters**: Allow users to configure key behavior
+2. **Override methods**: Document which methods can be safely overridden
+3. **Extension hooks**: Provide callback methods for custom logic
+4. **Configuration files**: Support loading settings from external sources
+5. **Runtime customization**: Allow changing behavior after initialization
+
+### Prefab Best Practices
+
+1. **Clear Documentation**: Document the purpose, parameters, and extension points
+2. **Sensible Defaults**: Provide working defaults that make sense for the use case
+3. **Error Handling**: Implement robust error handling with helpful messages
+4. **Modular Design**: Keep prefabs focused on a specific use case
+5. **Consistent Interface**: Maintain consistent patterns across related prefabs
 
 ## Implementation Details
 
@@ -249,6 +347,12 @@ The SDK supports multiple deployment models:
    - Use environment variables for configuration
    - Implement proper logging
    - Monitor agent performance and usage
+
+6. **Prefab Usage**
+   - Use existing prefabs for common patterns
+   - Extend prefabs rather than starting from scratch
+   - Create your own prefabs for reusable patterns
+   - Share prefabs across projects for consistency
 
 ## Schema Validation
 
