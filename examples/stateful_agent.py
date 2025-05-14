@@ -26,16 +26,16 @@ class StatefulAgent(AgentBase):
     This agent demonstrates how to:
     
     1. Enable state tracking with enable_state_tracking=True
-    2. Override the default startup_hook and hangup_hook handlers with custom implementations
+    2. Implement the startup_hook and hangup_hook methods that are automatically registered
     3. Store and retrieve data in the conversation state
     4. Create custom SWAIG functions that interact with the state
     
-    State tracking uses two special SWAIG functions:
+    State tracking uses two special methods:
     - startup_hook: Called when a conversation starts, initializes state
     - hangup_hook: Called when a conversation ends, records final state
     
-    Both functions receive call_id in the raw_data and must be defined using
-    the @AgentBase.tool decorator.
+    Both functions are automatically registered when enable_state_tracking=True
+    and receive call_id in the raw_data parameter.
     """
     
     def __init__(self):

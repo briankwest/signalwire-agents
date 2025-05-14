@@ -41,6 +41,20 @@ To run:
 python simple_agent.py
 ```
 
+### stateful_agent.py
+
+Demonstrates how to use the state management capabilities of the SDK, including:
+- Enabling state tracking with `enable_state_tracking=True`
+- Using the built-in lifecycle hooks (`startup_hook` and `hangup_hook`)
+- Storing and retrieving data in the conversation state
+- Creating custom SWAIG tools that interact with the state
+
+To run:
+
+```bash
+python stateful_agent.py
+```
+
 ### declarative_agent.py
 
 Demonstrates the declarative approach to building agents using the PROMPT_SECTIONS class attribute:
