@@ -1669,6 +1669,29 @@ class AgentBase(SWMLService):
         async def handle_post_prompt_with_slash(request: Request):
             return await self._handle_post_prompt_request(request)
         
+        # Check if SIP routing is enabled for this agent
+        # (The agent will have _sip_usernames if enable_sip_routing was called)
+        if hasattr(self, '_sip_usernames') and self._sip_usernames:
+            self.log.info("registering_sip_endpoint", usernames=list(self._sip_usernames))
+            
+            # SIP endpoint - without trailing slash
+            @app.get("/sip")
+            @app.post("/sip")
+            async def handle_sip_no_slash(request: Request):
+                return await self._handle_root_request(request)
+                
+            # SIP endpoint - with trailing slash
+            @app.get("/sip/")
+            @app.post("/sip/")
+            async def handle_sip_with_slash(request: Request):
+                return await self._handle_root_request(request)
+                
+            # Log that SIP endpoint was added
+            self.log.info("sip_endpoint_registered", path="/sip")
+            
+            # Add SIP routes to the printed information
+            print(f"SIP endpoint available at: http://{self.host}:{self.port}/sip")
+        
         # Log all registered routes
         routes = [f"{route.methods} {route.path}" for route in app.routes]
         self.log.debug("routes_registered", routes=routes)
@@ -2018,6 +2041,11 @@ class AgentBase(SWMLService):
         print(f"Agent '{self.name}' is available at:")
         print(f"URL: http://{host}:{port}{self.route}")
         print(f"Basic Auth: {username}:{password} (source: {source})")
+        
+        # Check if SIP routing is enabled and print additional info
+        if hasattr(self, '_sip_usernames') and self._sip_usernames:
+            print(f"SIP endpoint: http://{host}:{port}/sip")
+            print(f"SIP usernames: {', '.join(self._sip_usernames)}")
         
         # Configure Uvicorn for production
         uvicorn_log_config = uvicorn.config.LOGGING_CONFIG
