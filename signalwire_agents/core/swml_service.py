@@ -14,6 +14,7 @@ import logging
 import sys
 import types
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type
+from urllib.parse import urlparse
 
 # Import and configure structlog
 try:
@@ -113,6 +114,8 @@ class SWMLService:
         self.route = route.rstrip("/")  # Ensure no trailing slash
         self.host = host
         self.port = port
+        self.ssl_enabled = False
+        self.domain = None
         
         # Initialize logger for this instance
         self.log = logger.bind(service=name)
@@ -723,15 +726,39 @@ class SWMLService:
         # Default implementation does nothing
         return None
     
-    def serve(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
+    def serve(self, host: Optional[str] = None, port: Optional[int] = None, 
+              ssl_cert: Optional[str] = None, ssl_key: Optional[str] = None, 
+              ssl_enabled: Optional[bool] = None, domain: Optional[str] = None) -> None:
         """
         Start a web server for this service
         
         Args:
             host: Optional host to override the default
             port: Optional port to override the default
+            ssl_cert: Path to SSL certificate file
+            ssl_key: Path to SSL private key file
+            ssl_enabled: Whether to enable SSL/HTTPS
+            domain: Domain name for the SSL certificate and external URLs
         """
         import uvicorn
+        
+        # Determine SSL settings from parameters or environment variables
+        self.ssl_enabled = ssl_enabled if ssl_enabled is not None else os.environ.get('SWML_SSL_ENABLED', '').lower() in ('true', '1', 'yes')
+        ssl_cert_path = ssl_cert or os.environ.get('SWML_SSL_CERT_PATH', '')
+        ssl_key_path = ssl_key or os.environ.get('SWML_SSL_KEY_PATH', '')
+        self.domain = domain or os.environ.get('SWML_DOMAIN', '')
+        
+        # Validate SSL configuration if enabled
+        if self.ssl_enabled:
+            if not ssl_cert_path or not os.path.exists(ssl_cert_path):
+                self.log.warning("ssl_cert_not_found", path=ssl_cert_path)
+                self.ssl_enabled = False
+            elif not ssl_key_path or not os.path.exists(ssl_key_path):
+                self.log.warning("ssl_key_not_found", path=ssl_key_path)
+                self.ssl_enabled = False
+            elif not self.domain:
+                self.log.warning("ssl_domain_not_specified")
+                # We'll continue, but URLs might not be correctly generated
         
         if self._app is None:
             app = FastAPI()
@@ -744,15 +771,37 @@ class SWMLService:
         
         # Print the auth credentials
         username, password = self._basic_auth
+        
+        # Use correct protocol and host in displayed URL
+        protocol = "https" if self.ssl_enabled else "http"
+        display_host = self.domain if self.ssl_enabled and self.domain else f"{host}:{port}"
+        
+        self.log.info("starting_server", 
+                     url=f"{protocol}://{display_host}{self.route}",
+                     ssl_enabled=self.ssl_enabled,
+                     username=username,
+                     password_length=len(password))
+        
         print(f"Service '{self.name}' is available at:")
-        print(f"URL: http://{host}:{port}{self.route}")
+        print(f"URL: {protocol}://{display_host}{self.route}")
         print(f"Basic Auth: {username}:{password}")
         
         # Check if SIP routing is enabled and print additional info
         if self._routing_callback is not None:
-            print(f"SIP endpoint: http://{host}:{port}/sip")
+            print(f"SIP endpoint: {protocol}://{display_host}/sip")
         
-        uvicorn.run(self._app, host=host, port=port)
+        # Start uvicorn with or without SSL
+        if self.ssl_enabled and ssl_cert_path and ssl_key_path:
+            self.log.info("starting_with_ssl", cert=ssl_cert_path, key=ssl_key_path)
+            uvicorn.run(
+                self._app, 
+                host=host, 
+                port=port,
+                ssl_certfile=ssl_cert_path,
+                ssl_keyfile=ssl_key_path
+            )
+        else:
+            uvicorn.run(self._app, host=host, port=port)
     
     def stop(self) -> None:
         """
@@ -898,4 +947,63 @@ class SWMLService:
             if value is not None:
                 config[key] = value
                 
-        return self.add_verb("ai", config) 
+        return self.add_verb("ai", config)
+        
+    def _build_webhook_url(self, endpoint: str, query_params: Optional[Dict[str, str]] = None) -> str:
+        """
+        Helper method to build webhook URLs consistently
+        
+        Args:
+            endpoint: The endpoint path (e.g., "swaig", "post_prompt")
+            query_params: Optional query parameters to append
+            
+        Returns:
+            Fully constructed webhook URL
+        """
+        # Base URL construction
+        if hasattr(self, '_proxy_url_base') and getattr(self, '_proxy_url_base', None):
+            # For proxy URLs
+            base = self._proxy_url_base.rstrip('/')
+            
+            # Always add auth credentials
+            username, password = self._basic_auth
+            url = urlparse(base)
+            base = url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
+        else:
+            # Determine protocol based on SSL settings
+            protocol = "https" if getattr(self, 'ssl_enabled', False) else "http"
+            
+            # Use domain if available and SSL is enabled
+            if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
+                host_part = self.domain
+            else:
+                # For local URLs
+                if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                    host = "localhost"
+                else:
+                    host = self.host
+                
+                host_part = f"{host}:{self.port}"
+                
+            # Always include auth credentials
+            username, password = self._basic_auth
+            base = f"{protocol}://{username}:{password}@{host_part}"
+        
+        # Ensure the endpoint has a trailing slash to prevent redirects
+        if endpoint and not endpoint.endswith('/'):
+            endpoint = f"{endpoint}/"
+            
+        # Simple path - use the route directly with the endpoint
+        path = f"{self.route}/{endpoint}"
+            
+        # Construct full URL
+        url = f"{base}{path}"
+        
+        # Add query parameters if any (only if they have values)
+        if query_params:
+            filtered_params = {k: v for k, v in query_params.items() if v}
+            if filtered_params:
+                params = "&".join([f"{k}={v}" for k, v in filtered_params.items()])
+                url = f"{url}?{params}"
+            
+        return url 

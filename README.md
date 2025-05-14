@@ -102,8 +102,14 @@ The SDK supports the following environment variables:
 - `SWML_BASIC_AUTH_USER`: Username for basic auth (default: auto-generated)
 - `SWML_BASIC_AUTH_PASSWORD`: Password for basic auth (default: auto-generated)
 - `SWML_PROXY_URL_BASE`: Base URL to use when behind a reverse proxy, used for constructing webhook URLs
+- `SWML_SSL_ENABLED`: Enable HTTPS/SSL support (values: "true", "1", "yes")
+- `SWML_SSL_CERT_PATH`: Path to SSL certificate file
+- `SWML_SSL_KEY_PATH`: Path to SSL private key file
+- `SWML_DOMAIN`: Domain name for SSL certificate and external URLs
 
 When the auth environment variables are set, they will be used for all agents instead of generating random credentials. The proxy URL base is useful when your service is behind a reverse proxy or when you need external services to access your webhooks.
+
+To enable HTTPS directly (without a reverse proxy), set `SWML_SSL_ENABLED` to "true", provide valid paths to your certificate and key files, and specify your domain name.
 
 ## Documentation
 
