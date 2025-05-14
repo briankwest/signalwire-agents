@@ -1,10 +1,7 @@
-MANIFEST.in
 README.md
-pyproject.toml
 schema.json
 setup.py
 docs/agent_guide.md
-docs/sip_routing.md
 docs/swml_service_guide.md
 examples/auto_vivified_example.py
 examples/basic_swml_service.py
@@ -20,8 +17,6 @@ examples/stateful_agent.py
 examples/survey_agent_example.py
 examples/swaig_features_agent.py
 examples/swml_service_example.py
-examples/test_server_agent.py
-examples/test_sip_routing.py
 examples/test_swaig_function.py
 signalwire_agents/__init__.py
 signalwire_agents/agent_server.py
@@ -29,6 +24,7 @@ signalwire_agents/schema.json
 signalwire_agents.egg-info/PKG-INFO
 signalwire_agents.egg-info/SOURCES.txt
 signalwire_agents.egg-info/dependency_links.txt
+signalwire_agents.egg-info/requires.txt
 signalwire_agents.egg-info/top_level.txt
 signalwire_agents/core/__init__.py
 signalwire_agents/core/agent_base.py
