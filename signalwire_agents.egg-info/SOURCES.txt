@@ -5,6 +5,7 @@ schema.json
 setup.py
 docs/agent_guide.md
 docs/swml_service_guide.md
+examples/auto_vivified_example.py
 examples/basic_swml_service.py
 examples/concierge_agent_example.py
 examples/declarative_agent.py

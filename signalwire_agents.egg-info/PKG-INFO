@@ -25,6 +25,7 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **Prompt Object Model**: Structured prompt composition using POM
 - **SWAIG Integration**: Easily define and handle AI tools/functions
 - **Security Built-In**: Session management, per-call tokens, and basic auth
+- **State Management**: Persistent conversation state with lifecycle hooks
 - **Prefab Archetypes**: Ready-to-use agent types for common scenarios
 - **Multi-Agent Support**: Host multiple agents on a single server
 
@@ -57,6 +58,40 @@ class SimpleAgent(AgentBase):
 if __name__ == "__main__":
     agent = SimpleAgent()
     agent.serve(host="0.0.0.0", port=8000)
+```
+
+## Using State Management
+
+```python
+from signalwire_agents import AgentBase
+from signalwire_agents.core.state import FileStateManager
+
+class StatefulAgent(AgentBase):
+    def __init__(self):
+        # Configure state management
+        state_manager = FileStateManager(storage_dir="./state_data")
+        
+        super().__init__(
+            name="stateful", 
+            route="/stateful",
+            enable_state_tracking=True,  # Enable state tracking
+            state_manager=state_manager  # Use custom state manager
+        )
+    
+    # These methods are automatically registered when enable_state_tracking=True
+    def startup_hook(self, args, raw_data):
+        """Called when a conversation starts"""
+        call_id = raw_data.get("call_id")
+        state = self.get_state(call_id) or {}
+        state["started_at"] = "2023-01-01T12:00:00Z"
+        self.update_state(call_id, state)
+        return "Call initialized"
+        
+    def hangup_hook(self, args, raw_data):
+        """Called when a conversation ends"""
+        call_id = raw_data.get("call_id")
+        state = self.get_state(call_id)
+        return "Call completed"
 ```
 
 ## Using Prefab Agents
@@ -93,6 +128,7 @@ See the [full documentation](https://docs.signalwire.com/ai-agents) for details 
 - Creating custom agents
 - Using prefab agents
 - SWAIG function definitions
+- State management and persistence
 - Security model
 - Deployment options
 - Multi-agent hosting

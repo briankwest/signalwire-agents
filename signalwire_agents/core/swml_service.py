@@ -12,6 +12,7 @@ import secrets
 import base64
 import logging
 import sys
+import types
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type
 
 # Import and configure structlog
@@ -157,6 +158,182 @@ class SWMLService:
         # Initialize SWML document state
         self._current_document = self._create_empty_document()
         
+        # Dictionary to cache dynamically created methods (instance level cache)
+        self._verb_methods_cache = {}
+        
+        # Create auto-vivified methods for all verbs
+        self._create_verb_methods()
+    
+    def _create_verb_methods(self) -> None:
+        """
+        Create auto-vivified methods for all verbs at initialization time
+        """
+        print("Creating auto-vivified methods for all verbs")
+        
+        # Get all verb names from the schema
+        verb_names = self.schema_utils.get_all_verb_names()
+        print(f"Found {len(verb_names)} verbs in schema")
+        
+        # Create a method for each verb
+        for verb_name in verb_names:
+            # Skip verbs that already have specific methods
+            if hasattr(self, verb_name):
+                print(f"Skipping {verb_name} - already has a method")
+                continue
+            
+            # Handle sleep verb specially since it takes an integer directly
+            if verb_name == "sleep":
+                def sleep_method(self_instance, duration=None, **kwargs):
+                    """
+                    Add the sleep verb to the document.
+                    
+                    Args:
+                        duration: The amount of time to sleep in milliseconds
+                    """
+                    print(f"Executing auto-vivified method for 'sleep'")
+                    # Sleep verb takes a direct integer parameter in SWML
+                    if duration is not None:
+                        return self_instance.add_verb("sleep", duration)
+                    elif kwargs:
+                        # Try to get the value from kwargs
+                        return self_instance.add_verb("sleep", next(iter(kwargs.values())))
+                    else:
+                        raise TypeError("sleep() missing required argument: 'duration'")
+                
+                # Set it as an attribute of self
+                setattr(self, verb_name, types.MethodType(sleep_method, self))
+                
+                # Also cache it for later
+                self._verb_methods_cache[verb_name] = sleep_method
+                
+                print(f"Created special method for {verb_name}")
+                continue
+                
+            # Generate the method implementation for normal verbs
+            def make_verb_method(name):
+                def verb_method(self_instance, **kwargs):
+                    """
+                    Dynamically generated method for SWML verb
+                    """
+                    print(f"Executing auto-vivified method for '{name}'")
+                    config = {}
+                    for key, value in kwargs.items():
+                        if value is not None:
+                            config[key] = value
+                    return self_instance.add_verb(name, config)
+                
+                # Add docstring to the method
+                verb_properties = self.schema_utils.get_verb_properties(name)
+                if "description" in verb_properties:
+                    verb_method.__doc__ = f"Add the {name} verb to the document.\n\n{verb_properties['description']}"
+                else:
+                    verb_method.__doc__ = f"Add the {name} verb to the document."
+                
+                return verb_method
+            
+            # Create the method with closure over the verb name
+            method = make_verb_method(verb_name)
+            
+            # Set it as an attribute of self
+            setattr(self, verb_name, types.MethodType(method, self))
+            
+            # Also cache it for later
+            self._verb_methods_cache[verb_name] = method
+            
+            print(f"Created method for {verb_name}")
+    
+    def __getattr__(self, name: str) -> Any:
+        """
+        Dynamically generate and return SWML verb methods when accessed
+        
+        This method is called when an attribute lookup fails through the normal
+        mechanisms. It checks if the attribute name corresponds to a SWML verb
+        defined in the schema, and if so, dynamically creates a method for that verb.
+        
+        Args:
+            name: The name of the attribute being accessed
+            
+        Returns:
+            The dynamically created verb method if name is a valid SWML verb,
+            otherwise raises AttributeError
+            
+        Raises:
+            AttributeError: If name is not a valid SWML verb
+        """
+        print(f"DEBUG: __getattr__ called for '{name}'")
+        
+        # Simple version to match our test script
+        # First check if this is a valid SWML verb
+        verb_names = self.schema_utils.get_all_verb_names()
+        
+        if name in verb_names:
+            print(f"DEBUG: '{name}' is a valid verb")
+            
+            # Check if we already have this method in the cache
+            if not hasattr(self, '_verb_methods_cache'):
+                self._verb_methods_cache = {}
+                
+            if name in self._verb_methods_cache:
+                print(f"DEBUG: Using cached method for '{name}'")
+                return types.MethodType(self._verb_methods_cache[name], self)
+            
+            # Handle sleep verb specially since it takes an integer directly
+            if name == "sleep":
+                def sleep_method(self_instance, duration=None, **kwargs):
+                    """
+                    Add the sleep verb to the document.
+                    
+                    Args:
+                        duration: The amount of time to sleep in milliseconds
+                    """
+                    print(f"DEBUG: Executing auto-vivified method for 'sleep'")
+                    # Sleep verb takes a direct integer parameter in SWML
+                    if duration is not None:
+                        return self_instance.add_verb("sleep", duration)
+                    elif kwargs:
+                        # Try to get the value from kwargs
+                        return self_instance.add_verb("sleep", next(iter(kwargs.values())))
+                    else:
+                        raise TypeError("sleep() missing required argument: 'duration'")
+                
+                # Cache the method for future use
+                print(f"DEBUG: Caching special method for '{name}'")
+                self._verb_methods_cache[name] = sleep_method
+                
+                # Return the bound method
+                return types.MethodType(sleep_method, self)
+            
+            # Generate the method implementation for normal verbs
+            def verb_method(self_instance, **kwargs):
+                """
+                Dynamically generated method for SWML verb
+                """
+                print(f"DEBUG: Executing auto-vivified method for '{name}'")
+                config = {}
+                for key, value in kwargs.items():
+                    if value is not None:
+                        config[key] = value
+                return self_instance.add_verb(name, config)
+            
+            # Add docstring to the method
+            verb_properties = self.schema_utils.get_verb_properties(name)
+            if "description" in verb_properties:
+                verb_method.__doc__ = f"Add the {name} verb to the document.\n\n{verb_properties['description']}"
+            else:
+                verb_method.__doc__ = f"Add the {name} verb to the document."
+            
+            # Cache the method for future use
+            print(f"DEBUG: Caching method for '{name}'")
+            self._verb_methods_cache[name] = verb_method
+            
+            # Return the bound method
+            return types.MethodType(verb_method, self)
+        
+        # Not a valid verb
+        msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        print(f"DEBUG: {msg}")
+        raise AttributeError(msg)
+    
     def _find_schema_path(self) -> Optional[str]:
         """
         Find the schema.json file location
@@ -228,17 +405,30 @@ class SWMLService:
         """
         self._current_document = self._create_empty_document()
     
-    def add_verb(self, verb_name: str, config: Dict[str, Any]) -> bool:
+    def add_verb(self, verb_name: str, config: Union[Dict[str, Any], int]) -> bool:
         """
         Add a verb to the main section of the current document
         
         Args:
             verb_name: The name of the verb to add
-            config: Configuration for the verb
+            config: Configuration for the verb or direct value for certain verbs (e.g., sleep)
             
         Returns:
             True if the verb was added successfully, False otherwise
         """
+        # Special case for verbs that take direct values (like sleep)
+        if verb_name == "sleep" and isinstance(config, int):
+            # Sleep verb takes a direct integer value
+            verb_obj = {verb_name: config}
+            self._current_document["sections"]["main"].append(verb_obj)
+            return True
+            
+        # Ensure config is a dictionary for other verbs
+        if not isinstance(config, dict):
+            self.log.warning(f"invalid_config_type", verb=verb_name, 
+                            expected="dict", got=type(config).__name__)
+            return False
+        
         # Check if we have a specialized handler for this verb
         if self.verb_registry.has_handler(verb_name):
             handler = self.verb_registry.get_handler(verb_name)
@@ -249,9 +439,7 @@ class SWMLService:
         
         if not is_valid:
             # Log validation errors
-            print(f"Validation errors for verb '{verb_name}':")
-            for error in errors:
-                print(f"  - {error}")
+            self.log.warning(f"verb_validation_error", verb=verb_name, errors=errors)
             return False
         
         # Add the verb to the main section
@@ -275,14 +463,14 @@ class SWMLService:
         self._current_document["sections"][section_name] = []
         return True
     
-    def add_verb_to_section(self, section_name: str, verb_name: str, config: Dict[str, Any]) -> bool:
+    def add_verb_to_section(self, section_name: str, verb_name: str, config: Union[Dict[str, Any], int]) -> bool:
         """
         Add a verb to a specific section
         
         Args:
             section_name: Name of the section to add to
             verb_name: The name of the verb to add
-            config: Configuration for the verb
+            config: Configuration for the verb or direct value for certain verbs (e.g., sleep)
             
         Returns:
             True if the verb was added successfully, False otherwise
@@ -290,6 +478,19 @@ class SWMLService:
         # Make sure the section exists
         if section_name not in self._current_document["sections"]:
             self.add_section(section_name)
+        
+        # Special case for verbs that take direct values (like sleep)
+        if verb_name == "sleep" and isinstance(config, int):
+            # Sleep verb takes a direct integer value
+            verb_obj = {verb_name: config}
+            self._current_document["sections"][section_name].append(verb_obj)
+            return True
+            
+        # Ensure config is a dictionary for other verbs
+        if not isinstance(config, dict):
+            self.log.warning(f"invalid_config_type", verb=verb_name, section=section_name,
+                            expected="dict", got=type(config).__name__)
+            return False
         
         # Check if we have a specialized handler for this verb
         if self.verb_registry.has_handler(verb_name):
@@ -301,9 +502,7 @@ class SWMLService:
         
         if not is_valid:
             # Log validation errors
-            print(f"Validation errors for verb '{verb_name}' in section '{section_name}':")
-            for error in errors:
-                print(f"  - {error}")
+            self.log.warning(f"verb_validation_error", verb=verb_name, section=section_name, errors=errors)
             return False
         
         # Add the verb to the section
@@ -492,18 +691,37 @@ class SWMLService:
         except Exception:
             return False
     
-    def get_basic_auth_credentials(self) -> Tuple[str, str]:
+    def get_basic_auth_credentials(self, include_source: bool = False) -> Union[Tuple[str, str], Tuple[str, str, str]]:
         """
         Get the basic auth credentials
         
+        Args:
+            include_source: Whether to include the source of the credentials
+            
         Returns:
-            (username, password) tuple
+            (username, password) tuple or (username, password, source) tuple if include_source is True
         """
-        return self._basic_auth
-
+        username, password = self._basic_auth
+        
+        if include_source:
+            # Determine source
+            env_user = os.environ.get('SWML_BASIC_AUTH_USER')
+            env_pass = os.environ.get('SWML_BASIC_AUTH_PASSWORD')
+            
+            if env_user and env_pass and env_user == username and env_pass == password:
+                source = "environment"
+            else:
+                source = "auto-generated"
+                
+            return username, password, source
+        
+        return username, password
+    
+    # Keep the existing methods for backward compatibility
+    
     def add_answer_verb(self, max_duration: Optional[int] = None, codecs: Optional[str] = None) -> bool:
         """
-        Add an 'answer' verb to the main section
+        Add an answer verb to the current document
         
         Args:
             max_duration: Maximum duration in seconds
@@ -517,15 +735,15 @@ class SWMLService:
             config["max_duration"] = max_duration
         if codecs is not None:
             config["codecs"] = codecs
-        
+            
         return self.add_verb("answer", config)
     
     def add_hangup_verb(self, reason: Optional[str] = None) -> bool:
         """
-        Add a 'hangup' verb to the main section
+        Add a hangup verb to the current document
         
         Args:
-            reason: Optional reason for hangup
+            reason: Hangup reason (hangup, busy, decline)
             
         Returns:
             True if added successfully, False otherwise
@@ -533,49 +751,53 @@ class SWMLService:
         config = {}
         if reason is not None:
             config["reason"] = reason
-        
+            
         return self.add_verb("hangup", config)
     
     def add_ai_verb(self, 
-                   prompt_text: Optional[str] = None,
-                   prompt_pom: Optional[List[Dict[str, Any]]] = None,
-                   post_prompt: Optional[str] = None,
-                   post_prompt_url: Optional[str] = None,
-                   swaig: Optional[Dict[str, Any]] = None,
-                   **kwargs) -> bool:
+               prompt_text: Optional[str] = None,
+               prompt_pom: Optional[List[Dict[str, Any]]] = None,
+               post_prompt: Optional[str] = None,
+               post_prompt_url: Optional[str] = None,
+               swaig: Optional[Dict[str, Any]] = None,
+               **kwargs) -> bool:
         """
-        Add an 'ai' verb to the main section
+        Add an AI verb to the current document
         
         Args:
-            prompt_text: Text prompt for the AI (mutually exclusive with prompt_pom)
-            prompt_pom: POM structure for the AI prompt (mutually exclusive with prompt_text)
-            post_prompt: Optional post-prompt text
-            post_prompt_url: Optional URL for post-prompt processing
-            swaig: Optional SWAIG configuration
-            **kwargs: Additional AI parameters
+            prompt_text: Simple prompt text
+            prompt_pom: Prompt object model
+            post_prompt: Post-prompt text
+            post_prompt_url: Post-prompt URL
+            swaig: SWAIG configuration
+            **kwargs: Additional parameters
             
         Returns:
             True if added successfully, False otherwise
         """
-        # Get the AI verb handler
-        handler = self.verb_registry.get_handler("ai")
-        if not handler:
-            print("Error: AI verb handler not found")
-            return False
+        config = {}
         
-        # Build the configuration
-        try:
-            config = handler.build_config(
-                prompt_text=prompt_text,
-                prompt_pom=prompt_pom,
-                post_prompt=post_prompt,
-                post_prompt_url=post_prompt_url,
-                swaig=swaig,
-                **kwargs
-            )
-        except ValueError as e:
-            print(f"Error building AI verb configuration: {str(e)}")
-            return False
+        # Handle prompt
+        if prompt_text is not None:
+            config["prompt"] = prompt_text
+        elif prompt_pom is not None:
+            config["prompt"] = prompt_pom
+            
+        # Handle post prompt
+        if post_prompt is not None:
+            config["post_prompt"] = post_prompt
         
-        # Add the verb
+        # Handle post prompt URL
+        if post_prompt_url is not None:
+            config["post_prompt_url"] = post_prompt_url
+            
+        # Handle SWAIG
+        if swaig is not None:
+            config["SWAIG"] = swaig
+            
+        # Handle additional parameters
+        for key, value in kwargs.items():
+            if value is not None:
+                config[key] = value
+                
         return self.add_verb("ai", config) 
