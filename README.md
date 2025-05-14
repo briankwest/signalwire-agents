@@ -101,8 +101,9 @@ The SDK supports the following environment variables:
 
 - `SWML_BASIC_AUTH_USER`: Username for basic auth (default: auto-generated)
 - `SWML_BASIC_AUTH_PASSWORD`: Password for basic auth (default: auto-generated)
+- `SWML_PROXY_URL_BASE`: Base URL to use when behind a reverse proxy, used for constructing webhook URLs
 
-When these variables are set, they will be used for all agents instead of generating random credentials.
+When the auth environment variables are set, they will be used for all agents instead of generating random credentials. The proxy URL base is useful when your service is behind a reverse proxy or when you need external services to access your webhooks.
 
 ## Documentation
 
