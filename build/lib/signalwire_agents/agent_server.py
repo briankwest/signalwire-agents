@@ -3,10 +3,11 @@ AgentServer - Class for hosting multiple SignalWire AI Agents in a single server
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+import re
+from typing import Dict, Any, Optional, List, Tuple, Callable
 
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request, Response
     import uvicorn
 except ImportError:
     raise ImportError(
@@ -14,6 +15,7 @@ except ImportError:
     )
 
 from signalwire_agents.core.agent_base import AgentBase
+from signalwire_agents.core.swml_service import SWMLService
 
 
 class AgentServer:
@@ -60,6 +62,11 @@ class AgentServer:
         
         # Keep track of registered agents
         self.agents: Dict[str, AgentBase] = {}
+        
+        # Keep track of SIP routing configuration
+        self._sip_routing_enabled = False
+        self._sip_route = None
+        self._sip_username_mapping: Dict[str, str] = {}  # Maps SIP usernames to routes
     
     def register(self, agent: AgentBase, route: Optional[str] = None) -> None:
         """
@@ -94,6 +101,146 @@ class AgentServer:
         self.app.include_router(router, prefix=route)
         
         self.logger.info(f"Registered agent '{agent.get_name()}' at route '{route}'")
+        
+        # If SIP routing is enabled and auto-mapping is on, register SIP usernames for this agent
+        if hasattr(self, '_sip_auto_map') and self._sip_auto_map and self._sip_routing_enabled:
+            self._auto_map_agent_sip_usernames(agent, route)
+            
+    def setup_sip_routing(self, route: str = "/sip", auto_map: bool = True) -> None:
+        """
+        Set up central SIP-based routing for the server
+        
+        This adds a special endpoint that can route SIP requests to the appropriate
+        agent based on the SIP username in the request.
+        
+        Args:
+            route: The route for SIP requests
+            auto_map: Whether to automatically map SIP usernames to agent routes
+        """
+        if self._sip_routing_enabled:
+            self.logger.warning("SIP routing is already enabled")
+            return
+            
+        # Normalize the route
+        if not route.startswith("/"):
+            route = f"/{route}"
+            
+        route = route.rstrip("/")
+        
+        # Store configuration
+        self._sip_routing_enabled = True
+        self._sip_route = route
+        self._sip_auto_map = auto_map
+        
+        # If auto-mapping is enabled, map existing agents
+        if auto_map:
+            for agent_route, agent in self.agents.items():
+                self._auto_map_agent_sip_usernames(agent, agent_route)
+                
+        # Register the SIP endpoint
+        @self.app.post(f"{route}")
+        @self.app.post(f"{route}/")
+        async def handle_sip_request(request: Request):
+            """Handle SIP requests and route to the appropriate agent"""
+            self.logger.debug(f"Received request at SIP endpoint: {route}")
+            
+            try:
+                # Extract the request body
+                body = await request.json()
+                
+                # Extract the SIP username
+                sip_username = SWMLService.extract_sip_username(body)
+                
+                if sip_username:
+                    self.logger.info(f"Extracted SIP username: {sip_username}")
+                    
+                    # Look up the route for this username
+                    target_route = self._lookup_sip_route(sip_username)
+                    
+                    if target_route:
+                        self.logger.info(f"Routing SIP request to {target_route}")
+                        
+                        # Create a redirect response to the target route
+                        # Use 307 Temporary Redirect to preserve the POST method
+                        response = Response(status_code=307)
+                        response.headers["Location"] = target_route
+                        return response
+                    else:
+                        self.logger.warning(f"No route found for SIP username: {sip_username}")
+                
+                # If we get here, either no SIP username was found or no matching route exists
+                # Return a basic SWML response
+                return {"version": "1.0.0", "sections": {"main": []}}
+                
+            except Exception as e:
+                self.logger.error(f"Error processing SIP request: {str(e)}")
+                return {"version": "1.0.0", "sections": {"main": []}}
+        
+        self.logger.info(f"SIP routing enabled at {route}")
+                
+    def register_sip_username(self, username: str, route: str) -> None:
+        """
+        Register a mapping from SIP username to agent route
+        
+        Args:
+            username: The SIP username
+            route: The route to the agent
+        """
+        if not self._sip_routing_enabled:
+            self.logger.warning("SIP routing is not enabled. Call setup_sip_routing() first.")
+            return
+            
+        # Normalize the route
+        if not route.startswith("/"):
+            route = f"/{route}"
+            
+        route = route.rstrip("/")
+        
+        # Check if the route exists
+        if route not in self.agents:
+            self.logger.warning(f"Route {route} not found. SIP username will be registered but may not work.")
+            
+        # Add the mapping
+        self._sip_username_mapping[username.lower()] = route
+        self.logger.info(f"Registered SIP username '{username}' to route '{route}'")
+        
+    def _lookup_sip_route(self, username: str) -> Optional[str]:
+        """
+        Look up the route for a SIP username
+        
+        Args:
+            username: The SIP username
+            
+        Returns:
+            The route or None if not found
+        """
+        return self._sip_username_mapping.get(username.lower())
+        
+    def _auto_map_agent_sip_usernames(self, agent: AgentBase, route: str) -> None:
+        """
+        Automatically map SIP usernames for an agent
+        
+        This creates mappings based on the agent name and route.
+        
+        Args:
+            agent: The agent to map
+            route: The route to the agent
+        """
+        # Get the agent name and clean it for use as a SIP username
+        agent_name = agent.get_name().lower()
+        clean_name = re.sub(r'[^a-z0-9_]', '', agent_name)
+        
+        if clean_name:
+            self.register_sip_username(clean_name, route)
+            
+        # Also use the route path (without slashes) as a username
+        if route:
+            # Extract just the last part of the route
+            route_part = route.split("/")[-1]
+            clean_route = re.sub(r'[^a-z0-9_]', '', route_part)
+            
+            if clean_route and clean_route != clean_name:
+                self.register_sip_username(clean_route, route)
     
     def unregister(self, route: str) -> bool:
         """

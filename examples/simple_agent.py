@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Simple example of using the SignalWire AI Agent SDK
 
@@ -14,6 +15,7 @@ import logging
 import sys
 import json
 import argparse
+import fastapi
 
 # Import structlog for proper structured logging
 import structlog
@@ -222,6 +224,13 @@ class SimpleAgent(AgentBase):
             url="https://ai-tools.example.org/functions",
             functions=["translate_text", "summarize_document"]
         )
+        
+        # Enable SIP routing for this agent
+        self.enable_sip_routing(auto_map=True)
+        
+        # Register additional SIP usernames for this agent
+        self.register_sip_username("simple_agent")
+        self.register_sip_username("assistant")
         
         logger.info("agent_initialized", agent_name=self.name, route=self.route)
     

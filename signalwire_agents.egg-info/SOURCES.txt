@@ -4,6 +4,7 @@ pyproject.toml
 schema.json
 setup.py
 docs/agent_guide.md
+docs/sip_routing.md
 docs/swml_service_guide.md
 examples/auto_vivified_example.py
 examples/basic_swml_service.py
@@ -19,6 +20,8 @@ examples/stateful_agent.py
 examples/survey_agent_example.py
 examples/swaig_features_agent.py
 examples/swml_service_example.py
+examples/test_server_agent.py
+examples/test_sip_routing.py
 examples/test_swaig_function.py
 signalwire_agents/__init__.py
 signalwire_agents/agent_server.py

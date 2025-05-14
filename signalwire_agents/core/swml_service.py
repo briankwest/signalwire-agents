@@ -163,6 +163,9 @@ class SWMLService:
         
         # Create auto-vivified methods for all verbs
         self._create_verb_methods()
+        
+        # Initialize routing callback
+        self._routing_callback = None
     
     def _create_verb_methods(self) -> None:
         """
@@ -563,6 +566,61 @@ class SWMLService:
         self._router = router
         return router
     
+    def register_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]]) -> None:
+        """
+        Register a callback function that will be called to determine routing
+        based on POST data.
+        
+        The callback should take a request object and request body dictionary and return:
+        - A route string if it should be routed to a different endpoint
+        - None if normal processing should continue
+        
+        Args:
+            callback_fn: The callback function to register
+        """
+        self.log.info("registering_routing_callback")
+        self._routing_callback = callback_fn
+
+    @staticmethod
+    def extract_sip_username(request_body: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract SIP username from request body
+        
+        This extracts the username portion of a SIP URI from the 'to' field
+        in the call data of a request body.
+        
+        Args:
+            request_body: The parsed JSON body of the request
+            
+        Returns:
+            The extracted SIP username, or None if not found
+        """
+        try:
+            # Check if we have call data with a 'to' field
+            if "call" in request_body and "to" in request_body["call"]:
+                to_field = request_body["call"]["to"]
+                
+                # Handle SIP URIs like "sip:username@domain"
+                if to_field.startswith("sip:"):
+                    # Extract username part (between "sip:" and "@")
+                    uri_parts = to_field[4:].split("@", 1)
+                    if uri_parts:
+                        return uri_parts[0]
+                        
+                # Handle TEL URIs like "tel:+1234567890"
+                elif to_field.startswith("tel:"):
+                    # Extract phone number part
+                    return to_field[4:]
+                    
+                # Otherwise, return the whole 'to' field
+                else:
+                    return to_field
+        except (KeyError, AttributeError):
+            # If any exception occurs during extraction, return None
+            pass
+            
+        return None
+        
     async def _handle_request(self, request: Request, response: Response):
         """
         Internal handler for both GET and POST requests
@@ -586,7 +644,21 @@ class SWMLService:
                 raw_body = await request.body()
                 if raw_body:
                     body = await request.json()
-            except Exception:
+                    
+                    # Check if we have a routing callback and should reroute the request
+                    if self._routing_callback is not None:
+                        self.log.debug("checking_routing", body_keys=list(body.keys()))
+                        route = self._routing_callback(request, body)
+                        
+                        if route is not None:
+                            self.log.info("routing_request", route=route)
+                            # We should return a redirect to the new route
+                            # Use 307 to preserve the POST method and its body
+                            response = Response(status_code=307)
+                            response.headers["Location"] = route
+                            return response
+            except Exception as e:
+                self.log.error("error_parsing_body", error=str(e))
                 # Continue with empty body if parsing fails
                 pass
         

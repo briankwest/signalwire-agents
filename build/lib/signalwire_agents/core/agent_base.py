@@ -15,6 +15,7 @@ import secrets
 from urllib.parse import urlparse
 import json
 from datetime import datetime
+import re
 
 try:
     import fastapi
@@ -2337,4 +2338,82 @@ class AgentBase(SWMLService):
                         valid_includes.append(include)
             
             self._function_includes = valid_includes
+        return self
+
+    def enable_sip_routing(self, auto_map: bool = True) -> 'AgentBase':
+        """
+        Enable SIP-based routing for this agent
+        
+        This allows the agent to automatically route SIP requests based on SIP usernames.
+        
+        Args:
+            auto_map: Whether to automatically map common SIP usernames to this agent
+                     (based on the agent name and route path)
+            
+        Returns:
+            Self for method chaining
+        """
+        # Create a routing callback that handles SIP usernames
+        def sip_routing_callback(request: Request, body: Dict[str, Any]) -> Optional[str]:
+            # Extract SIP username from the request body
+            sip_username = self.extract_sip_username(body)
+            
+            if sip_username:
+                self.log.info("sip_username_extracted", username=sip_username)
+                
+                # This route is already being handled by the agent, no need to redirect
+                return None
+                
+        # Register the callback with the SWMLService
+        self.register_routing_callback(sip_routing_callback)
+        
+        # Auto-map common usernames if requested
+        if auto_map:
+            self.auto_map_sip_usernames()
+            
+        return self
+        
+    def register_sip_username(self, sip_username: str) -> 'AgentBase':
+        """
+        Register a SIP username that should be routed to this agent
+        
+        Args:
+            sip_username: SIP username to register
+            
+        Returns:
+            Self for method chaining
+        """
+        if not hasattr(self, '_sip_usernames'):
+            self._sip_usernames = set()
+            
+        self._sip_usernames.add(sip_username.lower())
+        self.log.info("sip_username_registered", username=sip_username)
+        
+        return self
+        
+    def auto_map_sip_usernames(self) -> 'AgentBase':
+        """
+        Automatically register common SIP usernames based on this agent's 
+        name and route
+        
+        Returns:
+            Self for method chaining
+        """
+        # Register username based on agent name
+        clean_name = re.sub(r'[^a-z0-9_]', '', self.name.lower())
+        if clean_name:
+            self.register_sip_username(clean_name)
+            
+        # Register username based on route (without slashes)
+        clean_route = re.sub(r'[^a-z0-9_]', '', self.route.lower())
+        if clean_route and clean_route != clean_name:
+            self.register_sip_username(clean_route)
+            
+        # Register common variations if they make sense
+        if len(clean_name) > 3:
+            # Register without vowels
+            no_vowels = re.sub(r'[aeiou]', '', clean_name)
+            if no_vowels != clean_name and len(no_vowels) > 2:
+                self.register_sip_username(no_vowels)
+                
         return self

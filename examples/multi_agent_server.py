@@ -125,11 +125,23 @@ def main():
     server.register(registration_agent)  # Uses /register from the agent
     server.register(support_agent)       # Uses /support from the agent
     
+    # Set up SIP routing
+    server.setup_sip_routing(route="/sip", auto_map=True)
+    
+    # Register custom SIP username mappings
+    server.register_sip_username("register", "/register")
+    server.register_sip_username("signup", "/register")
+    server.register_sip_username("help", "/support")
+    
     # Add a health check endpoint (built into AgentServer)
     print("Starting multi-agent server with the following agents:")
     print("- Registration agent at /register")
     print("- Support agent at /support")
     print("- Health check at /health")
+    print("- SIP routing at /sip")
+    print("\nThe following SIP usernames are registered:")
+    print("- 'registration' or 'register' or 'signup' → Registration agent")
+    print("- 'support' or 'help' → Support agent")
     
     # Start the server
     try:
