@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
 """
+Copyright (c) 2025 SignalWire
+
+This file is part of the SignalWire AI Agents SDK.
+
+Licensed under the MIT License.
+See LICENSE file in the project root for full license information.
+"""
+
+"""
 Test script for SWAIG function calls
 This script sends a direct request to the /swaig/ endpoint of an agent
 with the correct authentication.

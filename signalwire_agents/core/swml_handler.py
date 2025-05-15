@@ -1,4 +1,13 @@
 """
+Copyright (c) 2025 SignalWire
+
+This file is part of the SignalWire AI Agents SDK.
+
+Licensed under the MIT License.
+See LICENSE file in the project root for full license information.
+"""
+
+"""
 SWML Verb Handlers - Interface and implementations for SWML verb handling
 
 This module defines the base interface for SWML verb handlers and provides
