@@ -1763,6 +1763,11 @@ The future of AI voice agents is bright. With advancements in natural language p
 
 Join the SignalWire community to connect with other developers, share ideas, and get support. Visit the SignalWire community forums or contact the SignalWire support team for assistance.
 
+- Discord: https://signalwire.community
+- Docs: https://developer.signalwire.com
+- AI: https://signalwire.ai
+- Main Site: https://signalwire.com
+
 ### Getting Started
 
 Ready to get started with the SignalWire AI Agents SDK? Follow the steps in the documentation to set up your development environment and start building your first agent.
