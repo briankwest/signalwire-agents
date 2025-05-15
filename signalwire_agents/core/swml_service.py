@@ -567,28 +567,34 @@ class SWMLService:
             return await self._handle_request(request, response)
         
         # Add endpoints for all registered routing callbacks
-        for path in self._routing_callbacks:
-            # Skip the root path as it's already handled
-            if path == "/":
-                continue
-                
-            # Path without trailing slash
-            @router.get(path)
-            @router.post(path)
-            async def handle_callback_no_slash(request: Request, response: Response, path_param=path):
-                """Handle GET/POST requests to a registered callback path without trailing slash"""
-                request.state.callback_path = path_param
-                return await self._handle_request(request, response)
-                
-            # Path with trailing slash
-            @router.get(f"{path}/")
-            @router.post(f"{path}/")
-            async def handle_callback_with_slash(request: Request, response: Response, path_param=path):
-                """Handle GET/POST requests to a registered callback path with trailing slash"""
-                request.state.callback_path = path_param
-                return await self._handle_request(request, response)
-                
-            self.log.info("callback_endpoint_registered", path=path)
+        if hasattr(self, '_routing_callbacks') and self._routing_callbacks:
+            for callback_path, callback_fn in self._routing_callbacks.items():
+                # Skip the root path as it's already handled
+                if callback_path == "/":
+                    continue
+                    
+                # Register the endpoint without trailing slash
+                @router.get(callback_path)
+                @router.post(callback_path)
+                async def handle_callback_no_slash(request: Request, response: Response, cb_path=callback_path):
+                    """Handle GET/POST requests to a registered callback path"""
+                    # Store the callback path in request state for _handle_request to use
+                    request.state.callback_path = cb_path
+                    return await self._handle_request(request, response)
+                    
+                # Register the endpoint with trailing slash if it doesn't already have one
+                if not callback_path.endswith('/'):
+                    slash_path = f"{callback_path}/"
+                    
+                    @router.get(slash_path)
+                    @router.post(slash_path)
+                    async def handle_callback_with_slash(request: Request, response: Response, cb_path=callback_path):
+                        """Handle GET/POST requests to a registered callback path with trailing slash"""
+                        # Store the callback path in request state for _handle_request to use
+                        request.state.callback_path = cb_path
+                        return await self._handle_request(request, response)
+                        
+                self.log.info("callback_endpoint_registered", path=callback_path)
         
         self._router = router
         return router
@@ -675,6 +681,9 @@ class SWMLService:
             response.headers["WWW-Authenticate"] = "Basic"
             return HTTPException(status_code=401, detail="Unauthorized")
         
+        # Get callback path from request state
+        callback_path = getattr(request.state, "callback_path", None)
+        
         # Process request body if it's a POST
         body = {}
         if request.method == "POST":
@@ -683,48 +692,33 @@ class SWMLService:
                 if raw_body:
                     body = await request.json()
                     
-                    # Determine which callback to use based on the request path
-                    callback_path = getattr(request.state, "callback_path", None)
-                    if not callback_path:
-                        # Try to match the request path to a registered callback
-                        request_path = request.url.path
-                        if request_path.endswith("/"):
-                            request_path = request_path[:-1]
-                            
-                        # Extract the path relative to our route
-                        if request_path.startswith(self.route):
-                            relative_path = request_path[len(self.route):]
-                            if not relative_path:
-                                relative_path = "/"
-                        else:
-                            relative_path = request_path
-                            
-                        callback_path = relative_path
-                    
-                    # Check if we have a routing callback for this path
-                    if callback_path in self._routing_callbacks:
+                    # Check if this is a callback path and we have a callback registered for it
+                    if callback_path and hasattr(self, '_routing_callbacks') and callback_path in self._routing_callbacks:
                         callback_fn = self._routing_callbacks[callback_path]
                         self.log.debug("checking_routing", 
                                       path=callback_path, 
                                       body_keys=list(body.keys()))
                         
                         # Call the callback function
-                        route = callback_fn(request, body)
-                        
-                        if route is not None:
-                            self.log.info("routing_request", route=route)
-                            # We should return a redirect to the new route
-                            # Use 307 to preserve the POST method and its body
-                            response = Response(status_code=307)
-                            response.headers["Location"] = route
-                            return response
+                        try:
+                            route = callback_fn(request, body)
+                            
+                            if route is not None:
+                                self.log.info("routing_request", route=route)
+                                # We should return a redirect to the new route
+                                # Use 307 to preserve the POST method and its body
+                                response = Response(status_code=307)
+                                response.headers["Location"] = route
+                                return response
+                        except Exception as e:
+                            self.log.error("error_in_routing_callback", error=str(e))
             except Exception as e:
                 self.log.error("error_parsing_body", error=str(e))
                 # Continue with empty body if parsing fails
                 pass
         
         # Allow for customized handling in subclasses
-        modifications = self.on_request(body)
+        modifications = self.on_request(body, callback_path)
         
         # Apply any modifications if needed
         if modifications and isinstance(modifications, dict):
@@ -747,7 +741,7 @@ class SWMLService:
         # Return the SWML document
         return Response(content=swml, media_type="application/json")
     
-    def on_request(self, request_data: Optional[dict] = None) -> Optional[dict]:
+    def on_request(self, request_data: Optional[dict] = None, callback_path: Optional[str] = None) -> Optional[dict]:
         """
         Called when SWML is requested, with request data when available
         
@@ -755,6 +749,7 @@ class SWMLService:
         
         Args:
             request_data: Optional dictionary containing the parsed POST body
+            callback_path: Optional callback path
             
         Returns:
             Optional dict to modify/augment the SWML document
