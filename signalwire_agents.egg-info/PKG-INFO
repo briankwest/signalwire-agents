@@ -15,6 +15,7 @@ Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: fastapi==0.115.12
 Requires-Dist: pydantic==2.11.4
 Requires-Dist: PyYAML==6.0.2
@@ -23,6 +24,7 @@ Requires-Dist: setuptools==66.1.1
 Requires-Dist: signalwire_pom==2.7.1
 Requires-Dist: structlog==25.3.0
 Requires-Dist: uvicorn==0.34.2
+Dynamic: license-file
 
 # SignalWire AI Agent SDK
 
