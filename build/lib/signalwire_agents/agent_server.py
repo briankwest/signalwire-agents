@@ -103,18 +103,25 @@ class AgentServer:
         self.logger.info(f"Registered agent '{agent.get_name()}' at route '{route}'")
         
         # If SIP routing is enabled and auto-mapping is on, register SIP usernames for this agent
-        if hasattr(self, '_sip_auto_map') and self._sip_auto_map and self._sip_routing_enabled:
-            self._auto_map_agent_sip_usernames(agent, route)
+        if self._sip_routing_enabled:
+            # Auto-map SIP usernames if enabled
+            if getattr(self, '_sip_auto_map', False):
+                self._auto_map_agent_sip_usernames(agent, route)
+            
+            # Register the SIP routing callback with this agent if we have one
+            if hasattr(self, '_sip_routing_callback') and self._sip_routing_callback:
+                agent.register_routing_callback(self._sip_routing_callback, path=self._sip_route)
             
     def setup_sip_routing(self, route: str = "/sip", auto_map: bool = True) -> None:
         """
         Set up central SIP-based routing for the server
         
-        This adds a special endpoint that can route SIP requests to the appropriate
-        agent based on the SIP username in the request.
+        This configures all agents to handle SIP requests at the specified path,
+        using a coordinated routing system where each agent checks if it can
+        handle SIP requests for specific usernames.
         
         Args:
-            route: The route for SIP requests
+            route: The path for SIP routing (default: "/sip")
             auto_map: Whether to automatically map SIP usernames to agent routes
         """
         if self._sip_routing_enabled:
@@ -136,48 +143,38 @@ class AgentServer:
         if auto_map:
             for agent_route, agent in self.agents.items():
                 self._auto_map_agent_sip_usernames(agent, agent_route)
-                
-        # Register the SIP endpoint
-        @self.app.post(f"{route}")
-        @self.app.post(f"{route}/")
-        async def handle_sip_request(request: Request):
-            """Handle SIP requests and route to the appropriate agent"""
-            self.logger.debug(f"Received request at SIP endpoint: {route}")
-            
-            try:
-                # Extract the request body
-                body = await request.json()
-                
-                # Extract the SIP username
-                sip_username = SWMLService.extract_sip_username(body)
-                
-                if sip_username:
-                    self.logger.info(f"Extracted SIP username: {sip_username}")
-                    
-                    # Look up the route for this username
-                    target_route = self._lookup_sip_route(sip_username)
-                    
-                    if target_route:
-                        self.logger.info(f"Routing SIP request to {target_route}")
-                        
-                        # Create a redirect response to the target route
-                        # Use 307 Temporary Redirect to preserve the POST method
-                        response = Response(status_code=307)
-                        response.headers["Location"] = target_route
-                        return response
-                    else:
-                        self.logger.warning(f"No route found for SIP username: {sip_username}")
-                
-                # If we get here, either no SIP username was found or no matching route exists
-                # Return a basic SWML response
-                return {"version": "1.0.0", "sections": {"main": []}}
-                
-            except Exception as e:
-                self.logger.error(f"Error processing SIP request: {str(e)}")
-                return {"version": "1.0.0", "sections": {"main": []}}
         
-        self.logger.info(f"SIP routing enabled at {route}")
+        # Create a unified routing callback that checks all registered usernames
+        def server_sip_routing_callback(request: Request, body: Dict[str, Any]) -> Optional[str]:
+            """Unified SIP routing callback that checks all registered usernames"""
+            # Extract the SIP username
+            sip_username = SWMLService.extract_sip_username(body)
+            
+            if sip_username:
+                self.logger.info(f"Extracted SIP username: {sip_username}")
                 
+                # Look up the route for this username
+                target_route = self._lookup_sip_route(sip_username)
+                
+                if target_route:
+                    self.logger.info(f"Routing SIP request to {target_route}")
+                    return target_route
+                else:
+                    self.logger.warning(f"No route found for SIP username: {sip_username}")
+            
+            # No routing needed (will be handled by the current agent)
+            return None
+        
+        # Save the callback for later use with new agents
+        self._sip_routing_callback = server_sip_routing_callback
+        
+        # Register this callback with each agent
+        for agent in self.agents.values():
+            # Each agent gets the same routing callback but at their own path
+            agent.register_routing_callback(server_sip_routing_callback, path=route)
+        
+        self.logger.info(f"SIP routing enabled at {route} on all agents")
+        
     def register_sip_username(self, username: str, route: str) -> None:
         """
         Register a mapping from SIP username to agent route
@@ -334,3 +331,26 @@ class AgentServer:
             port=port,
             log_level=self.log_level
         )
+
+    def register_global_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], 
+                                        path: str) -> None:
+        """
+        Register a routing callback across all agents
+        
+        This allows you to add unified routing logic to all agents at the same path.
+        
+        Args:
+            callback_fn: The callback function to register
+            path: The path to register the callback at
+        """
+        # Normalize the path
+        if not path.startswith("/"):
+            path = f"/{path}"
+        
+        path = path.rstrip("/")
+        
+        # Register with all existing agents
+        for agent in self.agents.values():
+            agent.register_routing_callback(callback_fn, path=path)
+        
+        self.logger.info(f"Registered global routing callback at {path} on all agents")

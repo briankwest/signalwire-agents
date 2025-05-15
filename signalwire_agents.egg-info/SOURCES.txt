@@ -1,4 +1,5 @@
 README.md
+pyproject.toml
 schema.json
 setup.py
 docs/agent_guide.md

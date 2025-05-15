@@ -167,8 +167,8 @@ class SWMLService:
         # Create auto-vivified methods for all verbs
         self._create_verb_methods()
         
-        # Initialize routing callback
-        self._routing_callback = None
+        # Initialize routing callbacks dictionary (path -> callback)
+        self._routing_callbacks = {}
     
     def _create_verb_methods(self) -> None:
         """
@@ -566,34 +566,41 @@ class SWMLService:
             """Handle GET/POST requests to the root endpoint with trailing slash"""
             return await self._handle_request(request, response)
         
-        # Add SIP endpoint if routing callback is configured
-        if self._routing_callback is not None:
-            # SIP endpoint - without trailing slash
-            @router.get("/sip")
-            @router.post("/sip")
-            async def handle_sip_no_slash(request: Request, response: Response):
-                """Handle GET/POST requests to the SIP endpoint"""
+        # Add endpoints for all registered routing callbacks
+        for path in self._routing_callbacks:
+            # Skip the root path as it's already handled
+            if path == "/":
+                continue
+                
+            # Path without trailing slash
+            @router.get(path)
+            @router.post(path)
+            async def handle_callback_no_slash(request: Request, response: Response, path_param=path):
+                """Handle GET/POST requests to a registered callback path without trailing slash"""
+                request.state.callback_path = path_param
                 return await self._handle_request(request, response)
                 
-            # SIP endpoint - with trailing slash
-            @router.get("/sip/")
-            @router.post("/sip/")
-            async def handle_sip_with_slash(request: Request, response: Response):
-                """Handle GET/POST requests to the SIP endpoint with trailing slash"""
+            # Path with trailing slash
+            @router.get(f"{path}/")
+            @router.post(f"{path}/")
+            async def handle_callback_with_slash(request: Request, response: Response, path_param=path):
+                """Handle GET/POST requests to a registered callback path with trailing slash"""
+                request.state.callback_path = path_param
                 return await self._handle_request(request, response)
                 
-            self.log.info("sip_endpoint_registered", path="/sip")
+            self.log.info("callback_endpoint_registered", path=path)
         
         self._router = router
         return router
     
-    def register_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]]) -> None:
+    def register_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], 
+                                path: str = "/sip") -> None:
         """
         Register a callback function that will be called to determine routing
         based on POST data.
         
-        When a routing callback is registered, a global `/sip` endpoint is automatically
-        created that will handle SIP requests. This endpoint will use the callback to
+        When a routing callback is registered, an endpoint at the specified path is automatically
+        created that will handle requests. This endpoint will use the callback to
         determine if the request should be processed by this service or redirected.
         
         The callback should take a request object and request body dictionary and return:
@@ -602,9 +609,15 @@ class SWMLService:
         
         Args:
             callback_fn: The callback function to register
+            path: The path where this callback should be registered (default: "/sip")
         """
-        self.log.info("registering_routing_callback")
-        self._routing_callback = callback_fn
+        # Normalize the path to ensure consistent lookup
+        normalized_path = path.rstrip("/")
+        if not normalized_path.startswith("/"):
+            normalized_path = f"/{normalized_path}"
+            
+        self.log.info("registering_routing_callback", path=normalized_path)
+        self._routing_callbacks[normalized_path] = callback_fn
 
     @staticmethod
     def extract_sip_username(request_body: Dict[str, Any]) -> Optional[str]:
@@ -670,10 +683,33 @@ class SWMLService:
                 if raw_body:
                     body = await request.json()
                     
-                    # Check if we have a routing callback and should reroute the request
-                    if self._routing_callback is not None:
-                        self.log.debug("checking_routing", body_keys=list(body.keys()))
-                        route = self._routing_callback(request, body)
+                    # Determine which callback to use based on the request path
+                    callback_path = getattr(request.state, "callback_path", None)
+                    if not callback_path:
+                        # Try to match the request path to a registered callback
+                        request_path = request.url.path
+                        if request_path.endswith("/"):
+                            request_path = request_path[:-1]
+                            
+                        # Extract the path relative to our route
+                        if request_path.startswith(self.route):
+                            relative_path = request_path[len(self.route):]
+                            if not relative_path:
+                                relative_path = "/"
+                        else:
+                            relative_path = request_path
+                            
+                        callback_path = relative_path
+                    
+                    # Check if we have a routing callback for this path
+                    if callback_path in self._routing_callbacks:
+                        callback_fn = self._routing_callbacks[callback_path]
+                        self.log.debug("checking_routing", 
+                                      path=callback_path, 
+                                      body_keys=list(body.keys()))
+                        
+                        # Call the callback function
+                        route = callback_fn(request, body)
                         
                         if route is not None:
                             self.log.info("routing_request", route=route)
@@ -787,8 +823,10 @@ class SWMLService:
         print(f"Basic Auth: {username}:{password}")
         
         # Check if SIP routing is enabled and print additional info
-        if self._routing_callback is not None:
-            print(f"SIP endpoint: {protocol}://{display_host}/sip")
+        if self._routing_callbacks:
+            print(f"Callback endpoints:")
+            for path in self._routing_callbacks:
+                print(f"{protocol}://{display_host}{path}")
         
         # Start uvicorn with or without SSL
         if self.ssl_enabled and ssl_cert_path and ssl_key_path:

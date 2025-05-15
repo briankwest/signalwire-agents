@@ -1151,8 +1151,11 @@ class AgentBase(SWMLService):
     
     async def _handle_root_request(self, request: Request):
         """Handle GET/POST requests to the root endpoint"""
+        # Check if this is a callback path request
+        callback_path = getattr(request.state, "callback_path", None)
+        
         req_log = self.log.bind(
-            endpoint="root",
+            endpoint="root" if not callback_path else f"callback:{callback_path}",
             method=request.method,
             path=request.url.path
         )
@@ -1201,6 +1204,25 @@ class AgentBase(SWMLService):
             if call_id:
                 req_log = req_log.bind(call_id=call_id)
                 req_log.debug("call_id_identified")
+            
+            # Check if this is a callback path and we need to apply routing
+            if callback_path and hasattr(self, '_routing_callbacks') and callback_path in self._routing_callbacks:
+                callback_fn = self._routing_callbacks[callback_path]
+                
+                if request.method == "POST" and body:
+                    req_log.debug("processing_routing_callback", path=callback_path)
+                    # Call the routing callback
+                    try:
+                        route = callback_fn(request, body)
+                        if route is not None:
+                            req_log.info("routing_request", route=route)
+                            # Return a redirect to the new route
+                            return Response(
+                                status_code=307,  # 307 Temporary Redirect preserves the method and body
+                                headers={"Location": route}
+                            )
+                    except Exception as e:
+                        req_log.error("error_in_routing_callback", error=str(e), traceback=traceback.format_exc())
             
             # Allow subclasses to inspect/modify the request
             modifications = None
@@ -1669,28 +1691,34 @@ class AgentBase(SWMLService):
         async def handle_post_prompt_with_slash(request: Request):
             return await self._handle_post_prompt_request(request)
         
-        # Check if SIP routing is enabled for this agent
-        # (The agent will have _sip_usernames if enable_sip_routing was called)
-        if hasattr(self, '_sip_usernames') and self._sip_usernames:
-            self.log.info("registering_sip_endpoint", usernames=list(self._sip_usernames))
-            
-            # SIP endpoint - without trailing slash
-            @app.get("/sip")
-            @app.post("/sip")
-            async def handle_sip_no_slash(request: Request):
-                return await self._handle_root_request(request)
+        # Register routes for all routing callbacks
+        if hasattr(self, '_routing_callbacks') and self._routing_callbacks:
+            for callback_path, callback_fn in self._routing_callbacks.items():
+                # Skip the root path as it's already handled
+                if callback_path == "/":
+                    continue
                 
-            # SIP endpoint - with trailing slash
-            @app.get("/sip/")
-            @app.post("/sip/")
-            async def handle_sip_with_slash(request: Request):
-                return await self._handle_root_request(request)
+                # Register the endpoint without trailing slash
+                callback_route = callback_path
+                self.log.info("registering_callback_route", path=callback_route)
                 
-            # Log that SIP endpoint was added
-            self.log.info("sip_endpoint_registered", path="/sip")
-            
-            # Add SIP routes to the printed information
-            print(f"SIP endpoint available at: http://{self.host}:{self.port}/sip")
+                @app.get(callback_route)
+                @app.post(callback_route)
+                async def handle_callback_no_slash(request: Request, path_param=callback_route):
+                    # Store the callback path in request state for _handle_root_request to use
+                    request.state.callback_path = path_param
+                    return await self._handle_root_request(request)
+                
+                # Register the endpoint with trailing slash if it doesn't already have one
+                if not callback_route.endswith('/'):
+                    slash_route = f"{callback_route}/"
+                    
+                    @app.get(slash_route)
+                    @app.post(slash_route)
+                    async def handle_callback_with_slash(request: Request, path_param=callback_route):
+                        # Store the callback path in request state for _handle_root_request to use
+                        request.state.callback_path = path_param
+                        return await self._handle_root_request(request)
         
         # Log all registered routes
         routes = [f"{route.methods} {route.path}" for route in app.routes]
@@ -2042,16 +2070,24 @@ class AgentBase(SWMLService):
         print(f"URL: http://{host}:{port}{self.route}")
         print(f"Basic Auth: {username}:{password} (source: {source})")
         
-        # Check if SIP routing is enabled and print additional info
+        # Check if SIP usernames are registered and print that info
         if hasattr(self, '_sip_usernames') and self._sip_usernames:
-            print(f"SIP endpoint: http://{host}:{port}/sip")
-            print(f"SIP usernames: {', '.join(self._sip_usernames)}")
+            print(f"Registered SIP usernames: {', '.join(sorted(self._sip_usernames))}")
+        
+        # Check if callback endpoints are registered and print them
+        if hasattr(self, '_routing_callbacks') and self._routing_callbacks:
+            for path in sorted(self._routing_callbacks.keys()):
+                if hasattr(self, '_sip_usernames') and path == "/sip":
+                    print(f"SIP endpoint: http://{host}:{port}{path}")
+                else:
+                    print(f"Callback endpoint: http://{host}:{port}{path}")
         
         # Configure Uvicorn for production
         uvicorn_log_config = uvicorn.config.LOGGING_CONFIG
         uvicorn_log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         uvicorn_log_config["formatters"]["default"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         
+        # Start the server
         try:
             # Run the server
             uvicorn.run(
@@ -2368,18 +2404,19 @@ class AgentBase(SWMLService):
             self._function_includes = valid_includes
         return self
 
-    def enable_sip_routing(self, auto_map: bool = True) -> 'AgentBase':
+    def enable_sip_routing(self, auto_map: bool = True, path: str = "/sip") -> 'AgentBase':
         """
         Enable SIP-based routing for this agent
         
         This allows the agent to automatically route SIP requests based on SIP usernames.
-        When enabled, a global `/sip` endpoint is automatically created that will handle
-        SIP requests and deliver them to this agent.
+        When enabled, an endpoint at the specified path is automatically created
+        that will handle SIP requests and deliver them to this agent.
         
         Args:
             auto_map: Whether to automatically map common SIP usernames to this agent
                      (based on the agent name and route path)
-            
+            path: The path to register the SIP routing endpoint (default: "/sip")
+        
         Returns:
             Self for method chaining
         """
@@ -2391,11 +2428,19 @@ class AgentBase(SWMLService):
             if sip_username:
                 self.log.info("sip_username_extracted", username=sip_username)
                 
-                # This route is already being handled by the agent, no need to redirect
-                return None
-                
-        # Register the callback with the SWMLService
-        self.register_routing_callback(sip_routing_callback)
+                # Check if this username is registered with this agent
+                if hasattr(self, '_sip_usernames') and sip_username.lower() in self._sip_usernames:
+                    self.log.info("sip_username_matched", username=sip_username)
+                    # This route is already being handled by the agent, no need to redirect
+                    return None
+                else:
+                    self.log.info("sip_username_not_matched", username=sip_username)
+                    # Not registered with this agent, let routing continue
+                    
+            return None
+            
+        # Register the callback with the SWMLService, specifying the path
+        self.register_routing_callback(sip_routing_callback, path=path)
         
         # Auto-map common usernames if requested
         if auto_map:
