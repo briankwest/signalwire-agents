@@ -36,7 +36,6 @@ class InfoGathererAgent(AgentBase):
         summary_format: Optional[Dict[str, Any]] = None,
         name: str = "info_gatherer", 
         route: str = "/info_gatherer",
-        schema_path: Optional[str] = None,
         **kwargs
     ):
         """
@@ -52,30 +51,13 @@ class InfoGathererAgent(AgentBase):
             summary_format: Optional JSON template for the post_prompt summary
             name: Agent name for the route
             route: HTTP route for this agent
-            schema_path: Optional path to a custom schema
             **kwargs: Additional arguments for AgentBase
         """
-        # Find schema.json if not provided
-        if not schema_path:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(os.path.dirname(current_dir))
-            
-            schema_locations = [
-                os.path.join(current_dir, "schema.json"),
-                os.path.join(parent_dir, "schema.json")
-            ]
-            
-            for loc in schema_locations:
-                if os.path.exists(loc):
-                    schema_path = loc
-                    break
-                    
         # Initialize the base agent
         super().__init__(
             name=name,
             route=route,
             use_pom=True,
-            schema_path=schema_path,
             **kwargs
         )
         

@@ -51,7 +51,6 @@ class SurveyAgent(AgentBase):
         conclusion: Optional[str] = None,
         brand_name: Optional[str] = None,
         max_retries: int = 2,
-        schema_path: Optional[str] = None,
         **kwargs
     ):
         """
@@ -70,30 +69,13 @@ class SurveyAgent(AgentBase):
             conclusion: Optional custom conclusion message
             brand_name: Optional brand or company name
             max_retries: Maximum number of times to retry invalid answers
-            schema_path: Optional path to a custom schema
             **kwargs: Additional arguments for AgentBase
         """
-        # Find schema.json if not provided
-        if not schema_path:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(os.path.dirname(current_dir))
-            
-            schema_locations = [
-                os.path.join(current_dir, "schema.json"),
-                os.path.join(parent_dir, "schema.json")
-            ]
-            
-            for loc in schema_locations:
-                if os.path.exists(loc):
-                    schema_path = loc
-                    break
-        
         # Initialize the base agent
         super().__init__(
             name="survey",
             route="/survey",
             use_pom=True,
-            schema_path=schema_path,
             **kwargs
         )
         

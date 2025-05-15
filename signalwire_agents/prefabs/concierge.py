@@ -41,7 +41,6 @@ class ConciergeAgent(AgentBase):
         hours_of_operation: Optional[Dict[str, str]] = None,
         special_instructions: Optional[List[str]] = None,
         welcome_message: Optional[str] = None,
-        schema_path: Optional[str] = None,
         **kwargs
     ):
         """
@@ -54,30 +53,13 @@ class ConciergeAgent(AgentBase):
             hours_of_operation: Optional dictionary of operating hours
             special_instructions: Optional list of special instructions
             welcome_message: Optional custom welcome message
-            schema_path: Optional path to a custom schema
             **kwargs: Additional arguments for AgentBase
         """
-        # Find schema.json if not provided
-        if not schema_path:
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            parent_dir = os.path.dirname(os.path.dirname(current_dir))
-            
-            schema_locations = [
-                os.path.join(current_dir, "schema.json"),
-                os.path.join(parent_dir, "schema.json")
-            ]
-            
-            for loc in schema_locations:
-                if os.path.exists(loc):
-                    schema_path = loc
-                    break
-                    
         # Initialize the base agent
         super().__init__(
             name="concierge",
             route="/concierge",
             use_pom=True,
-            schema_path=schema_path,
             **kwargs
         )
         
