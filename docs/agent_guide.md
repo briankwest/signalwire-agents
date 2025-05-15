@@ -398,6 +398,60 @@ def save_preference(self, args, raw_data):
         return SwaigFunctionResult("Could not save preference: No call ID")
 ```
 
+### Custom Routing
+
+You can dynamically handle requests to different paths using routing callbacks:
+
+```python
+# Enable custom routing in the constructor or anytime after initialization
+self.register_routing_callback(self.handle_customer_route, path="/customer")
+self.register_routing_callback(self.handle_product_route, path="/product")
+
+# Define the routing handlers
+def handle_customer_route(self, request, body):
+    """
+    Process customer-related requests
+    
+    Args:
+        request: FastAPI Request object
+        body: Parsed JSON body as dictionary
+        
+    Returns:
+        Optional[str]: A URL to redirect to, or None to process normally
+    """
+    # Extract any relevant data
+    customer_id = body.get("customer_id")
+    
+    # You can redirect to another agent/service if needed
+    if customer_id and customer_id.startswith("vip-"):
+        return f"/vip-handler/{customer_id}"
+        
+    # Or return None to process the request with on_swml_request
+    return None
+    
+# Customize SWML based on the route in on_swml_request
+def on_swml_request(self, request_data=None, callback_path=None):
+    """
+    Customize SWML based on the request and path
+    
+    Args:
+        request_data: The request body data
+        callback_path: The path that triggered the routing callback
+    """
+    if callback_path == "/customer":
+        # Serve customer-specific content
+        return {
+            "sections": {
+                "main": [
+                    {"answer": {}},
+                    {"play": {"url": "say:Welcome to customer service!"}}
+                ]
+            }
+        }
+    # Other path handling...
+    return None
+```
+
 ### Customizing SWML Requests
 
 You can modify the SWML document based on request data by overriding the `on_swml_request` method:
@@ -805,11 +859,12 @@ my-prefab-agents/
 
 ### Service Methods
 
-- `serve(host=None, port=None)`
-- `as_router()`
-- `on_swml_request(request_data=None)`
-- `on_summary(summary, raw_data=None)`
-- `on_function_call(name, args, raw_data=None)`
+- `serve(host=None, port=None)`: Start the web server
+- `as_router()`: Return a FastAPI router for this agent
+- `on_swml_request(request_data=None, callback_path=None)`: Customize SWML based on request data and path
+- `on_summary(summary, raw_data=None)`: Handle post-prompt summaries
+- `on_function_call(name, args, raw_data=None)`: Process SWAIG function calls
+- `register_routing_callback(callback_fn, path="/sip")`: Register a callback for custom path routing
 
 ## Examples
 

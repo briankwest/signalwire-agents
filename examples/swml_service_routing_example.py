@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Example of using SWMLService with custom routing callbacks
+Custom Routing Callbacks with SWMLService
 
-This example demonstrates how to use the register_routing_callback 
-method with a SWMLService instance to create custom routes.
+This example demonstrates how to implement dynamic request routing using the
+register_routing_callback method in SWMLService. It shows how to:
+
+1. Create multiple endpoint paths (/main, /customer, /product) with a single service
+2. Register callback functions to process requests at specific paths
+3. Create and serve different SWML content based on the request path
+4. Examine request data to make routing decisions
+5. Use the on_request method with callback_path to serve path-specific content
+
+This functionality allows creating sophisticated multi-purpose services that can
+handle different types of requests at different endpoints, all from a single
+SWMLService instance.
 """
 
 import json

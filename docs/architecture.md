@@ -36,6 +36,7 @@ The SDK is built around a clear class hierarchy:
 4. **HTTP Routing**
    - FastAPI-based web service
    - Endpoint routing for SWML, SWAIG, and other services
+   - Custom routing callbacks for dynamic endpoint handling
    - SIP request routing for voice applications
    - Basic authentication
 
@@ -321,6 +322,13 @@ The SDK uses FastAPI for routing with these key endpoints:
 - **/post_prompt/** (POST): Endpoint for receiving conversation summaries
 - **/sip/** (GET/POST): Optional endpoint for SIP routing
 
+The SDK also supports dynamic creation of custom routing endpoints:
+
+- **Custom routing callbacks**: Register callbacks for specific paths (e.g., `/customer`, `/product`)
+- **Dynamic content serving**: Serve different SWML documents based on the request path
+- **Request inspection**: Examine request data to make routing decisions
+- **Redirection**: Optionally redirect requests to other endpoints
+
 ## Deployment Options
 
 The SDK supports multiple deployment models:
@@ -408,4 +416,4 @@ Key environment variables:
 - `SWML_SSL_CERT_PATH`: Path to SSL certificate
 - `SWML_SSL_KEY_PATH`: Path to SSL key
 - `SWML_DOMAIN`: Domain name for the service
-- `SWML_SCHEMA_PATH`: Optional path to override the schema.json location 
+- `SWML_SCHEMA_PATH`: Optional path to override the schema.json location

@@ -8,6 +8,7 @@
 - [SWML Document Creation](#swml-document-creation)
 - [Verb Handling](#verb-handling)
 - [Web Service Features](#web-service-features)
+- [Custom Routing Callbacks](#custom-routing-callbacks)
 - [Advanced Usage](#advanced-usage)
 - [API Reference](#api-reference)
 - [Examples](#examples)
@@ -267,6 +268,173 @@ def on_swml_request(self, request_data=None):
     return None
 ```
 
+## Custom Routing Callbacks
+
+The `SWMLService` class allows you to register custom routing callbacks that can examine incoming requests and determine where they should be routed.
+
+### Registering a Routing Callback
+
+You can use the `register_routing_callback` method to register a function that will be called to process requests to a specific path:
+
+```python
+def my_routing_callback(request, body):
+    """
+    Process incoming requests and determine routing
+    
+    Args:
+        request: FastAPI Request object
+        body: Parsed JSON body as a dictionary
+        
+    Returns:
+        Optional[str]: If a string is returned, the request will be redirected to that URL.
+                      If None is returned, the request will be processed normally.
+    """
+    # Example: Route based on a field in the request body
+    if "customer_id" in body:
+        customer_id = body["customer_id"]
+        return f"/customer/{customer_id}"
+    
+    # Process request normally
+    return None
+
+# Register the callback for a specific path
+service.register_routing_callback(my_routing_callback, path="/customer")
+```
+
+### How Routing Works
+
+1. When a request is received at the registered path, the routing callback is executed
+2. The callback inspects the request and can decide whether to redirect it
+3. If the callback returns a URL string, the request is redirected with HTTP 307 (temporary redirect)
+4. If the callback returns `None`, the request is processed normally by the `on_request` method
+
+### Serving Different Content for Different Paths
+
+You can use the `callback_path` parameter passed to `on_request` to serve different content for different paths:
+
+```python
+def on_request(self, request_data=None, callback_path=None):
+    """
+    Called when SWML is requested
+    
+    Args:
+        request_data: Optional dictionary containing the parsed POST body
+        callback_path: Optional callback path from the request
+        
+    Returns:
+        Optional dict to modify/augment the SWML document
+    """
+    # Serve different content based on the callback path
+    if callback_path == "/customer":
+        return {
+            "sections": {
+                "main": [
+                    {"answer": {}},
+                    {"play": {"url": "say:Welcome to customer service!"}}
+                ]
+            }
+        }
+    elif callback_path == "/product":
+        return {
+            "sections": {
+                "main": [
+                    {"answer": {}},
+                    {"play": {"url": "say:Welcome to product support!"}}
+                ]
+            }
+        }
+    
+    # Default content
+    return None
+```
+
+### Example: Multi-Section Service
+
+Here's an example of a service that uses routing callbacks to handle different types of requests:
+
+```python
+from signalwire_agents.core.swml_service import SWMLService
+from fastapi import Request
+from typing import Dict, Any, Optional
+
+class MultiSectionService(SWMLService):
+    def __init__(self):
+        super().__init__(
+            name="multi-section",
+            route="/main"
+        )
+        
+        # Create the main document
+        self.reset_document()
+        self.add_answer_verb()
+        self.add_verb("play", {"url": "say:Hello from the main service!"})
+        self.add_verb("hangup", {})
+        
+        # Register customer and product routes
+        self.register_customer_route()
+        self.register_product_route()
+    
+    def register_customer_route(self):
+        def customer_callback(request: Request, body: Dict[str, Any]) -> Optional[str]:
+            # Check if we need to route to a specific customer ID
+            if "customer_id" in body:
+                customer_id = body["customer_id"]
+                # In a real implementation, you might redirect to another service
+                # Here we just log it and process normally
+                print(f"Processing request for customer ID: {customer_id}")
+            return None
+            
+        # Register the callback at the /customer path
+        self.register_routing_callback(customer_callback, path="/customer")
+        
+        # Create the customer SWML section
+        self.add_section("customer_section")
+        self.add_verb_to_section("customer_section", "answer", {})
+        self.add_verb_to_section("customer_section", "play", 
+                                {"url": "say:Welcome to customer service!"})
+        self.add_verb_to_section("customer_section", "hangup", {})
+    
+    def register_product_route(self):
+        def product_callback(request: Request, body: Dict[str, Any]) -> Optional[str]:
+            # Check if we need to route to a specific product ID
+            if "product_id" in body:
+                product_id = body["product_id"]
+                print(f"Processing request for product ID: {product_id}")
+            return None
+            
+        # Register the callback at the /product path
+        self.register_routing_callback(product_callback, path="/product")
+        
+        # Create the product SWML section
+        self.add_section("product_section")
+        self.add_verb_to_section("product_section", "answer", {})
+        self.add_verb_to_section("product_section", "play", 
+                               {"url": "say:Welcome to product support!"})
+        self.add_verb_to_section("product_section", "hangup", {})
+    
+    def on_request(self, request_data=None, callback_path=None):
+        # Serve different content based on the callback path
+        if callback_path == "/customer":
+            return {
+                "sections": {
+                    "main": self.get_document()["sections"]["customer_section"]
+                }
+            }
+        elif callback_path == "/product":
+            return {
+                "sections": {
+                    "main": self.get_document()["sections"]["product_section"]
+                }
+            }
+        return None
+```
+
+In this example:
+1. The service registers two custom route paths: `/customer` and `/product`
+2. Each path has its own callback function to handle routing decisions
+3. The `on_request` method uses the `callback_path` to determine which content to serve
+4. Different SWML sections are served for different paths
+
 ## Advanced Usage
 
 ### Creating a FastAPI Router
@@ -316,11 +484,12 @@ service = SWMLService(
 
 ### Service Methods
 
-- `as_router()`
-- `serve(host=None, port=None)`
-- `stop()`
-- `get_basic_auth_credentials(include_source=False)`
-- `on_swml_request(request_data=None)`
+- `as_router()`: Get a FastAPI router for the service
+- `serve(host=None, port=None)`: Start the service
+- `stop()`: Stop the service
+- `get_basic_auth_credentials(include_source=False)`: Get the basic auth credentials
+- `on_swml_request(request_data=None)`: Called when SWML is requested
+- `register_routing_callback(callback_fn, path="/sip")`: Register a callback for request routing
 
 ### Verb Helper Methods
 
