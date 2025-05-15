@@ -195,6 +195,10 @@ class AgentBase(SWMLService):
         self._session_manager = SessionManager(token_expiry_secs=token_expiry_secs)
         self._enable_state_tracking = enable_state_tracking
         
+        # URL override variables
+        self._web_hook_url_override = None
+        self._post_prompt_url_override = None
+        
         # Register the tool decorator on this instance
         self.tool = self._tool_decorator
         
@@ -895,6 +899,10 @@ class AgentBase(SWMLService):
         # Get the default webhook URL with auth
         default_webhook_url = self._build_webhook_url("swaig", query_params)
         
+        # Use override if set
+        if hasattr(self, '_web_hook_url_override') and self._web_hook_url_override:
+            default_webhook_url = self._web_hook_url_override
+        
         # Prepare SWAIG object (correct format)
         swaig_obj = {}
         
@@ -952,6 +960,10 @@ class AgentBase(SWMLService):
         post_prompt_url = None
         if post_prompt:
             post_prompt_url = self._build_webhook_url("post_prompt", {})
+            
+            # Use override if set
+            if hasattr(self, '_post_prompt_url_override') and self._post_prompt_url_override:
+                post_prompt_url = self._post_prompt_url_override
         
         # Add answer verb with auto-answer enabled
         self.add_answer_verb()
@@ -2491,4 +2503,30 @@ class AgentBase(SWMLService):
             if no_vowels != clean_name and len(no_vowels) > 2:
                 self.register_sip_username(no_vowels)
                 
+        return self
+
+    def set_web_hook_url(self, url: str) -> 'AgentBase':
+        """
+        Override the default web_hook_url with a supplied URL string
+        
+        Args:
+            url: The URL to use for SWAIG function webhooks
+            
+        Returns:
+            Self for method chaining
+        """
+        self._web_hook_url_override = url
+        return self
+        
+    def set_post_prompt_url(self, url: str) -> 'AgentBase':
+        """
+        Override the default post_prompt_url with a supplied URL string
+        
+        Args:
+            url: The URL to use for post-prompt summary delivery
+            
+        Returns:
+            Self for method chaining
+        """
+        self._post_prompt_url_override = url
         return self

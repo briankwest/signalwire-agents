@@ -512,6 +512,25 @@ def on_summary(self, summary, raw_data=None):
         # ...
 ```
 
+### Custom Webhook URLs
+
+You can override the default webhook URLs for SWAIG functions and post-prompt delivery:
+
+```python
+# In your agent initialization or setup code:
+
+# Override the webhook URL for all SWAIG functions
+agent.set_web_hook_url("https://external-service.example.com/handle-swaig")
+
+# Override the post-prompt delivery URL
+agent.set_post_prompt_url("https://analytics.example.com/conversation-summaries")
+
+# These methods allow you to:
+# 1. Send function calls to external services instead of handling them locally
+# 2. Send conversation summaries to analytics services or other systems
+# 3. Use special URLs with pre-configured authentication
+```
+
 ## Prefab Agents
 
 Prefab agents are pre-configured agent implementations designed for specific use cases. They provide ready-to-use functionality with customization options, saving development time and ensuring consistent patterns.
@@ -865,6 +884,8 @@ my-prefab-agents/
 - `on_summary(summary, raw_data=None)`: Handle post-prompt summaries
 - `on_function_call(name, args, raw_data=None)`: Process SWAIG function calls
 - `register_routing_callback(callback_fn, path="/sip")`: Register a callback for custom path routing
+- `set_web_hook_url(url)`: Override the default web_hook_url with a supplied URL string
+- `set_post_prompt_url(url)`: Override the default post_prompt_url with a supplied URL string
 
 ## Examples
 
