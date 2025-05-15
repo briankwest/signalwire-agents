@@ -201,18 +201,28 @@ To return results from a SWAIG function, use the `SwaigFunctionResult` class:
 # Basic result with just text
 return SwaigFunctionResult("Here's the result")
 
-# Result with actions
-return SwaigFunctionResult(
-    "Here's the result", 
-    actions=[
-        # Action to say something
-        {"say": "I found the information you requested."},
-        
-        # Action to play audio
-        {"playback_bg": {"file": "https://example.com/music.mp3"}}
-    ]
+# Result with a single action
+return SwaigFunctionResult("Here's the result with an action")
+       .add_action("say", "I found the information you requested.")
+
+# Result with multiple actions using add_actions
+return SwaigFunctionResult("Multiple actions example")
+       .add_actions([
+           {"playback_bg": {"file": "https://example.com/music.mp3"}},
+           {"set_global_data": {"key": "value"}}
+       ])
+
+# Alternative way to add multiple actions sequentially
+return (
+    SwaigFunctionResult("Sequential actions example")
+    .add_action("say", "I found the information you requested.")
+    .add_action("playback_bg", {"file": "https://example.com/music.mp3"})
 )
 ```
+
+In the examples above:
+- `add_action(name, data)` adds a single action with the given name and data
+- `add_actions(actions)` adds multiple actions at once from a list of action objects
 
 ### Native Functions
 

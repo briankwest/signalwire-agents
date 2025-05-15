@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Example of using the redesigned InfoGathererAgent to collect answers to questions
+"""
+
+import os
+import sys
+import json
+from signalwire_agents.prefabs import InfoGathererAgent
+
+def main():
+    """Run the InfoGathererAgent example"""
+    
+    # Create an agent with a list of questions
+    agent = InfoGathererAgent(
+        questions=[
+            {"key_name": "name", "question_text": "What is your full name?"},
+            {"key_name": "phone", "question_text": "What is your phone number?", "confirm": True},
+            {"key_name": "age", "question_text": "What is your age?"},
+            {"key_name": "reason", "question_text": "What are you contacting us about today?"}
+        ],
+        name="contact-form",
+        route="/contact"
+    )
+
+
+ # set voice
+    agent.add_language(
+        name="English",    # Display name for the language
+        code="en-US",      # ISO language code
+        voice="rime.spore:mistv2"  # Voice ID with provider prefix
+    )
+
+    # Customize the agent with additional prompt sections if desired
+    agent.prompt_add_section(
+        "Introduction", 
+        body="I'm here to help you fill out our contact form. "
+             "This information helps us better serve you."
+    )
+
+    # Set the post prompt to summarize the questions and answers in a concise manner
+    
+    agent.set_post_prompt("Summarize the questions and answers in a concise manner.")
+
+    # you have to set a post prompt to be able to use either of the next two options
+
+    # Set the post prompt URL to the remote server, even if you define the on_summary method it will be ignored if you set the post prompt URL
+    #agent.set_post_prompt_url("https://user:password@example.com/ai/post.cgi")
+    
+    # or, if you want to handle the post prompt yourself, you can define the following method which will be called with the summary and raw data
+    def on_summary(self, summary, raw_data=None):
+        """
+        Process the collected information summary
+        
+        Args:
+            summary: Summary data from the conversation
+            raw_data: The complete raw POST data from the request
+        """
+        # Get all the answers from global data instead
+        if raw_data and "global_data" in raw_data:
+            global_data = raw_data.get("global_data", {})
+            answers = global_data.get("answers", [])    
+            print(f"Information collected: {json.dumps(answers, indent=2)}")
+
+    
+    # Get basic auth credentials for display
+    username, password = agent.get_basic_auth_credentials()
+    
+    # Print information about the agent
+    print("Starting the Information Gathering Agent")
+    print("----------------------------------------")
+    print(f"URL: http://localhost:3000{agent.route}")
+    print(f"Basic Auth: {username}:{password}")
+    print("----------------------------------------")
+    print("Press Ctrl+C to stop the agent")
+    
+    # Start the agent server
+    agent.serve()
+
+if __name__ == "__main__":
+    main() 

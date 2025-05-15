@@ -22,7 +22,7 @@ class InfoGathererAgent(AgentBase):
         agent = InfoGathererAgent(
             questions=[
                 {"key_name": "full_name", "question_text": "What is your full name?"},
-                {"key_name": "email", "question_text": "What is your email address?"},
+                {"key_name": "email", "question_text": "What is your email address?", "confirm": True},
                 {"key_name": "reason", "question_text": "How can I help you today?"}
             ]
         )
@@ -42,6 +42,7 @@ class InfoGathererAgent(AgentBase):
             questions: List of questions to ask, each with:
                 - key_name: Identifier for storing the answer
                 - question_text: The actual question to ask the user
+                - confirm: (Optional) If set to True, the agent will confirm the answer before submitting
             name: Agent name for the route
             route: HTTP route for this agent
             **kwargs: Additional arguments for AgentBase
@@ -92,10 +93,38 @@ class InfoGathererAgent(AgentBase):
         """Configure additional agent settings"""
         # Set AI behavior parameters
         self.set_params({
-            "wait_for_user": False,
-            "end_of_speech_timeout": 1200,  # Slightly longer for thoughtful responses
-            "ai_volume": 5
+            "end_of_speech_timeout": 800,
+            "speech_event_timeout": 1000  # Slightly longer for thoughtful responses
         })
+    
+    def _generate_question_instruction(self, question_text: str, needs_confirmation: bool, is_first_question: bool = False) -> str:
+        """
+        Generate the instruction text for asking a question
+        
+        Args:
+            question_text: The question to ask
+            needs_confirmation: Whether confirmation is required
+            is_first_question: Whether this is the first question or a subsequent one
+            
+        Returns:
+            Formatted instruction text
+        """
+        # Start with the appropriate prefix based on whether this is the first question
+        if is_first_question:
+            instruction = f"Ask the user to answer the following question: {question_text}\n\n"
+        else:
+            instruction = f"Previous Answer recorded. Now ask the user to answer the following question: {question_text}\n\n"
+        
+        # Add the common part
+        instruction += "Make sure the answer fits the scope and context of the question before submitting it. "
+        
+        # Add confirmation guidance if needed
+        if needs_confirmation:
+            instruction += "Insist that the user confirms the answer as many times as needed until they say it is correct."
+        else:
+            instruction += "You don't need the user to confirm the answer to this question."
+            
+        return instruction
     
     @AgentBase.tool(
         name="start_questions",
@@ -121,11 +150,17 @@ class InfoGathererAgent(AgentBase):
         # Get the current question
         current_question = questions[question_index]
         question_text = current_question.get("question_text", "")
+        needs_confirmation = current_question.get("confirm", False)
+        
+        # Generate instruction using the helper method
+        instruction = self._generate_question_instruction(
+            question_text=question_text,
+            needs_confirmation=needs_confirmation,
+            is_first_question=True
+        )
         
         # Return a prompt to ask the question
-        return SwaigFunctionResult(
-            f"Ask the user to answer the following question, make sure you get a proper answer then use the submit_answer tool to submit it. Question: {question_text}"
-        )
+        return SwaigFunctionResult(instruction)
     
     @AgentBase.tool(
         name="submit_answer",
@@ -169,7 +204,7 @@ class InfoGathererAgent(AgentBase):
         
         # Increment question index
         new_question_index = question_index + 1
-
+        
         print(f"new_question_index: {new_question_index} len(questions): {len(questions)}")
         
         # Check if we have more questions
@@ -180,19 +215,25 @@ class InfoGathererAgent(AgentBase):
             # Get the next question
             next_question = questions[new_question_index]
             next_question_text = next_question.get("question_text", "")
+            needs_confirmation = next_question.get("confirm", False)
             
-            # Create response with the global data update and next question
-            result = SwaigFunctionResult(
-                f"Answer recorded. Now ask the user to answer the following question, make sure you get a proper answer then use the submit_answer tool to submit it. Question: {next_question_text}"
+            # Generate instruction using the helper method
+            instruction = self._generate_question_instruction(
+                question_text=next_question_text,
+                needs_confirmation=needs_confirmation,
+                is_first_question=False
             )
             
-            # Add action to update global data
-            result.action = [{
-                "set_global_data": {
+            # Create response with the global data update and next question
+            result = SwaigFunctionResult(instruction)
+            
+            # Add actions to update global data
+            result.add_actions([
+                {"set_global_data": {
                     "answers": new_answers,
                     "question_index": new_question_index
-                }
-            }]
+                }}
+            ])
             
             return result
         else:
@@ -201,36 +242,13 @@ class InfoGathererAgent(AgentBase):
                 "Thank you! All questions have been answered. You can now summarize the information collected or ask if there's anything else the user would like to discuss."
             )
             
-            # Add action to update global data
-            result.actions = [{
-                "set_global_data": {
+            # Add actions to update global data
+            result.add_actions([
+                {"set_global_data": {
                     "answers": new_answers,
                     "question_index": new_question_index
-                }
-            }]
+                }}
+            ])
             
             return result
-    
-    def on_summary(self, summary, raw_data=None):
-        """
-        Process the collected information summary
-        
-        Args:
-            summary: Summary data from the conversation
-            raw_data: The complete raw POST data from the request
-        """
-        # Get all the answers from global data instead
-        if raw_data and "global_data" in raw_data:
-            global_data = raw_data.get("global_data", {})
-            answers = global_data.get("answers", [])
-            
-            if answers:
-                # Convert to dictionary format for easier use
-                answers_dict = {item["key_name"]: item["answer"] for item in answers}
-                print(f"Information collected: {json.dumps(answers_dict, indent=2)}")
-        elif summary:
-            # Fallback to summary if available
-            if isinstance(summary, dict):
-                print(f"Information from summary: {json.dumps(summary, indent=2)}")
-            else:
-                print(f"Information from summary: {summary}")
+

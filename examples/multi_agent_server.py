@@ -19,7 +19,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from signalwire_agents import AgentServer
 from signalwire_agents.prefabs import InfoGathererAgent
-from signalwire_agents.core.function_result import SwaigFunctionResult, SwaigActionTypes
+from signalwire_agents.core.function_result import SwaigFunctionResult
 
 
 class CustomInfoGatherer(InfoGathererAgent):
@@ -112,9 +112,9 @@ class CustomInfoGatherer(InfoGathererAgent):
         # This demonstrates how to trigger SMS sending as part of the function result
         return (
             SwaigFunctionResult("I've saved your information to our system.")
-            .add_action(SwaigActionTypes.SEND_SMS, 
-                       to=phone,                # Phone number to send to
-                       message=f"Thanks {name} for registering!")  # SMS content
+            .add_action("send_sms", 
+                       {"to": phone,                # Phone number to send to
+                       "message": f"Thanks {name} for registering!"})  # SMS content
         )
     
     def on_summary(self, summary, raw_data=None):

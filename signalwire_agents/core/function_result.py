@@ -5,18 +5,6 @@ SwaigFunctionResult class for handling the response format of SWAIG function cal
 from typing import Dict, List, Any, Optional, Union
 
 
-class SwaigActionTypes:
-    """Constants for standard SWAIG action types"""
-    PLAY = "play"
-    TRANSFER = "transfer"
-    SEND_SMS = "send_sms"
-    JOIN_ROOM = "join_room"
-    RETURN = "return"
-    HANG_UP = "hang_up"
-    RECORD = "record"
-    COLLECT = "collect"
-
-
 class SwaigFunctionResult:
     """
     Wrapper around SWAIG function responses that handles proper formatting
@@ -35,6 +23,15 @@ class SwaigFunctionResult:
         return (
             SwaigFunctionResult("I'll confirm that")
             .add_action("confirm", True)
+        )
+        
+        # With multiple actions
+        return (
+            SwaigFunctionResult("Processing your request")
+            .add_actions([
+                {"set_global_data": {"key": "value"}},
+                {"play": {"url": "music.mp3"}}
+            ])
         )
     """
     def __init__(self, response: Optional[str] = None):
@@ -72,6 +69,19 @@ class SwaigFunctionResult:
             Self for method chaining
         """
         self.action.append({name: data})
+        return self
+    
+    def add_actions(self, actions: List[Dict[str, Any]]) -> 'SwaigFunctionResult':
+        """
+        Add multiple structured actions to the response
+        
+        Args:
+            actions: List of action objects to add to the response
+            
+        Returns:
+            Self for method chaining
+        """
+        self.action.extend(actions)
         return self
     
     def to_dict(self) -> Dict[str, Any]:

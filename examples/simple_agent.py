@@ -397,10 +397,19 @@ class SimpleAgent(AgentBase):
         # Log the function call with structured data
         logger.debug("get_weather_called", location=location)
         
-        # Create the result with a response
+        # Create the result with a response and multiple actions using add_actions
         # In a real implementation, this would call a weather API
-        # For this example, we return mock data
+        # For this example, we return mock data with multiple actions
         result = SwaigFunctionResult(f"It's sunny and 72°F in {location}.")
+        
+        # Example 1: Add a single action using add_action
+        result.add_action("set_global_data", {"weather_location": location})
+        
+        # Example 2: Add multiple actions at once using add_actions
+        result.add_actions([
+            {"playback_bg": {"file": "https://example.com/weather_sounds.mp3"}},
+            {"log": {"message": f"Weather requested for {location}"}}
+        ])
         
         return result
     
