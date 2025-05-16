@@ -66,7 +66,7 @@ class AgentServer:
         self.app = FastAPI(
             title="SignalWire AI Agents",
             description="Hosted SignalWire AI Agents",
-            version="0.1.1"
+            version="0.1.2"
         )
         
         # Keep track of registered agents

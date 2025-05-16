@@ -25,7 +25,7 @@
   - All verbs from the schema are automatically available as methods
   - Special handling for the `sleep` verb which takes a direct integer value
 
-## [0.1.1] - 2023-04-15
+## [0.1.2] - 2023-04-15
 
 ### Added
 
