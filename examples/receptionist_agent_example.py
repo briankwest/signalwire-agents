@@ -66,7 +66,7 @@ class CustomReceptionistAgent(ReceptionistAgent):
             name="acme-receptionist",
             route="/reception",
             greeting=greeting,
-            voice="elevenlabs.emma",  # Using a different voice
+            voice="elevenlabs.josh",  # Using a different voice
             **kwargs
         )
         

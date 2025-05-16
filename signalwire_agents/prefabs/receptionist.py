@@ -166,9 +166,7 @@ class ReceptionistAgent(AgentBase):
         self.add_language(
             name="English",
             code="en-US",
-            voice=voice,
-            speech_fillers=["Let me get that information for you...", "One moment please..."],
-            function_fillers=["I'm processing that...", "Let me check which department can help you best..."]
+            voice=voice
         )
     
     def _register_tools(self):
@@ -260,23 +258,26 @@ class ReceptionistAgent(AgentBase):
         # Get transfer number
         transfer_number = department.get("number", "")
         
-        # Create message for caller
-        message = f"I'll transfer you to our {department_name} department now. Thank you for calling, {name}!"
-        
         # Create result with transfer SWML
-        result = SwaigFunctionResult(message)
+        result = SwaigFunctionResult(f"I'll transfer you to our {department_name} department now. Thank you for calling, {name}!")
         
         # Add the SWML to execute the transfer
-        result.add_swml([
+                    # Add actions to update global data
+        result.add_actions([
             {
-                "play": {
-                    "url": f"say:{message}"
-                }
-            },
-            {
-                "connect": {
-                    "to": transfer_number
-                }
+                "SWML": {
+                    "sections": {
+                        "main": [
+                            {
+                                "connect": {
+                                    "to": transfer_number
+                                }
+                            }
+                        ]
+                    },
+                    "version": "1.0.0"
+                },
+                "transfer": "true"
             }
         ])
         
