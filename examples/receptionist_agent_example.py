@@ -75,6 +75,16 @@ class CustomReceptionistAgent(ReceptionistAgent):
             "Company Information",
             body="ACME Corporation is a leading provider of innovative solutions. Our business hours are Monday through Friday, 9 AM to 5 PM Eastern Time."
         )
+        
+        # Add a prompt section that clarifies available departments for transfers
+        departments_text = "Available departments for transfer:\n"
+        for dept in departments:
+            departments_text += f"- {dept['name'].title()}: {dept['description']}\n"
+        
+        self.prompt_add_section(
+            "Transfer Options",
+            body=departments_text
+        )
     
     def on_summary(self, summary, raw_data=None):
         """
