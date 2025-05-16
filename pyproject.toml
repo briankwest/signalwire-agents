@@ -37,7 +37,7 @@ dependencies = [
 Homepage = "https://github.com/signalwire/signalwire-ai-agents"
 
 [tool.setuptools]
-packages = ["signalwire_agents"]
+packages = ["signalwire_agents", "signalwire_agents.prefabs", "signalwire_agents.utils", "signalwire_agents.core", "signalwire_agents.core.state", "signalwire_agents.core.security"]
 include-package-data = true
 
 [tool.setuptools.package-data]

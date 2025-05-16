@@ -361,8 +361,14 @@ class SWMLService:
             import importlib.resources
             try:
                 # Python 3.9+
-                with importlib.resources.files("signalwire_agents").joinpath("schema.json") as path:
+                try:
+                    # Python 3.13+
+                    path = importlib.resources.files("signalwire_agents").joinpath("schema.json")
                     return str(path)
+                except Exception:
+                    # Python 3.9-3.12
+                    with importlib.resources.files("signalwire_agents").joinpath("schema.json") as path:
+                        return str(path)
             except AttributeError:
                 # Python 3.7-3.8
                 with importlib.resources.path("signalwire_agents", "schema.json") as path:
