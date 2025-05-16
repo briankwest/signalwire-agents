@@ -126,6 +126,11 @@ class SWMLService:
         self.ssl_enabled = False
         self.domain = None
         
+        # Initialize proxy detection attributes
+        self._proxy_url_base = os.environ.get('SWML_PROXY_URL_BASE')
+        self._proxy_detection_done = False
+        self._proxy_debug = os.environ.get('SWML_PROXY_DEBUG', '').lower() in ('true', '1', 'yes')
+        
         # Initialize logger for this instance
         self.log = logger.bind(service=name)
         self.log.info("service_initializing", route=self.route, host=host, port=port)
@@ -691,6 +696,11 @@ class SWMLService:
         Returns:
             Response with SWML document or error
         """
+        # Auto-detect proxy on first request if not explicitly configured
+        if not self._proxy_detection_done and not self._proxy_url_base:
+            self._detect_proxy_from_request(request)
+            self._proxy_detection_done = True
+            
         # Check auth
         if not self._check_basic_auth(request):
             response.headers["WWW-Authenticate"] = "Basic"
@@ -1055,3 +1065,97 @@ class SWMLService:
                 url = f"{url}?{params}"
             
         return url 
+
+    def _detect_proxy_from_request(self, request: Request) -> None:
+        """
+        Detect if we're behind a proxy by examining request headers
+        and auto-configure proxy_url_base if needed
+        
+        Args:
+            request: FastAPI Request object
+        """
+        # First check for standard X-Forwarded headers (used by most proxies including ngrok)
+        forwarded_host = request.headers.get("X-Forwarded-Host")
+        forwarded_proto = request.headers.get("X-Forwarded-Proto", "http")
+        
+        if forwarded_host:
+            # Direct X-Forwarded-* headers - most common case
+            self._proxy_url_base = f"{forwarded_proto}://{forwarded_host}"
+            self.log.info("proxy_auto_detected", proxy_url_base=self._proxy_url_base, 
+                        source="X-Forwarded headers")
+            return
+            
+        # If no standard headers, check other proxy detection methods
+        
+        # Check for Forwarded header (RFC 7239)
+        forwarded = request.headers.get("Forwarded")
+        if forwarded:
+            # Parse RFC 7239 Forwarded header
+            try:
+                # Extract host and proto from Forwarded: for=X;host=Y;proto=Z
+                parts = [p.strip() for p in forwarded.split(';')]
+                host_part = next((p for p in parts if p.startswith("host=")), None)
+                proto_part = next((p for p in parts if p.startswith("proto=")), None)
+                
+                if host_part:
+                    host = host_part.split('=', 1)[1].strip('"')
+                    proto = proto_part.split('=', 1)[1].strip('"') if proto_part else "http"
+                    self._proxy_url_base = f"{proto}://{host}"
+                    self.log.info("proxy_auto_detected", proxy_url_base=self._proxy_url_base,
+                                source="Forwarded header")
+                    return
+            except Exception as e:
+                self.log.warning("forwarded_header_parse_error", error=str(e))
+        
+        # Try to detect from the URL itself for transparent proxies
+        if str(request.url).startswith(("https://", "http://")) and not any(
+            str(request.url).startswith(f"http://{h}") for h in ["localhost", "127.0.0.1", self.host, "0.0.0.0"]
+        ):
+            # This is likely a transparent proxy - extract base URL
+            parsed = urlparse(str(request.url))
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            self._proxy_url_base = base_url
+            self.log.info("proxy_auto_detected", proxy_url_base=base_url,
+                        source="request URL (transparent proxy)")
+            return
+        
+        # Check for other common proxy setups
+        original_host = request.headers.get("X-Original-Host") or request.headers.get("Host")
+        if original_host:
+            # Only use Host if it doesn't look like our local server
+            local_hosts = [self.host, "localhost", "127.0.0.1", "0.0.0.0"]
+            local_port = f":{self.port}"
+            
+            # If host doesn't look like local server or doesn't contain our port
+            if not any(h in original_host for h in local_hosts) and local_port not in original_host:
+                proto = "https" if request.url.scheme == "https" else "http"
+                self._proxy_url_base = f"{proto}://{original_host}"
+                self.log.info("proxy_auto_detected", proxy_url_base=self._proxy_url_base,
+                            source="Host header")
+                return
+        
+        # If forward_for header exists, we're likely behind a proxy but couldn't determine the URL
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            self.log.warning("proxy_detected_but_url_unknown", 
+                          client_ip=forwarded_for,
+                          message="Proxy detected via X-Forwarded-For header but could not determine public URL")
+            
+        # No proxy detected, or unable to determine the public URL
+        if self._proxy_debug:
+            self.log.info("proxy_detection_failed", 
+                        message="Could not auto-detect proxy. If you are behind a proxy, set SWML_PROXY_URL_BASE manually.")
+    
+    def manual_set_proxy_url(self, proxy_url: str) -> None:
+        """
+        Manually set the proxy URL base for webhook callbacks
+        
+        This can be called at runtime to set or update the proxy URL
+        
+        Args:
+            proxy_url: The base URL to use for webhooks (e.g., https://example.ngrok.io)
+        """
+        if proxy_url:
+            self._proxy_url_base = proxy_url.rstrip('/')
+            self.log.info("proxy_url_manually_set", proxy_url_base=self._proxy_url_base)
+            self._proxy_detection_done = True 

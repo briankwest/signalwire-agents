@@ -1172,6 +1172,22 @@ class AgentBase(SWMLService):
     
     async def _handle_root_request(self, request: Request):
         """Handle GET/POST requests to the root endpoint"""
+        # Auto-detect proxy on first request if not explicitly configured
+        if not getattr(self, '_proxy_detection_done', False) and not getattr(self, '_proxy_url_base', None):
+            # Check for proxy headers
+            forwarded_host = request.headers.get("X-Forwarded-Host")
+            forwarded_proto = request.headers.get("X-Forwarded-Proto", "http")
+            
+            if forwarded_host:
+                self._proxy_url_base = f"{forwarded_proto}://{forwarded_host}"
+                self.log.info("proxy_auto_detected", proxy_url_base=self._proxy_url_base, 
+                            source="X-Forwarded headers")
+                self._proxy_detection_done = True
+            # If no explicit proxy headers, try the parent class detection method if it exists
+            elif hasattr(super(), '_detect_proxy_from_request'):
+                super()._detect_proxy_from_request(request)
+                self._proxy_detection_done = True
+        
         # Check if this is a callback path request
         callback_path = getattr(request.state, "callback_path", None)
         
