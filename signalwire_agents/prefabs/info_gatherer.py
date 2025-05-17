@@ -42,6 +42,7 @@ class InfoGathererAgent(AgentBase):
         questions: List[Dict[str, str]],
         name: str = "info_gatherer", 
         route: str = "/info_gatherer",
+        enable_state_tracking: bool = True,  # Enable state tracking by default for InfoGatherer
         **kwargs
     ):
         """
@@ -54,6 +55,7 @@ class InfoGathererAgent(AgentBase):
                 - confirm: (Optional) If set to True, the agent will confirm the answer before submitting
             name: Agent name for the route
             route: HTTP route for this agent
+            enable_state_tracking: Whether to enable state tracking (default: True)
             **kwargs: Additional arguments for AgentBase
         """
         # Initialize the base agent
@@ -61,6 +63,7 @@ class InfoGathererAgent(AgentBase):
             name=name,
             route=route,
             use_pom=True,
+            enable_state_tracking=enable_state_tracking,  # Pass state tracking parameter to base
             **kwargs
         )
         

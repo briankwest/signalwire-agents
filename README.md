@@ -8,6 +8,7 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **Prompt Object Model**: Structured prompt composition using POM
 - **SWAIG Integration**: Easily define and handle AI tools/functions
 - **Custom Routing**: Dynamic request handling for different paths and content
+- **SIP Integration**: Route SIP calls to agents based on SIP usernames
 - **Security Built-In**: Session management, function-specific security tokens, and basic auth
 - **State Management**: Persistent conversation state with automatic tracking
 - **Prefab Archetypes**: Ready-to-use agent types for common scenarios

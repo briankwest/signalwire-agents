@@ -116,4 +116,36 @@ curl -u "username:password" http://localhost:3000/simple
 
 ```bash
 curl -X POST -u "username:password" http://localhost:3000/simple/tools/get_time -H "Content-Type: application/json" -d '{}'
-``` 
+```
+
+## SIP Routing
+
+The examples demonstrate SIP routing capabilities:
+
+### Individual Agent Routing (simple_agent.py)
+
+```python
+# Enable SIP routing for this agent with auto_map=True
+agent.enable_sip_routing(auto_map=True)
+
+# Register additional SIP usernames for this agent
+agent.register_sip_username("simple_agent")
+agent.register_sip_username("assistant")
+```
+
+### Multi-Agent Routing (multi_agent_server.py)
+
+```python
+# Set up SIP routing on the /sip endpoint
+server.setup_sip_routing(route="/sip", auto_map=True)
+
+# Register additional SIP username mappings
+server.register_sip_username("register", "/register")  # register@domain → registration agent
+server.register_sip_username("signup", "/register")    # signup@domain → registration agent
+server.register_sip_username("help", "/support")       # help@domain → support agent
+```
+
+When using SIP routing, you can reach the agents via SIP addresses like:
+- `simple@your-domain` (auto-mapped from agent name)
+- `simple_agent@your-domain` (explicitly registered)
+- `assistant@your-domain` (explicitly registered) 

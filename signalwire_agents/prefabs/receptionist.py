@@ -41,6 +41,7 @@ class ReceptionistAgent(AgentBase):
         route: str = "/receptionist",
         greeting: str = "Thank you for calling. How can I help you today?",
         voice: str = "elevenlabs.josh",
+        enable_state_tracking: bool = True,  # Enable state tracking by default
         **kwargs
     ):
         """
@@ -55,6 +56,7 @@ class ReceptionistAgent(AgentBase):
             route: HTTP route for this agent
             greeting: Initial greeting message
             voice: Voice ID to use
+            enable_state_tracking: Whether to enable state tracking (default: True)
             **kwargs: Additional arguments for AgentBase
         """
         # Initialize the base agent
@@ -62,6 +64,7 @@ class ReceptionistAgent(AgentBase):
             name=name,
             route=route,
             use_pom=True,
+            enable_state_tracking=enable_state_tracking,  # Pass state tracking parameter to base
             **kwargs
         )
         

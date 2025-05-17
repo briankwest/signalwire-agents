@@ -178,7 +178,7 @@ class SimpleAgent(AgentBase):
         self.add_language(
             name="English",    # Display name for the language
             code="en-US",      # ISO language code
-            voice="elevenlabs.josh",  # Voice ID with provider prefix
+            voice="rime.spore",  # Voice ID with provider prefix
             # Phrases to use when the AI needs time to think
             speech_fillers=["Let me think about that...", "One moment please..."],
             # Phrases to use when the AI is calling a function
@@ -189,9 +189,9 @@ class SimpleAgent(AgentBase):
         self.add_language(
             name="British English",
             code="en-GB",
-            voice="emma",        # Voice ID without provider prefix
-            engine="elevenlabs", # The TTS engine to use
-            model="eleven_turbo_v2",  # Specific model for the voice
+            voice="spore",        # Voice ID without provider prefix
+            engine="rime", # The TTS engine to use
+            model="multilingual",  # Specific model for the voice
             speech_fillers=["Just a moment...", "Thinking..."]
         )
 
@@ -200,7 +200,7 @@ class SimpleAgent(AgentBase):
             name="Spanish",
             code="es",
             # Format: provider.voice:model
-            voice="elevenlabs.antonio:eleven_multilingual_v2",
+            voice="rime.spore:multilingual",
             speech_fillers=["Un momento por favor...", "Estoy pensando..."],
             function_fillers=["Estoy buscando esa información...", "Déjame verificar..."]
         )
