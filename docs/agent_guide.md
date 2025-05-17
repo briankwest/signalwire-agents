@@ -1064,7 +1064,7 @@ my-prefab-agents/
 - `basic_auth`: Optional (username, password) tuple
 - `use_pom`: Whether to use POM for prompts (default: True)
 - `enable_state_tracking`: Enable conversation state (default: False)
-- `token_expiry_secs`: State token expiry time (default: 600)
+- `token_expiry_secs`: State token expiry time (default: 3600)
 - `auto_answer`: Auto-answer calls (default: True)
 - `record_call`: Record calls (default: False)
 - `state_manager`: Custom state manager (default: None)
