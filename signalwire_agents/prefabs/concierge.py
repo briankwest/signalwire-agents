@@ -50,6 +50,9 @@ class ConciergeAgent(AgentBase):
         hours_of_operation: Optional[Dict[str, str]] = None,
         special_instructions: Optional[List[str]] = None,
         welcome_message: Optional[str] = None,
+        name: str = "concierge",
+        route: str = "/concierge",
+        enable_state_tracking: bool = True,
         **kwargs
     ):
         """
@@ -62,13 +65,17 @@ class ConciergeAgent(AgentBase):
             hours_of_operation: Optional dictionary of operating hours
             special_instructions: Optional list of special instructions
             welcome_message: Optional custom welcome message
+            name: Agent name for the route
+            route: HTTP route for this agent
+            enable_state_tracking: Whether to enable state tracking (default: True)
             **kwargs: Additional arguments for AgentBase
         """
         # Initialize the base agent
         super().__init__(
-            name="concierge",
-            route="/concierge",
+            name=name,
+            route=route,
             use_pom=True,
+            enable_state_tracking=enable_state_tracking,
             **kwargs
         )
         

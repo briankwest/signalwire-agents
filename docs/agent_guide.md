@@ -9,6 +9,9 @@
 - [Multilingual Support](#multilingual-support)
 - [Agent Configuration](#agent-configuration)
 - [Advanced Features](#advanced-features)
+  - [State Management](#state-management)
+  - [SIP Routing](#sip-routing)
+  - [Custom Routing](#custom-routing)
 - [Prefab Agents](#prefab-agents)
 - [API Reference](#api-reference)
 - [Examples](#examples)
@@ -249,6 +252,79 @@ self.add_function_include(
 )
 ```
 
+### SWAIG Function Security
+
+The SDK implements an automated security mechanism for SWAIG functions to ensure that only authorized calls can be made to your functions. This is important because SWAIG functions often provide access to sensitive operations or data.
+
+#### Token-Based Security
+
+By default, all SWAIG functions are marked as `secure=True`, which enables token-based security:
+
+```python
+@agent.tool(
+    name="get_account_details",
+    description="Get customer account details",
+    parameters={"account_id": {"type": "string"}},
+    secure=True  # This is the default, can be omitted
+)
+def get_account_details(self, args, raw_data):
+    # Implementation
+```
+
+When a function is marked as secure:
+
+1. The SDK automatically generates a secure token for each function when rendering the SWML document
+2. The token is added to the function's URL as a query parameter: `?token=X2FiY2RlZmcuZ2V0X3RpbWUuMTcxOTMxNDI1...`
+3. When the function is called, the token is validated before executing the function
+
+These security tokens have important properties:
+- **Completely stateless**: The system doesn't need to store tokens or track sessions
+- **Self-contained**: Each token contains all information needed for validation
+- **Function-specific**: A token for one function can't be used for another
+- **Session-bound**: Tokens are tied to a specific call/session ID
+- **Time-limited**: Tokens expire after a configurable duration (default: 60 minutes)
+- **Cryptographically signed**: Tokens can't be tampered with or forged
+
+This stateless design provides several benefits:
+- **Server resilience**: Tokens remain valid even if the server restarts
+- **No memory consumption**: No need to track sessions or store tokens in memory
+- **High scalability**: Multiple servers can validate tokens without shared state
+- **Load balancing**: Requests can be distributed across multiple servers freely
+
+The token system secures both SWAIG functions and post-prompt endpoints:
+- SWAIG function calls for interactive AI capabilities
+- Post-prompt requests for receiving conversation summaries
+
+You can disable token security for specific functions when appropriate:
+
+```python
+@agent.tool(
+    name="get_public_information",
+    description="Get public information that doesn't require security",
+    parameters={},
+    secure=False  # Disable token security for this function
+)
+def get_public_information(self, args, raw_data):
+    # Implementation
+```
+
+#### Token Expiration
+
+The default token expiration is 60 minutes (3600 seconds), but you can configure this when initializing your agent:
+
+```python
+agent = MyAgent(
+    name="my_agent",
+    token_expiry_secs=1800  # Set token expiration to 30 minutes
+)
+```
+
+The expiration timer resets each time a function is successfully called, so as long as there is activity at least once within the expiration period, the tokens will remain valid throughout the entire conversation.
+
+#### Custom Token Validation
+
+You can override the default token validation by implementing your own `validate_tool_token` method in your custom agent class.
+
 ## Multilingual Support
 
 Agents can support multiple languages:
@@ -267,7 +343,7 @@ self.add_language(
 self.add_language(
     name="Spanish",
     code="es",
-    voice="elevenlabs.antonio:eleven_multilingual_v2",
+    voice="rime.spore:multilingual",
     speech_fillers=["Un momento por favor...", "Estoy pensando..."]
 )
 ```
@@ -284,16 +360,16 @@ self.add_language(name="English", code="en-US", voice="en-US-Neural2-F")
 self.add_language(
     name="British English",
     code="en-GB",
-    voice="emma",
-    engine="elevenlabs",
-    model="eleven_turbo_v2"
+    voice="spore",
+    engine="rime",
+    model="multilingual"
 )
 
 # Combined string format
 self.add_language(
     name="Spanish",
     code="es",
-    voice="elevenlabs.antonio:eleven_multilingual_v2"
+    voice="rime.spore:multilingual"
 )
 ```
 
@@ -408,6 +484,62 @@ def save_preference(self, args, raw_data):
         return SwaigFunctionResult("Could not save preference: No call ID")
 ```
 
+### SIP Routing
+
+SIP routing allows your agents to receive voice calls via SIP addresses. The SDK supports both individual agent-level routing and centralized server-level routing.
+
+#### Individual Agent SIP Routing
+
+Enable SIP routing on a single agent:
+
+```python
+# Enable SIP routing with automatic username mapping based on agent name
+agent.enable_sip_routing(auto_map=True)
+
+# Register additional SIP usernames for this agent
+agent.register_sip_username("support_agent")
+agent.register_sip_username("help_desk")
+```
+
+When `auto_map=True`, the agent automatically registers SIP usernames based on:
+- The agent's name (e.g., `support@domain`)
+- The agent's route path (e.g., `/support` becomes `support@domain`)
+- Common variations (e.g., removing vowels for shorter dialing)
+
+#### Server-Level SIP Routing (Multi-Agent)
+
+For multi-agent setups, centralized routing is more efficient:
+
+```python
+# Create an AgentServer
+server = AgentServer(host="0.0.0.0", port=3000)
+
+# Register multiple agents
+server.register(registration_agent)  # Route: /register
+server.register(support_agent)       # Route: /support
+
+# Set up central SIP routing
+server.setup_sip_routing(route="/sip", auto_map=True)
+
+# Register additional SIP username mappings
+server.register_sip_username("signup", "/register")    # signup@domain → registration agent
+server.register_sip_username("help", "/support")       # help@domain → support agent
+```
+
+With server-level routing:
+- Each agent is reachable via its name (when `auto_map=True`)
+- Additional SIP usernames can be mapped to specific agent routes
+- All SIP routing is handled at a single endpoint (`/sip` by default)
+
+#### How SIP Routing Works
+
+1. A SIP call comes in with a username (e.g., `support@yourdomain`)
+2. The SDK extracts the username part (`support`)
+3. The system checks if this username is registered:
+   - In individual routing: The current agent checks its own username list
+   - In server routing: The server checks its central mapping table
+4. If a match is found, the call is routed to the appropriate agent
+
 ### Custom Routing
 
 You can dynamically handle requests to different paths using routing callbacks:
@@ -467,12 +599,13 @@ def on_swml_request(self, request_data=None, callback_path=None):
 You can modify the SWML document based on request data by overriding the `on_swml_request` method:
 
 ```python
-def on_swml_request(self, request_data=None):
+def on_swml_request(self, request_data=None, callback_path=None):
     """
     Customize the SWML document based on request data
     
     Args:
         request_data: The request data (body for POST or query params for GET)
+        callback_path: The path that triggered the routing callback
         
     Returns:
         Optional dict with modifications to apply to the document
@@ -496,6 +629,17 @@ def on_swml_request(self, request_data=None):
                     ]
                 }
             }
+            
+    # You can also use the callback_path to serve different content based on the route
+    if callback_path == "/customer":
+        return {
+            "sections": {
+                "main": [
+                    {"answer": {}},
+                    {"play": {"url": "say:Welcome to our customer service line."}}
+                ]
+            }
+        }
     
     # Return None to use the default document
     return None
@@ -540,6 +684,84 @@ agent.set_post_prompt_url("https://analytics.example.com/conversation-summaries"
 # 2. Send conversation summaries to analytics services or other systems
 # 3. Use special URLs with pre-configured authentication
 ```
+
+### External Input Checking
+
+The SDK provides a check-for-input endpoint that allows agents to check for new input from external systems:
+
+```python
+# Example client code that checks for new input
+import requests
+import json
+
+def check_for_new_input(agent_url, conversation_id, auth):
+    """
+    Check if there's any new input for a conversation
+    
+    Args:
+        agent_url: Base URL for the agent
+        conversation_id: ID of the conversation to check
+        auth: (username, password) tuple for basic auth
+    
+    Returns:
+        New messages if any, None otherwise
+    """
+    url = f"{agent_url}/check_for_input"
+    response = requests.post(
+        url,
+        json={"conversation_id": conversation_id},
+        auth=auth
+    )
+    
+    if response.status_code == 200:
+        data = response.json()
+        if data.get("new_input", False):
+            return data.get("messages", [])
+    
+    return None
+```
+
+By default, the check_for_input endpoint returns an empty response. To implement custom behavior, override the `_handle_check_for_input_request` method in your agent:
+
+```python
+async def _handle_check_for_input_request(self, request):
+    # First do basic authentication check
+    if not self._check_basic_auth(request):
+        return Response(
+            content=json.dumps({"error": "Unauthorized"}),
+            status_code=401,
+            headers={"WWW-Authenticate": "Basic"},
+            media_type="application/json"
+        )
+    
+    # Get conversation_id from request
+    conversation_id = None
+    if request.method == "POST":
+        body = await request.json()
+        conversation_id = body.get("conversation_id")
+    else:
+        conversation_id = request.query_params.get("conversation_id")
+    
+    if not conversation_id:
+        return Response(
+            content=json.dumps({"error": "Missing conversation_id"}),
+            status_code=400,
+            media_type="application/json"
+        )
+    
+    # Custom logic to check for new input
+    # For example, checking a database or external API
+    messages = self._get_new_messages(conversation_id)
+    
+    return {
+        "status": "success",
+        "conversation_id": conversation_id,
+        "new_input": len(messages) > 0,
+        "messages": messages
+    }
+```
+
+This endpoint is useful for implementing asynchronous conversations where users might send messages through different channels that need to be incorporated into the agent conversation.
 
 ## Prefab Agents
 
@@ -886,6 +1108,17 @@ my-prefab-agents/
 - `clear_state(call_id)`
 - `cleanup_expired_state()`
 
+### SIP Routing Methods
+
+- `enable_sip_routing(auto_map=True, path="/sip")`: Enable SIP routing for an agent
+- `register_sip_username(sip_username)`: Register a SIP username for an agent
+- `auto_map_sip_usernames()`: Automatically register SIP usernames based on agent attributes
+
+#### AgentServer SIP Methods
+
+- `setup_sip_routing(route="/sip", auto_map=True)`: Set up central SIP routing for a server
+- `register_sip_username(username, route)`: Map a SIP username to an agent route
+
 ### Service Methods
 
 - `serve(host=None, port=None)`: Start the web server
@@ -896,6 +1129,17 @@ my-prefab-agents/
 - `register_routing_callback(callback_fn, path="/sip")`: Register a callback for custom path routing
 - `set_web_hook_url(url)`: Override the default web_hook_url with a supplied URL string
 - `set_post_prompt_url(url)`: Override the default post_prompt_url with a supplied URL string
+
+### Endpoint Methods
+
+The SDK provides several endpoints for different purposes:
+
+- Root endpoint (`/`): Serves the main SWML document
+- SWAIG endpoint (`/swaig`): Handles SWAIG function calls
+- Post-prompt endpoint (`/post_prompt`): Processes conversation summaries
+- Check-for-input endpoint (`/check_for_input`): Supports checking for new input from external systems
+- Debug endpoint (`/debug`): Serves the SWML document with debug headers
+- SIP routing endpoint (configurable, default `/sip`): Handles SIP routing requests
 
 ## Examples
 
@@ -962,15 +1206,16 @@ class CustomerServiceAgent(AgentBase):
         self.add_language(
             name="English",
             code="en-US",
-            voice="elevenlabs.josh",
-            speech_fillers=["Let me check that for you...", "One moment please..."]
+            voice="en-US-Neural2-F",
+            speech_fillers=["Let me think...", "One moment please..."],
+            function_fillers=["I'm looking that up...", "Let me check that..."]
         )
         
         self.add_language(
             name="Spanish",
             code="es",
-            voice="elevenlabs.antonio:eleven_multilingual_v2",
-            speech_fillers=["Un momento por favor...", "Voy a verificar eso..."]
+            voice="rime.spore:multilingual",
+            speech_fillers=["Un momento por favor...", "Estoy pensando..."]
         )
         
         # Enable languages

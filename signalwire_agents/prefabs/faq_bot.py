@@ -51,6 +51,7 @@ class FAQBotAgent(AgentBase):
         persona: Optional[str] = None,
         name: str = "faq_bot",
         route: str = "/faq",
+        enable_state_tracking: bool = True,  # Enable state tracking by default
         **kwargs
     ):
         """
@@ -65,6 +66,7 @@ class FAQBotAgent(AgentBase):
             persona: Optional custom personality description
             name: Agent name for the route
             route: HTTP route for this agent
+            enable_state_tracking: Whether to enable state tracking (default: True)
             **kwargs: Additional arguments for AgentBase
         """
         # Initialize the base agent
@@ -72,6 +74,7 @@ class FAQBotAgent(AgentBase):
             name=name,
             route=route,
             use_pom=True,
+            enable_state_tracking=enable_state_tracking,  # Pass state tracking parameter to base
             **kwargs
         )
         

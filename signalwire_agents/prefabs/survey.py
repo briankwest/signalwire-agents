@@ -60,6 +60,9 @@ class SurveyAgent(AgentBase):
         conclusion: Optional[str] = None,
         brand_name: Optional[str] = None,
         max_retries: int = 2,
+        name: str = "survey",
+        route: str = "/survey",
+        enable_state_tracking: bool = True,  # Enable state tracking by default
         **kwargs
     ):
         """
@@ -78,13 +81,17 @@ class SurveyAgent(AgentBase):
             conclusion: Optional custom conclusion message
             brand_name: Optional brand or company name
             max_retries: Maximum number of times to retry invalid answers
+            name: Name for the agent (default: "survey")
+            route: HTTP route for the agent (default: "/survey")
+            enable_state_tracking: Whether to enable state tracking (default: True)
             **kwargs: Additional arguments for AgentBase
         """
         # Initialize the base agent
         super().__init__(
-            name="survey",
-            route="/survey",
+            name=name,
+            route=route,
             use_pom=True,
+            enable_state_tracking=enable_state_tracking,  # Pass state tracking parameter to base
             **kwargs
         )
         

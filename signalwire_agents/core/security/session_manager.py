@@ -14,73 +14,92 @@ Session manager for handling call sessions and security tokens
 from typing import Dict, Any, Optional, Tuple
 import secrets
 import time
-from datetime import datetime
-
-
-class CallSession:
-    """
-    Represents a single call session with associated tokens and state
-    """
-    def __init__(self, call_id: str):
-        self.call_id = call_id
-        self.tokens: Dict[str, str] = {}  # function_name -> token
-        self.state = "pending"  # pending, active, expired
-        self.started_at = datetime.now()
-        self.metadata: Dict[str, Any] = {}  # Custom state for the call
+import hmac
+import hashlib
+import base64
+from datetime import datetime, timedelta
 
 
 class SessionManager:
     """
-    Manages call sessions and their associated security tokens
+    Manages security tokens for function calls
+    
+    This implementation is completely stateless - it does not track call sessions
+    or store any information in memory. All validation is done using cryptographic
+    signatures with the tokens containing all necessary information.
     """
-    def __init__(self, token_expiry_secs: int = 600):
+    def __init__(self, token_expiry_secs: int = 3600, secret_key: Optional[str] = None):
         """
         Initialize the session manager
         
         Args:
-            token_expiry_secs: Seconds until tokens expire (default: 10 minutes)
+            token_expiry_secs: Seconds until tokens expire (default: 60 minutes)
+            secret_key: Secret key for signing tokens (generated if not provided)
         """
-        self._active_calls: Dict[str, CallSession] = {}
         self.token_expiry_secs = token_expiry_secs
+        # Use provided secret key or generate a secure one
+        self.secret_key = secret_key or secrets.token_hex(32)
     
     def create_session(self, call_id: Optional[str] = None) -> str:
         """
-        Create a new call session
+        Create a new session ID if one isn't provided
         
         Args:
             call_id: Optional call ID, generated if not provided
             
         Returns:
-            The call_id for the new session
+            The call_id for the session
         """
         # Generate call_id if not provided
         if not call_id:
             call_id = secrets.token_urlsafe(16)
         
-        # Create new session
-        self._active_calls[call_id] = CallSession(call_id)
         return call_id
     
     def generate_token(self, function_name: str, call_id: str) -> str:
         """
-        Generate a secure token for a function call
+        Generate a secure self-contained token for a function call
         
         Args:
             function_name: Name of the function to generate a token for
             call_id: Call session ID
             
         Returns:
-            A secure random token
-            
-        Raises:
-            ValueError: If the call session does not exist
+            A secure token
         """
-        if call_id not in self._active_calls:
-            raise ValueError(f"No active session for call_id: {call_id}")
+        # Create token parts
+        expiry = int(time.time()) + self.token_expiry_secs
+        nonce = secrets.token_hex(4)
         
-        token = secrets.token_urlsafe(24)
-        self._active_calls[call_id].tokens[function_name] = token
-        return token
+        # Create the message to sign
+        message = f"{call_id}:{function_name}:{expiry}:{nonce}"
+        
+        # Sign the message
+        signature = hmac.new(
+            self.secret_key.encode(),
+            message.encode(),
+            hashlib.sha256
+        ).hexdigest()[:16]  # Use first 16 chars of signature for shorter tokens
+        
+        # Combine all parts into the token
+        token = f"{call_id}.{function_name}.{expiry}.{nonce}.{signature}"
+        
+        # Base64 encode for URL safety
+        return base64.urlsafe_b64encode(token.encode()).decode()
+    
+    # Alias for generate_token to maintain backward compatibility
+    def create_tool_token(self, function_name: str, call_id: str) -> str:
+        """
+        Alias for generate_token to maintain backward compatibility
+        
+        Args:
+            function_name: Name of the function to generate a token for
+            call_id: Call session ID
+            
+        Returns:
+            A secure token
+        """
+        return self.generate_token(function_name, call_id)
     
     def validate_token(self, call_id: str, function_name: str, token: str) -> bool:
         """
@@ -94,86 +113,155 @@ class SessionManager:
         Returns:
             True if valid, False otherwise
         """
-        session = self._active_calls.get(call_id)
-        if not session or session.state != "active":
-            return False
-        
-        # Check if token matches and is not expired
-        expected_token = session.tokens.get(function_name)
-        if not expected_token or expected_token != token:
-            return False
+        try:
+            # Decode the token
+            decoded_token = base64.urlsafe_b64decode(token.encode()).decode()
             
-        # Check expiry
-        now = datetime.now()
-        seconds_elapsed = (now - session.started_at).total_seconds()
-        if seconds_elapsed > self.token_expiry_secs:
-            session.state = "expired"
-            return False
+            # Split the token parts
+            parts = decoded_token.split('.')
+            if len(parts) != 5:
+                return False
+                
+            token_call_id, token_function, token_expiry, token_nonce, token_signature = parts
             
-        return True
+            # Special case: if call_id is None or empty, use the call_id from the token
+            # This helps with scenarios where the call_id isn't provided in the request
+            if not call_id:
+                call_id = token_call_id
+            
+            # Verify the function matches
+            if token_function != function_name:
+                return False
+                
+            # Check if the token has expired
+            expiry = int(token_expiry)
+            if expiry < time.time():
+                return False
+                
+            # Recreate the message and verify the signature
+            message = f"{token_call_id}:{token_function}:{token_expiry}:{token_nonce}"
+            expected_signature = hmac.new(
+                self.secret_key.encode(),
+                message.encode(),
+                hashlib.sha256
+            ).hexdigest()[:16]
+            
+            if token_signature != expected_signature:
+                return False
+                
+            # Finally, verify the call_id matches unless we're in special case
+            # This check is done last to ensure the token is otherwise valid
+            if token_call_id != call_id:
+                return False
+                
+            return True
+        except Exception:
+            # Any exception during validation means the token is invalid
+            return False
     
-    def activate_session(self, call_id: str) -> bool:
+    # Alias for validate_token to maintain backward compatibility
+    def validate_tool_token(self, function_name: str, token: str, call_id: str) -> bool:
         """
-        Activate a call session (called by startup_hook)
+        Alias for validate_token to maintain backward compatibility
         
         Args:
+            function_name: Name of the function being called
+            token: Token to validate
             call_id: Call session ID
             
         Returns:
-            True if successful, False otherwise
+            True if valid, False otherwise
         """
-        session = self._active_calls.get(call_id)
-        if not session:
-            return False
-            
-        session.state = "active"
+        # Reorder parameters to match validate_token signature (call_id first, then function_name)
+        return self.validate_token(call_id=call_id, function_name=function_name, token=token)
+    
+    # Legacy methods that now don't track state but provide API compatibility
+    
+    def activate_session(self, call_id: str) -> bool:
+        """
+        Legacy method, does nothing but returns success
+        """
         return True
     
     def end_session(self, call_id: str) -> bool:
         """
-        End a call session (called by hangup_hook)
-        
-        Args:
-            call_id: Call session ID
-            
-        Returns:
-            True if successful, False otherwise
+        Legacy method, does nothing but returns success
         """
-        if call_id in self._active_calls:
-            del self._active_calls[call_id]
-            return True
-        return False
+        return True
     
     def get_session_metadata(self, call_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get custom metadata for a call session
-        
-        Args:
-            call_id: Call session ID
-            
-        Returns:
-            Metadata dict or None if session not found
+        Legacy method, always returns empty metadata
         """
-        session = self._active_calls.get(call_id)
-        if not session:
-            return None
-        return session.metadata
+        return {}
     
     def set_session_metadata(self, call_id: str, key: str, value: Any) -> bool:
         """
-        Set custom metadata for a call session
+        Legacy method, does nothing but returns success
+        """
+        return True
+    
+    def debug_token(self, token: str) -> Dict[str, Any]:
+        """
+        Debug a token without validating it
+        
+        This method decodes the token and extracts its components for debugging purposes
+        without performing validation.
         
         Args:
-            call_id: Call session ID
-            key: Metadata key
-            value: Metadata value
+            token: The token to debug
             
         Returns:
-            True if successful, False otherwise
+            Dictionary with token components and analysis
         """
-        session = self._active_calls.get(call_id)
-        if not session:
-            return False
+        try:
+            # Decode the token
+            decoded_token = base64.urlsafe_b64decode(token.encode()).decode()
             
-        session.metadata[key] = value
-        return True
+            # Split the token parts
+            parts = decoded_token.split('.')
+            if len(parts) != 5:
+                return {
+                    "valid_format": False,
+                    "parts_count": len(parts),
+                    "decoded": decoded_token
+                }
+                
+            token_call_id, token_function, token_expiry, token_nonce, token_signature = parts
+            
+            # Check expiration
+            current_time = int(time.time())
+            try:
+                expiry = int(token_expiry)
+                is_expired = expiry < current_time
+                expires_in = expiry - current_time if not is_expired else 0
+                expiry_date = datetime.fromtimestamp(expiry).isoformat()
+            except ValueError:
+                expiry = None
+                is_expired = None
+                expires_in = None
+                expiry_date = None
+            
+            return {
+                "valid_format": True,
+                "components": {
+                    "call_id": token_call_id,
+                    "function": token_function,
+                    "expiry": token_expiry,
+                    "expiry_date": expiry_date,
+                    "nonce": token_nonce,
+                    "signature": token_signature
+                },
+                "status": {
+                    "current_time": current_time,
+                    "is_expired": is_expired,
+                    "expires_in_seconds": expires_in
+                }
+            }
+        except Exception as e:
+            # Any exception during parsing
+            return {
+                "valid_format": False,
+                "error": str(e),
+                "token": token
+            }

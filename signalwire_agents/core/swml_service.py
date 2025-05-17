@@ -565,58 +565,41 @@ class SWMLService:
     
     def as_router(self) -> APIRouter:
         """
-        Get a FastAPI router for this service
+        Create a FastAPI router for this service
         
         Returns:
-            FastAPI router
+            APIRouter: FastAPI router
         """
-        router = APIRouter()
+        router = APIRouter(redirect_slashes=False)
         
-        # Root endpoint - without trailing slash
-        @router.get("")
-        @router.post("")
-        async def handle_root_no_slash(request: Request, response: Response):
-            """Handle GET/POST requests to the root endpoint"""
-            return await self._handle_request(request, response)
-            
-        # Root endpoint - with trailing slash
+        # Root endpoint with and without trailing slash
         @router.get("/")
         @router.post("/")
-        async def handle_root_with_slash(request: Request, response: Response):
-            """Handle GET/POST requests to the root endpoint with trailing slash"""
+        async def handle_root(request: Request, response: Response):
+            """Handle requests to the root endpoint"""
             return await self._handle_request(request, response)
         
-        # Add endpoints for all registered routing callbacks
+        # Register routing callbacks as needed
         if hasattr(self, '_routing_callbacks') and self._routing_callbacks:
             for callback_path, callback_fn in self._routing_callbacks.items():
-                # Skip the root path as it's already handled
+                # Skip the root path which is already handled
                 if callback_path == "/":
                     continue
                     
-                # Register the endpoint without trailing slash
-                @router.get(callback_path)
-                @router.post(callback_path)
-                async def handle_callback_no_slash(request: Request, response: Response, cb_path=callback_path):
-                    """Handle GET/POST requests to a registered callback path"""
-                    # Store the callback path in request state for _handle_request to use
+                # Register both versions: with and without trailing slash
+                path = callback_path.rstrip("/")
+                path_with_slash = f"{path}/"
+                
+                @router.get(path)
+                @router.get(path_with_slash)
+                @router.post(path)
+                @router.post(path_with_slash)
+                async def handle_callback(request: Request, response: Response, cb_path=callback_path):
+                    """Handle requests to callback endpoints"""
+                    # Store the callback path in the request state
                     request.state.callback_path = cb_path
                     return await self._handle_request(request, response)
-                    
-                # Register the endpoint with trailing slash if it doesn't already have one
-                if not callback_path.endswith('/'):
-                    slash_path = f"{callback_path}/"
-                    
-                    @router.get(slash_path)
-                    @router.post(slash_path)
-                    async def handle_callback_with_slash(request: Request, response: Response, cb_path=callback_path):
-                        """Handle GET/POST requests to a registered callback path with trailing slash"""
-                        # Store the callback path in request state for _handle_request to use
-                        request.state.callback_path = cb_path
-                        return await self._handle_request(request, response)
-                        
-                self.log.info("callback_endpoint_registered", path=callback_path)
         
-        self._router = router
         return router
     
     def register_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], 
@@ -789,20 +772,22 @@ class SWMLService:
         Start a web server for this service
         
         Args:
-            host: Optional host to override the default
-            port: Optional port to override the default
+            host: Host to bind to (defaults to self.host)
+            port: Port to bind to (defaults to self.port)
             ssl_cert: Path to SSL certificate file
-            ssl_key: Path to SSL private key file
-            ssl_enabled: Whether to enable SSL/HTTPS
-            domain: Domain name for the SSL certificate and external URLs
+            ssl_key: Path to SSL key file
+            ssl_enabled: Whether to enable SSL
+            domain: Domain name for SSL certificate
         """
         import uvicorn
         
-        # Determine SSL settings from parameters or environment variables
-        self.ssl_enabled = ssl_enabled if ssl_enabled is not None else os.environ.get('SWML_SSL_ENABLED', '').lower() in ('true', '1', 'yes')
-        ssl_cert_path = ssl_cert or os.environ.get('SWML_SSL_CERT_PATH', '')
-        ssl_key_path = ssl_key or os.environ.get('SWML_SSL_KEY_PATH', '')
-        self.domain = domain or os.environ.get('SWML_DOMAIN', '')
+        # Store SSL configuration
+        self.ssl_enabled = ssl_enabled if ssl_enabled is not None else False
+        self.domain = domain
+        
+        # Set SSL paths
+        ssl_cert_path = ssl_cert
+        ssl_key_path = ssl_key
         
         # Validate SSL configuration if enabled
         if self.ssl_enabled:
@@ -817,9 +802,64 @@ class SWMLService:
                 # We'll continue, but URLs might not be correctly generated
         
         if self._app is None:
-            app = FastAPI()
+            # Use redirect_slashes=False to be consistent with AgentBase
+            app = FastAPI(redirect_slashes=False)
             router = self.as_router()
-            app.include_router(router, prefix=self.route)
+            
+            # Normalize the route to ensure it starts with a slash and doesn't end with one
+            # This avoids the FastAPI error about prefixes ending with slashes
+            normalized_route = "/" + self.route.strip("/")
+            
+            # Include router with the normalized prefix
+            app.include_router(router, prefix=normalized_route)
+            
+            # Add a catch-all route handler that will handle both /path and /path/ formats
+            # This provides the same behavior without using a trailing slash in the prefix
+            @app.get("/{full_path:path}")
+            @app.post("/{full_path:path}")
+            async def handle_all_routes(request: Request, response: Response, full_path: str):
+                # Get our route path without leading slash for comparison
+                route_path = normalized_route.lstrip("/")
+                route_with_slash = route_path + "/"
+                
+                # Log the incoming path for debugging
+                print(f"Catch-all received: '{full_path}', route: '{route_path}'")
+                
+                # Check for exact match to our route (without trailing slash)
+                if full_path == route_path:
+                    # This is our exact route - handle it directly
+                    return await self._handle_request(request, response)
+                    
+                # Check for our route with a trailing slash or subpaths
+                elif full_path == route_with_slash or full_path.startswith(route_with_slash):
+                    # This is our route with a trailing slash
+                    # Extract the path after our route prefix
+                    sub_path = full_path[len(route_with_slash):]
+                    
+                    # Forward to the appropriate handler in our router
+                    if not sub_path:
+                        # Root endpoint
+                        return await self._handle_request(request, response)
+                    
+                    # Check for routing callbacks if there are any
+                    if hasattr(self, '_routing_callbacks'):
+                        for callback_path, callback_fn in self._routing_callbacks.items():
+                            cb_path_clean = callback_path.strip("/")
+                            if sub_path == cb_path_clean or sub_path.startswith(cb_path_clean + "/"):
+                                # Store the callback path in request state for handlers to use
+                                request.state.callback_path = callback_path
+                                return await self._handle_request(request, response)
+                
+                # Not our route or not matching our patterns
+                print(f"No match for path: '{full_path}'")
+                return {"error": "Path not found"}
+            
+            # Print all routes for debugging
+            print(f"All routes for {self.name}:")
+            for route in app.routes:
+                if hasattr(route, "path"):
+                    print(f"  {route.path}")
+            
             self._app = app
         
         host = host or self.host
@@ -840,13 +880,14 @@ class SWMLService:
         
         print(f"Service '{self.name}' is available at:")
         print(f"URL: {protocol}://{display_host}{self.route}")
+        print(f"URL with trailing slash: {protocol}://{display_host}{self.route}/")
         print(f"Basic Auth: {username}:{password}")
         
         # Check if SIP routing is enabled and print additional info
         if self._routing_callbacks:
             print(f"Callback endpoints:")
             for path in self._routing_callbacks:
-                print(f"{protocol}://{display_host}{path}")
+                print(f"{protocol}://{display_host}{self.route}{path}")
         
         # Start uvicorn with or without SSL
         if self.ssl_enabled and ssl_cert_path and ssl_key_path:
