@@ -40,7 +40,7 @@ class ReceptionistAgent(AgentBase):
         name: str = "receptionist", 
         route: str = "/receptionist",
         greeting: str = "Thank you for calling. How can I help you today?",
-        voice: str = "elevenlabs.josh",
+        voice: str = "rime.spore",
         enable_state_tracking: bool = True,  # Enable state tracking by default
         **kwargs
     ):
@@ -261,28 +261,20 @@ class ReceptionistAgent(AgentBase):
         # Get transfer number
         transfer_number = department.get("number", "")
         
-        # Create result with transfer SWML
-        result = SwaigFunctionResult(f"I'll transfer you to our {department_name} department now. Thank you for calling, {name}!")
+        # Create result with transfer using the connect helper method
+        # post_process=True allows the AI to speak the response before executing the transfer
+        result = SwaigFunctionResult(
+            f"I'll transfer you to our {department_name} department now. Thank you for calling, {name}!",
+            post_process=True
+        )
         
-        # Add the SWML to execute the transfer
-                    # Add actions to update global data
-        result.add_actions([
-            {
-                "SWML": {
-                    "sections": {
-                        "main": [
-                            {
-                                "connect": {
-                                    "to": transfer_number
-                                }
-                            }
-                        ]
-                    },
-                    "version": "1.0.0"
-                },
-                "transfer": "true"
-            }
-        ])
+        # Use the connect helper instead of manually constructing SWML
+        # final=True means this is a permanent transfer (call exits the agent)
+        result.connect(transfer_number, final=True)
+        
+        # Alternative: Immediate transfer without AI speaking (faster but less friendly)
+        # result = SwaigFunctionResult()  # No response text needed
+        # result.connect(transfer_number, final=True)  # Executes immediately from function call
         
         return result
         

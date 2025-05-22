@@ -21,7 +21,11 @@ from signalwire_agents.prefabs import InfoGathererAgent
 def main():
     """Run the InfoGathererAgent example"""
     
-    # Create an agent with a list of questions
+    print("Static InfoGatherer Agent - questions are fixed at startup")
+    print("For dynamic configuration, see dynamic_info_gatherer_example.py")
+    print()
+    
+    # Create an agent with a list of questions (STATIC MODE)
     agent = InfoGathererAgent(
         questions=[
             {"key_name": "name", "question_text": "What is your full name?"},
@@ -38,7 +42,7 @@ def main():
     agent.add_language(
         name="English",    # Display name for the language
         code="en-US",      # ISO language code
-        voice="rime.spore:mistv2"  # Voice ID with provider prefix
+        voice="rime.spore"  # Voice ID with provider prefix
     )
 
     # Customize the agent with additional prompt sections if desired

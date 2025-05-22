@@ -545,9 +545,7 @@ self.add_language(
 self.add_language(
     name="French",
     code="fr-FR",
-    voice="claire",
-    engine="rime",
-    model="arcana",
+    voice="rime.alois",
     speech_fillers=["Un instant s'il vous plaît...", "Laissez-moi réfléchir..."]
 )
 

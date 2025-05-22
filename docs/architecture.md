@@ -173,6 +173,229 @@ The SDK is designed to be highly extensible:
            self.prompt_add_section("Personality", body=f"Customized based on: {config_param1}")
    ```
 
+7. **Dynamic Configuration**: Per-request agent configuration for flexible behavior
+   ```python
+   def configure_agent_dynamically(self, query_params, body_params, headers, agent):
+       # Configure agent differently based on request data
+       tier = query_params.get('tier', 'standard')
+       agent.set_params({"end_of_speech_timeout": 300 if tier == 'premium' else 500})
+   
+   self.set_dynamic_config_callback(self.configure_agent_dynamically)
+   ```
+
+### Dynamic Configuration
+
+The dynamic configuration system enables agents to adapt their behavior on a per-request basis by examining incoming HTTP request data. This architectural pattern supports complex use cases like multi-tenant applications, A/B testing, and personalization while maintaining a single agent deployment.
+
+#### Architecture Overview
+
+Dynamic configuration intercepts the SWML document generation process to apply request-specific configuration:
+
+```
+┌─────────────┐    ┌──────────────────┐    ┌─────────────────────┐    ┌──────────────┐
+│ HTTP        │    │ Dynamic Config   │    │ EphemeralAgent      │    │ SWML         │
+│ Request     │━━━▶│ Callback         │━━━▶│ Config              │━━━▶│ Document     │
+└─────────────┘    └──────────────────┘    └─────────────────────┘    └──────────────┘
+       │                     │                        │                      │
+       │                     │                        │                      │
+   ┌───▼────┐           ┌────▼─────┐            ┌─────▼──────┐          ┌────▼────┐
+   │Query   │           │Request   │            │Agent       │          │Rendered │
+   │Params  │           │Data      │            │Builder     │          │Response │
+   │Body    │           │Analysis  │            │Methods     │          │Content  │
+   │Headers │           │Logic     │            │Execution   │          │         │
+   └────────┘           └──────────┘            └────────────┘          └─────────┘
+```
+
+#### Component Interaction
+
+1. **Request Processing**: The framework extracts query parameters, body data, and headers from incoming requests
+2. **Callback Invocation**: If a dynamic configuration callback is registered, it's called with the request data
+3. **Ephemeral Configuration**: The callback configures an `EphemeralAgentConfig` object using familiar AgentBase methods
+4. **SWML Generation**: The configuration is applied during SWML document rendering
+5. **Response Delivery**: The customized SWML document is returned to the client
+
+#### Request Processing Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Dynamic Configuration Request Flow                                              │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│ 1. HTTP Request arrives (GET/POST /)                                          │
+│                         │                                                       │
+│ 2. Extract request data │                                                       │
+│    ┌────────────────────▼────────────────────┐                                 │
+│    │ • Query Parameters (URL params)        │                                 │
+│    │ • Body Parameters (POST JSON)          │                                 │
+│    │ • Headers (HTTP headers)               │                                 │
+│    └────────────────────┬────────────────────┘                                 │
+│                         │                                                       │
+│ 3. Check for callback   │                                                       │
+│    ┌────────────────────▼────────────────────┐                                 │
+│    │ if dynamic_config_callback is set:     │                                 │
+│    │   - Create EphemeralAgentConfig        │                                 │
+│    │   - Call callback with request data    │                                 │
+│    │   - Apply ephemeral configuration      │                                 │
+│    │ else:                                   │                                 │
+│    │   - Use static agent configuration     │                                 │
+│    └────────────────────┬────────────────────┘                                 │
+│                         │                                                       │
+│ 4. Generate SWML        │                                                       │
+│    ┌────────────────────▼────────────────────┐                                 │
+│    │ • Render AI verb with configuration    │                                 │
+│    │ • Include languages, params, prompts   │                                 │
+│    │ • Apply hints and global data          │                                 │
+│    │ • Generate function URLs with tokens   │                                 │
+│    └────────────────────┬────────────────────┘                                 │
+│                         │                                                       │
+│ 5. Return SWML Document │                                                       │
+│    ┌────────────────────▼────────────────────┐                                 │
+│    │ • Complete SWML with customizations    │                                 │
+│    │ • Ready for SignalWire platform        │                                 │
+│    └─────────────────────────────────────────┘                                 │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### EphemeralAgentConfig Architecture
+
+The `EphemeralAgentConfig` object provides the same familiar methods as `AgentBase` but applies them temporarily for a single request:
+
+```
+┌───────────────────────────────────────────────────────────────────────────────┐
+│ EphemeralAgentConfig Structure                                                │
+├───────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│ ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐              │
+│ │ Prompt Sections │   │ Language Config │   │ AI Parameters   │              │
+│ │ ─────────────── │   │ ─────────────── │   │ ─────────────── │              │
+│ │ • add_section() │   │ • add_language()│   │ • set_params()  │              │
+│ │ • set_prompt()  │   │ • voice config  │   │ • timeouts      │              │
+│ │ • post_prompt   │   │ • fillers       │   │ • volumes       │              │
+│ └─────────────────┘   └─────────────────┘   └─────────────────┘              │
+│                                                                               │
+│ ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐              │
+│ │ Global Data     │   │ Hints & Speech  │   │ Functions       │              │
+│ │ ─────────────── │   │ ─────────────── │   │ ─────────────── │              │
+│ │ • set_global()  │   │ • add_hints()   │   │ • native_funcs()│              │
+│ │ • update_data() │   │ • pronunciation │   │ • includes      │              │
+│ │ • session data  │   │ • recognition   │   │ • external URLs │              │
+│ └─────────────────┘   └─────────────────┘   └─────────────────┘              │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Performance Considerations
+
+The dynamic configuration system is designed with performance in mind:
+
+1. **Lightweight Callbacks**: Configuration callbacks should be fast and avoid heavy computations
+2. **Stateless Operation**: Each request is processed independently without shared state
+3. **Ephemeral Scope**: Configuration objects are created per-request and garbage collected afterward
+4. **Caching Opportunities**: External configuration data can be cached at the application level
+
+#### Memory Management
+
+```
+Request 1 ┌─────────────┐    Request 2 ┌─────────────┐    Request 3 ┌─────────────┐
+Lifecycle │ CREATE      │    Lifecycle │ CREATE      │    Lifecycle │ CREATE      │
+          │ EphemeralCfg│              │ EphemeralCfg│              │ EphemeralCfg│
+          │ ↓           │              │ ↓           │              │ ↓           │
+          │ CONFIGURE   │              │ CONFIGURE   │              │ CONFIGURE   │
+          │ ↓           │              │ ↓           │              │ ↓           │
+          │ RENDER SWML │              │ RENDER SWML │              │ RENDER SWML │
+          │ ↓           │              │ ↓           │              │ ↓           │
+          │ DESTROY     │              │ DESTROY     │              │ DESTROY     │
+          └─────────────┘              └─────────────┘              └─────────────┘
+               │                             │                             │
+               ▼                             ▼                             ▼
+          Garbage                       Garbage                       Garbage
+          Collection                    Collection                    Collection
+```
+
+#### Use Case Patterns
+
+The dynamic configuration architecture supports several key patterns:
+
+1. **Multi-Tenant Applications**
+   ```
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ Tenant A    │    │ Same Agent   │    │ Config A    │
+   │ Request     │━━━▶│ Instance     │━━━▶│ Applied     │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ Tenant B    │    │ Same Agent   │    │ Config B    │
+   │ Request     │━━━▶│ Instance     │━━━▶│ Applied     │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   ```
+
+2. **A/B Testing and Experimentation**
+   ```
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ Control     │    │ Decision     │    │ Version A   │
+   │ Group       │━━━▶│ Logic        │━━━▶│ Config      │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ Test        │    │ Decision     │    │ Version B   │
+   │ Group       │━━━▶│ Logic        │━━━▶│ Config      │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   ```
+
+3. **Geographic and Cultural Localization**
+   ```
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ US Request  │    │ Locale       │    │ English     │
+   │ (en-US)     │━━━▶│ Detection    │━━━▶│ Voice + USD │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   
+   ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
+   │ MX Request  │    │ Locale       │    │ Spanish     │
+   │ (es-MX)     │━━━▶│ Detection    │━━━▶│ Voice + MXN │
+   └─────────────┘    └──────────────┘    └─────────────┘
+   ```
+
+#### Integration Points
+
+Dynamic configuration integrates with other SDK components:
+
+- **State Management**: Can access and configure state based on request data
+- **SWAIG Functions**: Functions are generated with proper URLs and security tokens
+- **SIP Routing**: Can be combined with SIP username routing for voice applications
+- **Authentication**: Respects existing authentication mechanisms
+- **Logging**: Configuration decisions can be logged for debugging and analytics
+
+#### Error Handling and Fallbacks
+
+The system includes robust error handling:
+
+```python
+def configure_agent_dynamically(self, query_params, body_params, headers, agent):
+    try:
+        # Primary configuration logic
+        self.apply_custom_config(query_params, agent)
+    except ConfigurationError as e:
+        # Log error and apply safe defaults
+        self.log.error("dynamic_config_error", error=str(e))
+        self.apply_default_config(agent)
+    except Exception as e:
+        # Catch-all with minimal safe configuration
+        self.log.error("dynamic_config_critical", error=str(e))
+        agent.add_language("English", "en-US", "rime.spore:mistv2")
+```
+
+#### Migration Strategy
+
+The architecture supports gradual migration from static to dynamic configuration:
+
+1. **Phase 1**: Deploy dynamic agent with static configuration callback
+2. **Phase 2**: Add request parameter detection and basic customization
+3. **Phase 3**: Implement full dynamic behavior based on use case requirements
+4. **Phase 4**: Remove static configuration and rely entirely on dynamic system
+
+This approach ensures zero downtime and allows for testing and validation at each phase.
+
 ## Prefab Agents
 
 The SDK includes a collection of prefab agents that provide ready-to-use implementations for common use cases. These prefabs can be used directly or serve as templates for custom implementations.
@@ -198,6 +421,11 @@ The SDK includes a collection of prefab agents that provide ready-to-use impleme
    - Purpose: Conduct structured surveys with rating scales and open-ended questions
    - Configuration: Survey questions, rating scales, branching logic
    - Use cases: Customer satisfaction surveys, feedback collection, market research
+
+5. **ReceptionistAgent**
+   - Purpose: Greet callers and transfer them to appropriate departments
+   - Configuration: Department list with names, descriptions, and transfer numbers
+   - Use cases: Call routing, front desk services, automated phone systems
 
 ### Creating Custom Prefabs
 

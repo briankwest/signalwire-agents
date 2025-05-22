@@ -9,19 +9,42 @@ See LICENSE file in the project root for full license information.
 """
 
 """
-Example of using the AgentServer with multiple prefab agents
+Multi-Agent Server Example
 
-This example demonstrates how to:
-1. Set up a single server hosting multiple AI agents
-2. Create custom extensions of prefab agents
-3. Configure SIP routing for voice calls to different agents
-4. Map multiple SIP usernames to specific agents
+This example demonstrates how to run multiple dynamic agents on the same server,
+each with different paths and configurations.
+
+This shows the power of the route parameter - you can host multiple specialized
+agents on the same domain, each optimized for different use cases.
+
+Available Agents:
+- /healthcare - Healthcare-focused agent with HIPAA compliance
+- /finance - Finance-focused agent with regulatory compliance  
+- /retail - Retail/customer service agent with sales focus
+- /dynamic - General dynamic agent that adapts based on parameters
+
+Usage examples:
+
+1. Healthcare Agent:
+   curl "http://localhost:3000/healthcare?customer_id=patient123&urgency=high"
+
+2. Finance Agent:
+   curl "http://localhost:3000/finance?account_type=premium&service=investment"
+
+3. Retail Agent:
+   curl "http://localhost:3000/retail?department=electronics&customer_tier=vip"
+
+4. Dynamic Agent:
+   curl "http://localhost:3000/dynamic?tier=enterprise&industry=tech&voice=spore"
 """
 
 import os
 import sys
 import json
 from datetime import datetime
+from fastapi import FastAPI
+from signalwire_agents import AgentBase
+from comprehensive_dynamic_agent import ComprehensiveDynamicAgent
 
 # Add the parent directory to the path so we can import the package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -206,80 +229,282 @@ class SupportInfoGatherer(InfoGathererAgent):
         # - Add the ticket to a queue based on priority
 
 
-def main():
-    """
-    Run the multi-agent server
+class HealthcareAgent(AgentBase):
+    def __init__(self):
+        super().__init__(
+            name="Healthcare AI Assistant",
+            route="/healthcare",
+            auto_answer=True,
+            record_call=True
+        )
+        
+        # Set up healthcare-specific dynamic configuration
+        self.set_dynamic_config_callback(self.configure_healthcare_agent)
+        
+        # Base healthcare configuration
+        self.prompt_add_section(
+            "Healthcare Role",
+            "You are a HIPAA-compliant healthcare AI assistant. You help patients and "
+            "healthcare providers with information, scheduling, and basic guidance."
+        )
+        
+        self.prompt_add_section(
+            "Compliance Guidelines",
+            "Always maintain patient privacy and confidentiality:",
+            bullets=[
+                "Never share patient information with unauthorized parties",
+                "Direct medical diagnoses to qualified healthcare providers",
+                "Use appropriate medical terminology",
+                "Maintain professional, caring communication"
+            ]
+        )
+
+    def configure_healthcare_agent(self, query_params, body_params, headers, agent):
+        """Configure agent based on healthcare-specific parameters"""
+        customer_id = query_params.get('customer_id', '')
+        urgency = query_params.get('urgency', 'normal').lower()
+        department = query_params.get('department', 'general').lower()
+        
+        # Configure voice based on urgency
+        if urgency == 'high':
+            agent.add_language("English", "en-US", "rime.spore")  # Clear, professional voice
+            agent.set_params({"end_of_speech_timeout": 300})  # Faster response
+        else:
+            agent.add_language("English", "en-US", "rime.spore")  # Professional voice
+            agent.set_params({"end_of_speech_timeout": 500})  # Normal response
+        
+        # Department-specific configuration
+        if department == 'emergency':
+            agent.prompt_add_section(
+                "Emergency Protocol",
+                "Emergency department protocols are in effect:",
+                bullets=[
+                    "Prioritize urgent medical situations",
+                    "Escalate immediately to medical staff when needed",
+                    "Provide clear, concise information",
+                    "Maintain calm, professional demeanor"
+                ]
+            )
+        
+        # Set global data
+        agent.set_global_data({
+            "customer_id": customer_id,
+            "urgency_level": urgency,
+            "department": department,
+            "compliance_level": "hipaa",
+            "session_type": "healthcare"
+        })
+
+
+class FinanceAgent(AgentBase):
+    def __init__(self):
+        super().__init__(
+            name="Financial Services AI",
+            route="/finance",
+            auto_answer=True,
+            record_call=True
+        )
+        
+        self.set_dynamic_config_callback(self.configure_finance_agent)
+        
+        self.prompt_add_section(
+            "Financial Services Role",
+            "You are a financial services AI assistant specializing in banking, "
+            "investments, and financial planning guidance."
+        )
+        
+        self.prompt_add_section(
+            "Regulatory Compliance",
+            "Adhere to financial industry regulations:",
+            bullets=[
+                "Protect sensitive financial information",
+                "Never provide specific investment advice without disclaimers",
+                "Refer complex matters to licensed financial advisors",
+                "Maintain accurate, professional communication"
+            ]
+        )
+
+    def configure_finance_agent(self, query_params, body_params, headers, agent):
+        """Configure agent based on finance-specific parameters"""
+        account_type = query_params.get('account_type', 'standard').lower()
+        service = query_params.get('service', 'general').lower()
+        customer_id = query_params.get('customer_id', '')
+        
+        # Voice and parameters based on account type
+        if account_type == 'premium':
+            agent.add_language("English", "en-US", "rime.flower")
+            agent.set_params({
+                "end_of_speech_timeout": 600,
+                "attention_timeout": 20000
+            })
+        elif account_type == 'wealth':
+            agent.add_language("English", "en-US", "rime.spore")
+            agent.set_params({
+                "end_of_speech_timeout": 800,
+                "attention_timeout": 25000
+            })
+        else:
+            agent.add_language("English", "en-US", "rime.cove")
+            agent.set_params({
+                "end_of_speech_timeout": 400,
+                "attention_timeout": 15000
+            })
+        
+        # Service-specific prompts
+        if service == 'investment':
+            agent.prompt_add_section(
+                "Investment Services",
+                "Investment consultation services:",
+                bullets=[
+                    "Provide educational information about investment options",
+                    "Explain market trends and analysis",
+                    "Connect with licensed investment advisors for specific advice",
+                    "Discuss risk tolerance and financial goals"
+                ]
+            )
+        elif service == 'lending':
+            agent.prompt_add_section(
+                "Lending Services",
+                "Loan and credit services:",
+                bullets=[
+                    "Explain loan products and terms",
+                    "Assist with application processes",
+                    "Provide credit education and guidance",
+                    "Connect with loan specialists as needed"
+                ]
+            )
+        
+        agent.set_global_data({
+            "customer_id": customer_id,
+            "account_type": account_type,
+            "service_area": service,
+            "compliance_level": "financial",
+            "session_type": "finance"
+        })
+
+
+class RetailAgent(AgentBase):
+    def __init__(self):
+        super().__init__(
+            name="Retail Customer Service AI",
+            route="/retail",
+            auto_answer=True,
+            record_call=True
+        )
+        
+        self.set_dynamic_config_callback(self.configure_retail_agent)
+        
+        self.prompt_add_section(
+            "Customer Service Role",
+            "You are a friendly retail customer service AI assistant focused on "
+            "providing excellent customer experiences and sales support."
+        )
+        
+        self.prompt_add_section(
+            "Service Excellence",
+            "Customer service principles:",
+            bullets=[
+                "Maintain friendly, helpful demeanor",
+                "Listen actively to customer needs",
+                "Provide accurate product information",
+                "Look for opportunities to enhance the shopping experience"
+            ]
+        )
+
+    def configure_retail_agent(self, query_params, body_params, headers, agent):
+        """Configure agent based on retail-specific parameters"""
+        department = query_params.get('department', 'general').lower()
+        customer_tier = query_params.get('customer_tier', 'standard').lower()
+        customer_id = query_params.get('customer_id', '')
+        
+        # Voice based on customer tier
+        if customer_tier == 'vip':
+            agent.add_language("English", "en-US", "rime.spore")
+            agent.set_params({"end_of_speech_timeout": 600})
+        else:
+            agent.add_language("English", "en-US", "rime.marsh")
+            agent.set_params({"end_of_speech_timeout": 400})
+        
+        # Department-specific knowledge
+        if department == 'electronics':
+            agent.prompt_add_section(
+                "Electronics Expertise",
+                "Electronics department specialization:",
+                bullets=[
+                    "Detailed knowledge of electronic products",
+                    "Technical specifications and compatibility",
+                    "Warranty and service information",
+                    "Installation and setup guidance"
+                ]
+            )
+        elif department == 'clothing':
+            agent.prompt_add_section(
+                "Fashion and Apparel",
+                "Clothing department specialization:",
+                bullets=[
+                    "Style and fashion guidance",
+                    "Size and fit recommendations",
+                    "Care and maintenance instructions",
+                    "Return and exchange policies"
+                ]
+            )
+        
+        agent.set_global_data({
+            "customer_id": customer_id,
+            "department": department,
+            "customer_tier": customer_tier,
+            "session_type": "retail"
+        })
+
+
+def create_multi_agent_app():
+    """Create a FastAPI app with multiple agents"""
+    app = FastAPI(title="Multi-Agent AI Server", redirect_slashes=False)
     
-    This function:
-    1. Creates an AgentServer instance
-    2. Creates and registers multiple agents
-    3. Configures SIP routing
-    4. Starts the server
-    """
-    #------------------------------------------------------------------------
-    # SERVER INITIALIZATION
-    # Create the AgentServer to host multiple agents
-    #------------------------------------------------------------------------
+    # Create all agents
+    healthcare_agent = HealthcareAgent()
+    finance_agent = FinanceAgent()
+    retail_agent = RetailAgent()
+    dynamic_agent = ComprehensiveDynamicAgent("/dynamic")
     
-    # Create the server that will host all our agents
-    # AgentServer provides a single FastAPI application that can host
-    # multiple agents on different routes
-    server = AgentServer(host="0.0.0.0", port=3000)
+    # Add all agents to the app
+    app.include_router(healthcare_agent.as_router())
+    app.include_router(finance_agent.as_router())
+    app.include_router(retail_agent.as_router())
+    app.include_router(dynamic_agent.as_router())
     
-    #------------------------------------------------------------------------
-    # AGENT REGISTRATION
-    # Create and register different agent types
-    #------------------------------------------------------------------------
+    # Add a root endpoint that lists all available agents
+    @app.get("/")
+    async def list_agents():
+        return {
+            "message": "Multi-Agent AI Server",
+            "available_agents": {
+                "/healthcare": "Healthcare AI Assistant - HIPAA compliant medical support",
+                "/finance": "Financial Services AI - Banking and investment guidance", 
+                "/retail": "Retail Customer Service AI - Shopping and product support",
+                "/dynamic": "Dynamic AI Agent - Adapts based on request parameters"
+            },
+            "usage": "Send GET or POST requests to any agent path with appropriate query parameters"
+        }
     
-    # Create agent instances
-    registration_agent = CustomInfoGatherer()  # Registration agent
-    support_agent = SupportInfoGatherer()      # Support agent
-    
-    # Register them with the server
-    # The server will use each agent's route to determine the URL path
-    server.register(registration_agent)  # Uses /register from the agent
-    server.register(support_agent)       # Uses /support from the agent
-    
-    #------------------------------------------------------------------------
-    # SIP ROUTING CONFIGURATION
-    # Configure voice call routing to the appropriate agents
-    #------------------------------------------------------------------------
-    
-    # Set up SIP routing on the /sip endpoint
-    # auto_map=True creates default SIP mappings based on agent names
-    # This means voice calls to "registration@domain" will route to the registration agent
-    # and calls to "support@domain" will route to the support agent
-    server.setup_sip_routing(route="/sip", auto_map=True)
-    
-    # Register additional SIP username mappings for alternative names
-    # These let callers use multiple usernames to reach the same agent
-    server.register_sip_username("register", "/register")  # register@domain → registration agent
-    server.register_sip_username("signup", "/register")    # signup@domain → registration agent
-    server.register_sip_username("help", "/support")       # help@domain → support agent
-    
-    #------------------------------------------------------------------------
-    # SERVER STARTUP
-    # Print info and start the server
-    #------------------------------------------------------------------------
-    
-    # Print information about the available endpoints
-    # The /health endpoint is automatically added by AgentServer
-    print("Starting multi-agent server with the following agents:")
-    print("- Registration agent at /register")
-    print("- Support agent at /support")
-    print("- Health check at /health")
-    print("- SIP routing at /sip")
-    print("\nThe following SIP usernames are registered:")
-    print("- 'registration' or 'register' or 'signup' → Registration agent")
-    print("- 'support' or 'help' → Support agent")
-    
-    # Start the server with the configured agents
-    # This runs uvicorn with the FastAPI application
-    try:
-        server.run()
-    except KeyboardInterrupt:
-        print("\nShutting down server.")
+    return app
 
 
 if __name__ == "__main__":
-    main() 
+    import uvicorn
+    
+    print("🤖 Starting Multi-Agent AI Server")
+    print("\nAvailable agents:")
+    print("- http://localhost:3000/healthcare - Healthcare AI (HIPAA compliant)")
+    print("- http://localhost:3000/finance - Financial Services AI")
+    print("- http://localhost:3000/retail - Retail Customer Service AI")
+    print("- http://localhost:3000/dynamic - Dynamic AI (adapts to parameters)")
+    print("\nExample requests:")
+    print("curl 'http://localhost:3000/healthcare?customer_id=patient123&urgency=high'")
+    print("curl 'http://localhost:3000/finance?account_type=premium&service=investment'")
+    print("curl 'http://localhost:3000/retail?department=electronics&customer_tier=vip'")
+    print("curl 'http://localhost:3000/dynamic?tier=enterprise&industry=tech&voice=spore'")
+    print()
+    
+    app = create_multi_agent_app()
+    uvicorn.run(app, host="0.0.0.0", port=3000) 

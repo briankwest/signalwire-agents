@@ -79,6 +79,169 @@ from signalwire_agents.core.swml_handler import AIVerbHandler
 # Create a logger
 logger = structlog.get_logger("agent_base")
 
+class EphemeralAgentConfig:
+    """
+    An ephemeral configurator object that mimics AgentBase's configuration interface.
+    
+    This allows dynamic configuration callbacks to use the same familiar methods
+    they would use during agent initialization, but for per-request configuration.
+    """
+    
+    def __init__(self):
+        # Initialize all configuration containers
+        self._hints = []
+        self._languages = []
+        self._pronounce = []
+        self._params = {}
+        self._global_data = {}
+        self._prompt_sections = []
+        self._raw_prompt = None
+        self._post_prompt = None
+        self._function_includes = []
+        self._native_functions = []
+    
+    # Mirror all the AgentBase configuration methods
+    
+    def add_hint(self, hint: str) -> 'EphemeralAgentConfig':
+        """Add a simple string hint"""
+        if isinstance(hint, str) and hint:
+            self._hints.append(hint)
+        return self
+    
+    def add_hints(self, hints: List[str]) -> 'EphemeralAgentConfig':
+        """Add multiple string hints"""
+        if hints and isinstance(hints, list):
+            for hint in hints:
+                if isinstance(hint, str) and hint:
+                    self._hints.append(hint)
+        return self
+    
+    def add_language(self, name: str, code: str, voice: str, **kwargs) -> 'EphemeralAgentConfig':
+        """Add a language configuration"""
+        language = {
+            "name": name,
+            "code": code,
+            "voice": voice
+        }
+        
+        # Handle additional parameters
+        for key, value in kwargs.items():
+            if key in ["engine", "model", "speech_fillers", "function_fillers", "fillers"]:
+                language[key] = value
+        
+        self._languages.append(language)
+        return self
+    
+    def add_pronunciation(self, replace: str, with_text: str, ignore_case: bool = False) -> 'EphemeralAgentConfig':
+        """Add a pronunciation rule"""
+        if replace and with_text:
+            rule = {"replace": replace, "with": with_text}
+            if ignore_case:
+                rule["ignore_case"] = True
+            self._pronounce.append(rule)
+        return self
+    
+    def set_param(self, key: str, value: Any) -> 'EphemeralAgentConfig':
+        """Set a single AI parameter"""
+        if key:
+            self._params[key] = value
+        return self
+    
+    def set_params(self, params: Dict[str, Any]) -> 'EphemeralAgentConfig':
+        """Set multiple AI parameters"""
+        if params and isinstance(params, dict):
+            self._params.update(params)
+        return self
+    
+    def set_global_data(self, data: Dict[str, Any]) -> 'EphemeralAgentConfig':
+        """Set global data"""
+        if data and isinstance(data, dict):
+            self._global_data = data
+        return self
+    
+    def update_global_data(self, data: Dict[str, Any]) -> 'EphemeralAgentConfig':
+        """Update global data"""
+        if data and isinstance(data, dict):
+            self._global_data.update(data)
+        return self
+    
+    def set_prompt_text(self, text: str) -> 'EphemeralAgentConfig':
+        """Set raw prompt text"""
+        self._raw_prompt = text
+        return self
+    
+    def set_post_prompt(self, text: str) -> 'EphemeralAgentConfig':
+        """Set post-prompt text"""
+        self._post_prompt = text
+        return self
+    
+    def prompt_add_section(self, title: str, body: str = "", bullets: Optional[List[str]] = None, **kwargs) -> 'EphemeralAgentConfig':
+        """Add a prompt section"""
+        section = {
+            "title": title,
+            "body": body
+        }
+        if bullets:
+            section["bullets"] = bullets
+        
+        # Handle additional parameters
+        for key, value in kwargs.items():
+            if key in ["numbered", "numbered_bullets", "subsections"]:
+                section[key] = value
+        
+        self._prompt_sections.append(section)
+        return self
+    
+    def set_native_functions(self, function_names: List[str]) -> 'EphemeralAgentConfig':
+        """Set native functions"""
+        if function_names and isinstance(function_names, list):
+            self._native_functions = [name for name in function_names if isinstance(name, str)]
+        return self
+    
+    def add_function_include(self, url: str, functions: List[str], meta_data: Optional[Dict[str, Any]] = None) -> 'EphemeralAgentConfig':
+        """Add a function include"""
+        if url and functions and isinstance(functions, list):
+            include = {"url": url, "functions": functions}
+            if meta_data and isinstance(meta_data, dict):
+                include["meta_data"] = meta_data
+            self._function_includes.append(include)
+        return self
+    
+    def extract_config(self) -> Dict[str, Any]:
+        """
+        Extract the configuration as a dictionary for applying to the real agent.
+        
+        Returns:
+            Dictionary containing all the configuration changes
+        """
+        config = {}
+        
+        if self._hints:
+            config["hints"] = self._hints
+        if self._languages:
+            config["languages"] = self._languages
+        if self._pronounce:
+            config["pronounce"] = self._pronounce
+        if self._params:
+            config["params"] = self._params
+        if self._global_data:
+            config["global_data"] = self._global_data
+        if self._function_includes:
+            config["function_includes"] = self._function_includes
+        if self._native_functions:
+            config["native_functions"] = self._native_functions
+        
+        # Handle prompt sections - these should be applied to the agent's POM, not as raw config
+        # The calling code should use these to build the prompt properly
+        if self._prompt_sections:
+            config["_ephemeral_prompt_sections"] = self._prompt_sections
+        if self._raw_prompt:
+            config["_ephemeral_raw_prompt"] = self._raw_prompt
+        if self._post_prompt:
+            config["_ephemeral_post_prompt"] = self._post_prompt
+        
+        return config
+
 class AgentBase(SWMLService):
     """
     Base class for all SignalWire AI Agents.
@@ -238,6 +401,9 @@ class AgentBase(SWMLService):
         self._params = {}
         self._global_data = {}
         self._function_includes = []
+        
+        # Dynamic configuration callback
+        self._dynamic_config_callback = None
     
     def _process_prompt_sections(self):
         """
@@ -1211,36 +1377,23 @@ class AgentBase(SWMLService):
         # Add the AI verb to the document
         self.add_verb("ai", ai_config)
         
-        # Apply any modifications from the callback
+        # Apply any modifications from the callback to agent state
         if modifications and isinstance(modifications, dict):
-            # We need a way to apply modifications to the document
-            # Get the current document
-            document = self.get_document()
+            # Handle global_data modifications by updating the AI config directly
+            if "global_data" in modifications:
+                if modifications["global_data"]:
+                    # Merge the modification global_data with existing global_data
+                    ai_config["global_data"] = {**ai_config.get("global_data", {}), **modifications["global_data"]}
             
-            # Simple recursive update function
-            def update_dict(target, source):
-                for key, value in source.items():
-                    if isinstance(value, dict) and key in target and isinstance(target[key], dict):
-                        update_dict(target[key], value)
-                    else:
-                        target[key] = value
+            # Handle other modifications by updating the AI config
+            for key, value in modifications.items():
+                if key != "global_data":  # global_data handled above
+                    ai_config[key] = value
             
-            # Apply modifications to the document
-            update_dict(document, modifications)
-            
-            # Since we can't directly set the document in SWMLService, 
-            # we'll need to reset and rebuild if there are modifications
+            # Clear and rebuild the document with the modified AI config
             self.reset_document()
-            
-            # Add the modified document's sections
-            for section_name, section_content in document["sections"].items():
-                if section_name != "main":  # Main section is created by default
-                    self.add_section(section_name)
-                
-                # Add each verb to the section
-                for verb_obj in section_content:
-                    for verb_name, verb_config in verb_obj.items():
-                        self.add_verb_to_section(section_name, verb_name, verb_config)
+            self.add_answer_verb()
+            self.add_verb("ai", ai_config)
         
         # Return the rendered document as a string
         return self.render_document()
@@ -2108,16 +2261,15 @@ class AgentBase(SWMLService):
             
             # Allow subclasses to inspect/modify the request
             modifications = None
-            if body:
-                try:
-                    modifications = self.on_swml_request(body, callback_path)
-                    if modifications:
-                        req_log.debug("request_modifications_applied")
-                except Exception as e:
-                    req_log.error("error_in_request_modifier", error=str(e))
+            try:
+                modifications = self.on_swml_request(body, callback_path, request)
+                if modifications:
+                    req_log.debug("request_modifications_applied")
+            except Exception as e:
+                req_log.error("error_in_request_modifier", error=str(e))
             
             # Render SWML
-            swml = self._render_swml(call_id)
+            swml = self._render_swml(call_id, modifications)
             req_log.debug("swml_rendered", swml_size=len(swml))
             
             # Return as JSON
@@ -2176,13 +2328,15 @@ class AgentBase(SWMLService):
                 
             # Allow subclasses to inspect/modify the request
             modifications = None
-            if body:
-                modifications = self.on_swml_request(body)
+            try:
+                modifications = self.on_swml_request(body, None, request)
                 if modifications:
                     req_log.debug("request_modifications_applied")
+            except Exception as e:
+                req_log.error("error_in_request_modifier", error=str(e))
                 
             # Render SWML
-            swml = self._render_swml(call_id)
+            swml = self._render_swml(call_id, modifications)
             req_log.debug("swml_rendered", swml_size=len(swml))
             
             # Return as JSON
@@ -2492,24 +2646,66 @@ class AgentBase(SWMLService):
         """
         # First try to call on_swml_request if it exists (backward compatibility)
         if hasattr(self, 'on_swml_request') and callable(getattr(self, 'on_swml_request')):
-            return self.on_swml_request(request_data, callback_path)
+            return self.on_swml_request(request_data, callback_path, None)
             
         # If no on_swml_request or it returned None, we'll proceed with default rendering
         # We're not returning any modifications here because _render_swml will be called
         # to generate the complete SWML document
         return None
     
-    def on_swml_request(self, request_data: Optional[dict] = None, callback_path: Optional[str] = None) -> Optional[dict]:
+    def on_swml_request(self, request_data: Optional[dict] = None, callback_path: Optional[str] = None, request: Optional[Request] = None) -> Optional[dict]:
         """
         Customization point for subclasses to modify SWML based on request data
         
         Args:
             request_data: Optional dictionary containing the parsed POST body
             callback_path: Optional callback path
+            request: Optional FastAPI Request object for accessing query params, headers, etc.
             
         Returns:
             Optional dict with modifications to apply to the SWML document
         """
+        # Handle dynamic configuration callback if set
+        if self._dynamic_config_callback and request:
+            try:
+                # Extract request data
+                query_params = dict(request.query_params)
+                body_params = request_data or {}
+                headers = dict(request.headers)
+                
+                # Create ephemeral configurator
+                agent_config = EphemeralAgentConfig()
+                
+                # Call the user's configuration callback
+                self._dynamic_config_callback(query_params, body_params, headers, agent_config)
+                
+                # Extract the configuration
+                config = agent_config.extract_config()
+                if config:
+                    # Handle ephemeral prompt sections by applying them to this agent instance
+                    if "_ephemeral_prompt_sections" in config:
+                        for section in config["_ephemeral_prompt_sections"]:
+                            self.prompt_add_section(
+                                section["title"],
+                                section.get("body", ""),
+                                section.get("bullets"),
+                                **{k: v for k, v in section.items() if k not in ["title", "body", "bullets"]}
+                            )
+                        del config["_ephemeral_prompt_sections"]
+                    
+                    if "_ephemeral_raw_prompt" in config:
+                        self._raw_prompt = config["_ephemeral_raw_prompt"]
+                        del config["_ephemeral_raw_prompt"]
+                    
+                    if "_ephemeral_post_prompt" in config:
+                        self._post_prompt = config["_ephemeral_post_prompt"]
+                        del config["_ephemeral_post_prompt"]
+                    
+                    return config
+                    
+            except Exception as e:
+                self.log.error("dynamic_config_error", error=str(e))
+        
         # Default implementation does nothing
         return None
 
@@ -2541,6 +2737,34 @@ class AgentBase(SWMLService):
         if not hasattr(self, '_routing_callbacks'):
             self._routing_callbacks = {}
         self._routing_callbacks[normalized_path] = callback_fn
+
+    def set_dynamic_config_callback(self, callback: Callable[[dict, dict, dict, EphemeralAgentConfig], None]) -> 'AgentBase':
+        """
+        Set a callback function for dynamic agent configuration
+        
+        This callback receives an EphemeralAgentConfig object that provides the same
+        configuration methods as AgentBase, allowing you to dynamically configure
+        the agent's voice, prompt, parameters, etc. based on request data.
+        
+        Args:
+            callback: Function that takes (query_params, body_params, headers, agent_config)
+                     and configures the agent_config object using familiar methods like:
+                     - agent_config.add_language(...)
+                     - agent_config.prompt_add_section(...)
+                     - agent_config.set_params(...)
+                     - agent_config.set_global_data(...)
+                     
+        Example:
+            def my_config(query_params, body_params, headers, agent):
+                if query_params.get('tier') == 'premium':
+                    agent.add_language("English", "en-US", "premium_voice")
+                    agent.set_params({"end_of_speech_timeout": 500})
+                agent.set_global_data({"tier": query_params.get('tier', 'standard')})
+            
+            my_agent.set_dynamic_config_callback(my_config)
+        """
+        self._dynamic_config_callback = callback
+        return self
 
     def manual_set_proxy_url(self, proxy_url: str) -> 'AgentBase':
         """

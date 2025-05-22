@@ -200,7 +200,7 @@ class SimpleAgent(AgentBase):
             name="Spanish",
             code="es",
             # Format: provider.voice:model
-            voice="rime.spore:multilingual",
+            voice="rime.pablo",
             speech_fillers=["Un momento por favor...", "Estoy pensando..."],
             function_fillers=["Estoy buscando esa información...", "Déjame verificar..."]
         )
@@ -209,9 +209,7 @@ class SimpleAgent(AgentBase):
         self.add_language(
             name="French",
             code="fr-FR",
-            voice="claire",
-            engine="rime",
-            model="arcana"
+            voice="rime.alois"
         )
 
         # Example 5: Alternative engine with combined format

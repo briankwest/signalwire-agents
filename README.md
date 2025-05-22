@@ -7,6 +7,7 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **Self-Contained Agents**: Each agent is both a web app and an AI persona
 - **Prompt Object Model**: Structured prompt composition using POM
 - **SWAIG Integration**: Easily define and handle AI tools/functions
+- **Dynamic Configuration**: Configure agents per-request for multi-tenant apps and personalization
 - **Custom Routing**: Dynamic request handling for different paths and content
 - **SIP Integration**: Route SIP calls to agents based on SIP usernames
 - **Security Built-In**: Session management, function-specific security tokens, and basic auth
@@ -137,6 +138,73 @@ Available prefabs include:
 - `FAQBotAgent`: Answers questions based on a knowledge base
 - `ConciergeAgent`: Routes users to specialized agents
 - `SurveyAgent`: Conducts structured surveys with questions and rating scales
+- `ReceptionistAgent`: Greets callers and transfers them to appropriate departments
+
+## Dynamic Agent Configuration
+
+Configure agents dynamically based on request parameters for multi-tenant applications, A/B testing, and personalization.
+
+### Static vs Dynamic Configuration
+
+- **Static**: Agent configured once at startup (traditional approach)
+- **Dynamic**: Agent configured fresh for each request based on parameters
+
+### Basic Example
+
+```python
+from signalwire_agents import AgentBase
+
+class DynamicAgent(AgentBase):
+    def __init__(self):
+        super().__init__(name="dynamic-agent", route="/dynamic")
+        
+        # Set up dynamic configuration callback
+        self.set_dynamic_config_callback(self.configure_per_request)
+    
+    def configure_per_request(self, query_params, body_params, headers, agent):
+        """Configure agent based on request parameters"""
+        
+        # Extract parameters from request
+        tier = query_params.get('tier', 'standard')
+        language = query_params.get('language', 'en')
+        customer_id = query_params.get('customer_id')
+        
+        # Configure voice and language
+        if language == 'es':
+            agent.add_language("Spanish", "es-ES", "rime.spore:mistv2")
+        else:
+            agent.add_language("English", "en-US", "rime.spore:mistv2")
+        
+        # Configure based on service tier
+        if tier == 'premium':
+            agent.set_params({"end_of_speech_timeout": 300})  # Faster response
+            agent.prompt_add_section("Service Level", "You provide premium support.")
+        else:
+            agent.set_params({"end_of_speech_timeout": 500})  # Standard response
+            agent.prompt_add_section("Service Level", "You provide standard support.")
+        
+        # Personalize with customer data
+        global_data = {"tier": tier, "language": language}
+        if customer_id:
+            global_data["customer_id"] = customer_id
+        agent.set_global_data(global_data)
+
+# Usage examples:
+# curl "http://localhost:3000/dynamic?tier=premium&language=es&customer_id=123"
+# curl "http://localhost:3000/dynamic?tier=standard&language=en"
+```
+
+### Use Cases
+
+- **Multi-tenant SaaS**: Different configurations per customer/organization
+- **A/B Testing**: Test different agent behaviors with different user groups
+- **Personalization**: Customize voice, prompts, and behavior per user
+- **Localization**: Language and cultural adaptation based on user location
+- **Dynamic Pricing**: Adjust features and capabilities based on subscription tiers
+
+The `EphemeralAgentConfig` object provides all the same familiar methods as `AgentBase` (like `add_language()`, `prompt_add_section()`, `set_global_data()`) but applies them per-request instead of at startup.
+
+For detailed documentation and advanced examples, see the [Agent Guide](docs/agent_guide.md#dynamic-agent-configuration).
 
 ## Configuration
 
@@ -161,7 +229,7 @@ To enable HTTPS directly (without a reverse proxy), set `SWML_SSL_ENABLED` to "t
 
 The package includes comprehensive documentation in the `docs/` directory:
 
-- [Agent Guide](docs/agent_guide.md) - Detailed guide to creating and customizing agents
+- [Agent Guide](docs/agent_guide.md) - Detailed guide to creating and customizing agents, including dynamic configuration
 - [Architecture](docs/architecture.md) - Overview of the SDK architecture and core concepts
 - [SWML Service Guide](docs/swml_service_guide.md) - Guide to the underlying SWML service
 

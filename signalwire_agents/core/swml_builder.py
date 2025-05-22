@@ -14,7 +14,11 @@ This module provides a fluent builder API for creating SWML documents.
 It allows for chaining method calls to build up a document step by step.
 """
 
-from typing import Dict, List, Any, Optional, Union, Self, TypeVar
+from typing import Dict, List, Any, Optional, Union, TypeVar
+try:
+    from typing import Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # For Python 3.9-3.10
 
 from signalwire_agents.core.swml_service import SWMLService
 
