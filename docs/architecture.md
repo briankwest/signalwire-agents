@@ -57,55 +57,154 @@ The SDK is built around a clear class hierarchy:
    - Dependency validation (packages and environment variables)
    - Built-in skills (web_search, datetime, math)
 
-## Request Flow
+## DataMap Tools
 
-### SWML Document Request (GET/POST /)
+The DataMap system provides a declarative approach to creating SWAIG tools that integrate with REST APIs without requiring custom webhook infrastructure. DataMap tools execute on SignalWire's server infrastructure, simplifying deployment and eliminating the need to expose webhook endpoints.
 
-1. Client requests the root endpoint
-2. Authentication is validated 
-3. `on_swml_request()` is called to allow customization
-4. Current SWML document is rendered and returned
+### Architecture Overview
 
-### SWAIG Function Call (POST /swaig/)
-
-1. Client sends a POST request to the SWAIG endpoint
-2. Authentication is validated
-3. Function name and arguments are extracted
-4. Token validation occurs for secure functions
-5. Function is executed and result returned
-
-### Post-Prompt Processing (POST /post_prompt/)
-
-1. Client sends conversation summary data
-2. Authentication is validated
-3. Summary is extracted from request
-4. `on_summary()` is called to process the data
-
-## State Management
-
-The SDK provides a flexible state management system:
+DataMap tools follow a pipeline execution model on the SignalWire server:
 
 ```
-┌───────────────┐     ┌─────────────────┐     ┌───────────────┐
-│ Session       │     │ State           │     │ Persistence   │
-│ Management    │━━━━▶│ Manager         │━━━━▶│ Layer         │
-└───────────────┘     └─────────────────┘     └───────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Function Call   │    │ Expression      │    │ Webhook         │    │ Response        │
+│ (Arguments)     │━━━▶│ Processing      │━━━▶│ Execution       │━━━▶│ Generation      │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │                       │
+         │                       │                       │                       │
+    ┌────▼────┐             ┌────▼────┐             ┌────▼────┐             ┌────▼────┐
+    │Variable │             │Pattern  │             │HTTP     │             │Template │
+    │Expansion│             │Matching │             │Request  │             │Rendering│
+    │         │             │         │             │         │             │         │
+    └─────────┘             └─────────┘             └─────────┘             └─────────┘
 ```
 
-Components:
-- **SessionManager**: Handles session creation, activation, and termination
-- **StateManager**: Interface for state operations
-- **Implementation Options**: FileStateManager, MemoryStateManager, etc.
+### Core Components
 
-State is indexed by call ID and can store arbitrary JSON data. When `enable_state_tracking=True` is set, the system automatically registers lifecycle hooks:
-- **startup_hook**: Called when a new call/session starts
-- **hangup_hook**: Called when a call/session ends
+1. **Builder Pattern**: Fluent interface for constructing data_map configurations
+   ```python
+   tool = (DataMap('function_name')
+       .description('Function purpose')
+       .parameter('param', 'string', 'Description', required=True)
+       .webhook('GET', 'https://api.example.com/endpoint')
+       .output(SwaigFunctionResult('Response template'))
+   )
+   ```
 
-Common state management methods:
-- `get_state(call_id)`: Retrieve state for a call
-- `update_state(call_id, data)`: Update state for a call
-- `set_state(call_id, data)`: Set state for a call (overriding existing)
-- `clear_state(call_id)`: Remove state for a call
+2. **Processing Pipeline**: Ordered execution with early termination
+   - **Expressions**: Pattern matching against arguments
+   - **Webhooks**: HTTP API calls with variable substitution
+   - **Foreach**: Array iteration for response processing
+   - **Output**: Final response generation using SwaigFunctionResult
+
+3. **Variable Expansion**: Dynamic substitution using `${variable}` syntax
+   - Function arguments: `${args.parameter_name}`
+   - API responses: `${response.field.nested_field}`
+   - Array elements: `${foreach.item_field}`
+   - Global data: `${global_data.key}`
+   - Metadata: `${meta_data.call_id}`
+
+### Tool Types
+
+The system supports different tool patterns:
+
+1. **API Integration Tools**: Direct REST API calls
+   ```python
+   weather_tool = (DataMap('get_weather')
+       .webhook('GET', 'https://api.weather.com/v1/current?q=${location}')
+       .output(SwaigFunctionResult('Weather: ${response.current.condition}'))
+   )
+   ```
+
+2. **Expression-Based Tools**: Pattern matching without API calls
+   ```python
+   control_tool = (DataMap('file_control')
+       .expression(r'start.*', SwaigFunctionResult().add_action('start', True))
+       .expression(r'stop.*', SwaigFunctionResult().add_action('stop', True))
+   )
+   ```
+
+3. **Array Processing Tools**: Handle list responses
+   ```python
+   search_tool = (DataMap('search_docs')
+       .webhook('GET', 'https://api.docs.com/search')
+       .foreach('${response.results}')
+       .output(SwaigFunctionResult('Found: ${foreach.title}'))
+   )
+   ```
+
+### Integration with Agent Architecture
+
+DataMap tools integrate seamlessly with the existing agent architecture:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ AgentBase       │    │ SWAIG           │    │ SignalWire      │
+│                 │    │ Function        │    │ Server          │
+│ .register_      │━━━▶│ Registry        │━━━▶│ Execution       │
+│  swaig_function │    │                 │    │ Environment     │
+│                 │    │ data_map field  │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         │                       │                       │
+    ┌────▼────┐             ┌────▼────┐             ┌────▼────┐
+    │DataMap  │             │Function │             │Variable │
+    │Builder  │             │Definition│             │Expansion│
+    │         │             │         │             │         │
+    └─────────┘             └─────────┘             └─────────┘
+```
+
+1. **Registration**: DataMap tools are registered as SWAIG functions
+2. **Execution**: Tools run on SignalWire infrastructure, not agent servers
+3. **Response**: Results are returned to the agent as function responses
+
+### Configuration Architecture
+
+DataMap configurations use a hierarchical structure:
+
+```json
+{
+  "function": "tool_name",
+  "description": "Tool description", 
+  "parameters": {
+    "type": "object",
+    "properties": {...},
+    "required": [...]
+  },
+  "data_map": {
+    "expressions": [...],
+    "webhooks": [...], 
+    "foreach": "path",
+    "output": {...},
+    "error_keys": [...]
+  }
+}
+```
+
+This structure separates:
+- **Function Metadata**: Name, description, parameters
+- **Processing Logic**: Expressions, webhooks, array handling
+- **Output Definition**: Response templates and actions
+
+### Benefits and Trade-offs
+
+**Benefits:**
+- No webhook infrastructure required
+- Simplified deployment model
+- Built-in authentication and error handling
+- Server-side execution (no agent load)
+- Automatic variable expansion
+
+**Trade-offs:**
+- Limited to REST API patterns
+- No complex processing logic
+- Server-side execution (no local state access)
+- SignalWire platform dependency
+
+**When to Choose DataMap vs Skills vs Custom Tools:**
+- **DataMap**: Simple REST API integrations, read-only operations
+- **Skills**: Multi-step workflows, state management, complex logic
+- **Custom Tools**: Full control, database access, agent-side processing
 
 ## Skills System
 
@@ -793,3 +892,53 @@ Key environment variables:
 - `SWML_SSL_KEY_PATH`: Path to SSL key
 - `SWML_DOMAIN`: Domain name for the service
 - `SWML_SCHEMA_PATH`: Optional path to override the schema.json location
+
+## Request Flow
+
+### SWML Document Request (GET/POST /)
+
+1. Client requests the root endpoint
+2. Authentication is validated 
+3. `on_swml_request()` is called to allow customization
+4. Current SWML document is rendered and returned
+
+### SWAIG Function Call (POST /swaig/)
+
+1. Client sends a POST request to the SWAIG endpoint
+2. Authentication is validated
+3. Function name and arguments are extracted
+4. Token validation occurs for secure functions
+5. Function is executed and result returned
+
+### Post-Prompt Processing (POST /post_prompt/)
+
+1. Client sends conversation summary data
+2. Authentication is validated
+3. Summary is extracted from request
+4. `on_summary()` is called to process the data
+
+## State Management
+
+The SDK provides a flexible state management system:
+
+```
+┌───────────────┐     ┌─────────────────┐     ┌───────────────┐
+│ Session       │     │ State           │     │ Persistence   │
+│ Management    │━━━━▶│ Manager         │━━━━▶│ Layer         │
+└───────────────┘     └─────────────────┘     └───────────────┘
+```
+
+Components:
+- **SessionManager**: Handles session creation, activation, and termination
+- **StateManager**: Interface for state operations
+- **Implementation Options**: FileStateManager, MemoryStateManager, etc.
+
+State is indexed by call ID and can store arbitrary JSON data. When `enable_state_tracking=True` is set, the system automatically registers lifecycle hooks:
+- **startup_hook**: Called when a new call/session starts
+- **hangup_hook**: Called when a call/session ends
+
+Common state management methods:
+- `get_state(call_id)`: Retrieve state for a call
+- `update_state(call_id, data)`: Update state for a call
+- `set_state(call_id, data)`: Set state for a call (overriding existing)
+- `clear_state(call_id)`: Remove state for a call

@@ -105,6 +105,118 @@ agent.serve()
 
 For detailed documentation, see [Skills System README](docs/SKILLS_SYSTEM_README.md).
 
+## DataMap Tools
+
+The SDK provides a DataMap system for creating SWAIG tools that integrate directly with REST APIs without requiring custom webhook endpoints. DataMap tools execute on the SignalWire server, making them simpler to deploy than traditional webhook-based tools.
+
+### Basic DataMap Usage
+
+```python
+from signalwire_agents import AgentBase
+from signalwire_agents.core.data_map import DataMap
+from signalwire_agents.core.function_result import SwaigFunctionResult
+
+class APIAgent(AgentBase):
+    def __init__(self):
+        super().__init__(name="api-agent", route="/api")
+        
+        # Create a simple weather API tool
+        weather_tool = (DataMap('get_weather')
+            .description('Get current weather information')
+            .parameter('location', 'string', 'City name', required=True)
+            .webhook('GET', 'https://api.weather.com/v1/current?key=YOUR_API_KEY&q=${location}')
+            .output(SwaigFunctionResult('Weather in ${location}: ${response.current.condition.text}, ${response.current.temp_f}°F'))
+        )
+        
+        # Register the tool with the agent
+        self.register_swaig_function(weather_tool.to_swaig_function())
+
+agent = APIAgent()
+agent.serve()
+```
+
+### Advanced DataMap Examples
+
+```python
+# POST API with authentication
+search_tool = (DataMap('search_knowledge')
+    .description('Search company knowledge base')
+    .parameter('query', 'string', 'Search query', required=True)
+    .webhook('POST', 'https://api.company.com/search', 
+             headers={'Authorization': 'Bearer YOUR_TOKEN'})
+    .body({'query': '${query}', 'limit': 3})
+    .output(SwaigFunctionResult('Found: ${response.title} - ${response.summary}'))
+)
+
+# Expression-based tools (no API calls)
+control_tool = (DataMap('file_control')
+    .description('Control file playback')
+    .parameter('command', 'string', 'Playback command')
+    .parameter('filename', 'string', 'File to control', required=False)
+    .expression(r'start.*', SwaigFunctionResult().add_action('start_playback', {'file': '${args.filename}'}))
+    .expression(r'stop.*', SwaigFunctionResult().add_action('stop_playback', True))
+)
+
+# Process API response arrays
+docs_tool = (DataMap('get_latest_docs')
+    .description('Get latest documentation')
+    .webhook('GET', 'https://api.docs.com/latest')
+    .foreach('${response.documents}')
+    .output(SwaigFunctionResult('Document: ${foreach.title} (${foreach.updated_date})'))
+)
+```
+
+### Helper Functions
+
+For simpler use cases, use the convenience functions:
+
+```python
+from signalwire_agents.core.data_map import create_simple_api_tool, create_expression_tool
+
+# Simple API tool
+weather = create_simple_api_tool(
+    name='get_weather',
+    url='https://api.weather.com/v1/current?key=API_KEY&q=${location}',
+    response_template='Weather in ${location}: ${response.current.condition.text}',
+    parameters={'location': {'type': 'string', 'description': 'City name', 'required': True}}
+)
+
+# Expression-based tool
+file_control = create_expression_tool(
+    name='file_control',
+    patterns={
+        r'start.*': SwaigFunctionResult().add_action('start_playback', {'file': '${args.filename}'}),
+        r'stop.*': SwaigFunctionResult().add_action('stop_playback', True)
+    },
+    parameters={'command': {'type': 'string', 'description': 'Playback command'}}
+)
+
+# Register with agent
+self.register_swaig_function(weather.to_swaig_function())
+self.register_swaig_function(file_control.to_swaig_function())
+```
+
+### Variable Expansion
+
+DataMap tools support powerful variable expansion using `${variable}` syntax:
+
+- **Function arguments**: `${args.parameter_name}`
+- **API responses**: `${response.field.nested_field}`
+- **Array processing**: `${foreach.item_field}` (when using foreach)
+- **Global data**: `${global_data.key}`
+- **Metadata**: `${meta_data.call_id}`
+
+### Benefits of DataMap Tools
+
+- **No webhook infrastructure**: Tools run on SignalWire servers
+- **Simplified deployment**: No need to expose endpoints
+- **Built-in authentication**: Support for API keys, Bearer tokens, Basic auth
+- **Response processing**: Built-in JSON path traversal and array iteration
+- **Error handling**: Automatic error detection with `error_keys`
+- **Pattern matching**: Expression-based responses without API calls
+
+For detailed documentation, see [DataMap Guide](docs/datamap_guide.md).
+
 ## Installation
 
 ```bash
