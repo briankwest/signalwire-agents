@@ -1,5 +1,85 @@
 # Changelog
 
+## [0.1.41] - 2025-07-31
+
+- Version bump
+
+## [0.1.40] - 2025-07-31
+
+- Version bump
+
+## [0.1.39] - 2025-07-31
+
+- Version bump
+
+## [0.1.38] - 2025-07-31
+
+- Version bump
+
+## [0.1.37] - 2025-07-31
+
+- Version bump
+
+## [0.1.36] - 2025-07-31
+
+- Version bump
+
+## [0.1.35] - 2025-07-31
+
+- Version bump
+
+## [0.1.34] - 2025-07-31
+
+- Version bump
+
+## [0.1.33] - 2025-07-31
+
+- Version bump
+
+## [0.1.32] - 2025-07-31
+
+- Version bump
+
+## [0.1.31] - 2025-07-31
+
+- Version bump
+
+## [0.1.30] - 2025-07-31
+
+- Version bump
+
+## [0.1.29] - 2025-07-31
+
+- Version bump
+
+## [0.1.28] - 2025-07-31
+
+- Version bump
+
+## [0.1.27] - 2025-07-31
+
+- Version bump
+
+## [0.1.26] - 2025-07-31
+
+- Version bump
+
+## [0.1.25] - 2025-07-31
+
+- Version bump
+
+## [0.1.24] - 2025-07-31
+
+- Version bump
+
+## [0.1.23] - 2025-07-31
+
+- Version bump
+
+## [0.1.22] - 2025-07-30
+
+- Version bump
+
 ## [0.1.21] - 2025-06-12
 
 - Version bump
@@ -45,10 +125,6 @@
 - Version bump
 
 ## [0.1.10] - 2025-05-28
-
-- Version bump
-
-## [0.1.9] - 2025-05-24
 
 - Version bump
 
