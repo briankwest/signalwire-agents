@@ -197,10 +197,12 @@ class DataSphereSkill(SkillBase):
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints"""
-        return [
-            "knowledge", "search", "information", "database", "find",
-            "look up", "research", "query", "datasphere", "document"
-        ]
+        # Currently no hints provided, but you could add them like:
+        # return [
+        #     "knowledge", "search", "information", "database", "find",
+        #     "look up", "research", "query", "datasphere", "document"
+        # ]
+        return []
         
     def get_global_data(self) -> Dict[str, Any]:
         """Return global data for agent context"""

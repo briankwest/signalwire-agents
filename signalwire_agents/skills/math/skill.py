@@ -68,10 +68,12 @@ class MathSkill(SkillBase):
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints"""
-        return [
-            "calculate", "math", "plus", "minus", "times", "multiply", 
-            "divide", "equals", "percent", "power", "squared"
-        ]
+        # Currently no hints provided, but you could add them like:
+        # return [
+        #     "calculate", "math", "plus", "minus", "times", "multiply", 
+        #     "divide", "equals", "percent", "power", "squared"
+        # ]
+        return []
         
     def get_prompt_sections(self) -> List[Dict[str, Any]]:
         """Return prompt sections to add to agent"""

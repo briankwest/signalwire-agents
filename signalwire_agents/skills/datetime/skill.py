@@ -92,7 +92,9 @@ class DateTimeSkill(SkillBase):
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints"""
-        return ["time", "date", "today", "now", "current", "timezone"]
+        # Currently no hints provided, but you could add them like:
+        # return ["time", "date", "today", "now", "current", "timezone"]
+        return []
         
     def get_prompt_sections(self) -> List[Dict[str, Any]]:
         """Return prompt sections to add to agent"""

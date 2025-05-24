@@ -164,7 +164,9 @@ class WikipediaSearchSkill(SkillBase):
         Returns:
             List of words/phrases to help with speech recognition
         """
-        return [
-            "Wikipedia", "wiki", "search Wikipedia", "look up", "tell me about",
-            "what is", "who is", "information about", "facts about"
-        ] 
+        # Currently no hints provided, but you could add them like:
+        # return [
+        #     "Wikipedia", "wiki", "search Wikipedia", "look up", "tell me about",
+        #     "what is", "who is", "information about", "facts about"
+        # ]
+        return [] 

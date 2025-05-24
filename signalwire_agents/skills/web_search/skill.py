@@ -231,10 +231,12 @@ class WebSearchSkill(SkillBase):
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints"""
-        return [
-            "Google", "search", "internet", "web", "information",
-            "find", "look up", "research", "query", "results"
-        ]
+        # Currently no hints provided, but you could add them like:
+        # return [
+        #     "Google", "search", "internet", "web", "information",
+        #     "find", "look up", "research", "query", "results"
+        # ]
+        return []
         
     def get_global_data(self) -> Dict[str, Any]:
         """Return global data for agent context"""
