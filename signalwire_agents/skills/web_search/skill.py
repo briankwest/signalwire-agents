@@ -138,6 +138,11 @@ class WebSearchSkill(SkillBase):
         # Set default parameters
         self.default_num_results = self.params.get('num_results', 1)
         self.default_delay = self.params.get('delay', 0)
+        self.no_results_message = self.params.get('no_results_message', 
+            "I couldn't find any results for '{query}'. "
+            "This might be due to a very specific query or temporary issues. "
+            "Try rephrasing your search or asking about a different topic."
+        )
         
         # Initialize the search scraper
         self.search_scraper = GoogleSearchScraper(
@@ -184,11 +189,9 @@ class WebSearchSkill(SkillBase):
             )
             
             if not search_results or "No search results found" in search_results:
-                return SwaigFunctionResult(
-                    f"I couldn't find any results for '{query}'. "
-                    "This might be due to a very specific query or temporary issues. "
-                    "Try rephrasing your search or asking about a different topic."
-                )
+                # Format the no results message with the query if it contains a placeholder
+                formatted_message = self.no_results_message.format(query=query) if '{query}' in self.no_results_message else self.no_results_message
+                return SwaigFunctionResult(formatted_message)
             
             response = f"I found {num_results} results for '{query}':\n\n{search_results}"
             return SwaigFunctionResult(response)

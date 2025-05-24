@@ -33,8 +33,8 @@ agent.add_skill("math")         # Mathematical calculations
 
 # Configure skills with parameters
 agent.add_skill("web_search", {
-    "num_results": 3,  # Get 3 search results
-    "delay": 0.5       # Small delay between requests
+    "num_results": 1,  # Get 1 search results
+    "no_results_message": "Sorry, I couldn't find anything about '{query}'. Try rephrasing your question."
 })
 
 # Advanced: Customize SWAIG function properties

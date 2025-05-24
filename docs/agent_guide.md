@@ -372,6 +372,7 @@ Provides web search capabilities using Google Custom Search API with web scrapin
 **Parameters:**
 - `num_results` (default: 1): Number of search results to return
 - `delay` (default: 0): Delay in seconds between requests
+- `no_results_message` (default: "I couldn't find any results for '{query}'. This might be due to a very specific query or temporary issues. Try rephrasing your search or asking about a different topic."): Custom message to return when no search results are found. Use `{query}` as a placeholder for the search query.
 
 **Example:**
 ```python
@@ -382,6 +383,11 @@ agent.add_skill("web_search")
 agent.add_skill("web_search", {
     "num_results": 5,
     "delay": 1.0
+})
+
+# Custom no results message
+agent.add_skill("web_search", {
+    "no_results_message": "Sorry, I couldn't find information about '{query}'. Please try a different search term."
 })
 ```
 

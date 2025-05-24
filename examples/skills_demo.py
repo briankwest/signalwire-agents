@@ -48,6 +48,7 @@ def main():
         agent.add_skill("web_search", {
             "num_results": 1,  # Just get one result for faster responses
             "delay": 0,        # No delay between requests for minimal latency
+            "no_results_message": "I apologize, but I wasn't able to find any information about '{query}' in my web search. Could you try rephrasing your question or asking about something else?",
             "swaig_fields": {  # Special fields merged into SWAIG function definition
                 "fillers": {
                     "en-US": [
@@ -100,6 +101,11 @@ def main():
     print("   ")
     print("   # Fast web search (1 result, no delay)")
     print("   agent.add_skill('web_search', {'num_results': 1, 'delay': 0})")
+    print("   ")
+    print("   # Web search with custom no results message")
+    print("   agent.add_skill('web_search', {")
+    print("       'no_results_message': 'Sorry, no results found for \"{query}\". Please try a different search.'")
+    print("   })")
     print("   ")
     print("   # Web search with custom fillers using swaig_fields")
     print("   agent.add_skill('web_search', {")
