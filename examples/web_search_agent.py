@@ -88,7 +88,7 @@ def main():
                 "fillers": {
                     "en-US": [
                         "I am searching the web for that information...",
-                        "Let me look that up for you...",
+                        "Let me google that for you...",
                         "Searching the internet now...",
                         "Finding the latest information online...",
                         "Let me check what I can find about that..."
