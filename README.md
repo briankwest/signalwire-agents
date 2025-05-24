@@ -45,6 +45,25 @@ agent.add_skill("math", {
     }
 })
 
+# Multiple DataSphere instances with different tool names
+agent.add_skill("datasphere", {
+    "space_name": "my-space",
+    "project_id": "my-project", 
+    "token": "my-token",
+    "document_id": "drinks-doc",
+    "tool_name": "search_drinks",  # Creates search_drinks tool
+    "count": 2
+})
+
+agent.add_skill("datasphere", {
+    "space_name": "my-space", 
+    "project_id": "my-project",
+    "token": "my-token", 
+    "document_id": "food-doc",
+    "tool_name": "search_recipes",  # Creates search_recipes tool
+    "tags": ["Food", "Recipes"]
+})
+
 agent.serve()
 ```
 
@@ -53,6 +72,7 @@ agent.serve()
 - **web_search**: Google Custom Search API integration with web scraping
 - **datetime**: Current date and time with timezone support
 - **math**: Safe mathematical expression evaluation
+- **datasphere**: SignalWire DataSphere knowledge search (supports multiple instances)
 
 ### Benefits
 

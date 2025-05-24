@@ -24,6 +24,9 @@ class SkillBase(ABC):
     REQUIRED_PACKAGES: List[str] = [] # Python packages needed
     REQUIRED_ENV_VARS: List[str] = [] # Environment variables needed
     
+    # Multiple instance support
+    SUPPORTS_MULTIPLE_INSTANCES: bool = False  # Set to True to allow multiple instances
+    
     def __init__(self, agent: 'AgentBase', params: Optional[Dict[str, Any]] = None):
         if self.SKILL_NAME is None:
             raise ValueError(f"{self.__class__.__name__} must define SKILL_NAME")
@@ -124,4 +127,26 @@ class SkillBase(ABC):
         if missing:
             self.logger.error(f"Missing required packages: {missing}")
             return False
-        return True 
+        return True
+        
+    def get_instance_key(self) -> str:
+        """
+        Get the key used to track this skill instance
+        
+        For skills that support multiple instances (SUPPORTS_MULTIPLE_INSTANCES = True),
+        this method can be overridden to provide a unique key for each instance.
+        
+        Default implementation:
+        - If SUPPORTS_MULTIPLE_INSTANCES is False: returns SKILL_NAME
+        - If SUPPORTS_MULTIPLE_INSTANCES is True: returns SKILL_NAME + "_" + tool_name
+          (where tool_name comes from params['tool_name'] or defaults to the skill name)
+        
+        Returns:
+            str: Unique key for this skill instance
+        """
+        if not self.SUPPORTS_MULTIPLE_INSTANCES:
+            return self.SKILL_NAME
+            
+        # For multi-instance skills, create key from skill name + tool name
+        tool_name = self.params.get('tool_name', self.SKILL_NAME)
+        return f"{self.SKILL_NAME}_{tool_name}" 

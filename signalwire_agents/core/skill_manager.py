@@ -31,10 +31,6 @@ class SkillManager:
         Returns:
             tuple: (success, error_message) - error_message is empty string if successful
         """
-        if skill_name in self.loaded_skills:
-            self.logger.warning(f"Skill '{skill_name}' is already loaded")
-            return True, ""
-            
         # Get skill class from registry if not provided
         if skill_class is None:
             try:
@@ -50,8 +46,21 @@ class SkillManager:
                 return False, error_msg
         
         try:
-            # Create skill instance with parameters
+            # Create skill instance with parameters to get the instance key
             skill_instance = skill_class(self.agent, params)
+            instance_key = skill_instance.get_instance_key()
+            
+            # Check if this instance is already loaded
+            if instance_key in self.loaded_skills:
+                # For single-instance skills, this is an error
+                if not skill_instance.SUPPORTS_MULTIPLE_INSTANCES:
+                    error_msg = f"Skill '{skill_name}' is already loaded and does not support multiple instances"
+                    self.logger.error(error_msg)
+                    return False, error_msg
+                else:
+                    # For multi-instance skills, just warn and return success
+                    self.logger.warning(f"Skill instance '{instance_key}' is already loaded")
+                    return True, ""
             
             # Validate environment variables with specific error details
             import os
@@ -97,9 +106,9 @@ class SkillManager:
             for section in prompt_sections:
                 self.agent.prompt_add_section(**section)
             
-            # Store loaded skill
-            self.loaded_skills[skill_name] = skill_instance
-            self.logger.info(f"Successfully loaded skill '{skill_name}'")
+            # Store loaded skill using instance key
+            self.loaded_skills[instance_key] = skill_instance
+            self.logger.info(f"Successfully loaded skill instance '{instance_key}' (skill: '{skill_name}')")
             return True, ""
             
         except Exception as e:
@@ -107,30 +116,87 @@ class SkillManager:
             self.logger.error(error_msg)
             return False, error_msg
     
-    def unload_skill(self, skill_name: str) -> bool:
-        """Unload a skill and cleanup"""
-        if skill_name not in self.loaded_skills:
-            self.logger.warning(f"Skill '{skill_name}' is not loaded")
+    def unload_skill(self, skill_identifier: str) -> bool:
+        """
+        Unload a skill and cleanup
+        
+        Args:
+            skill_identifier: Either a skill name or an instance key
+            
+        Returns:
+            bool: True if successfully unloaded, False otherwise
+        """
+        # Try to find the skill by identifier (could be skill name or instance key)
+        skill_instance = None
+        instance_key = None
+        
+        # First try as direct instance key
+        if skill_identifier in self.loaded_skills:
+            instance_key = skill_identifier
+            skill_instance = self.loaded_skills[skill_identifier]
+        else:
+            # Try to find by skill name (for backwards compatibility)
+            for key, instance in self.loaded_skills.items():
+                if instance.SKILL_NAME == skill_identifier:
+                    instance_key = key
+                    skill_instance = instance
+                    break
+        
+        if skill_instance is None:
+            self.logger.warning(f"Skill '{skill_identifier}' is not loaded")
             return False
             
         try:
-            skill_instance = self.loaded_skills[skill_name]
             skill_instance.cleanup()
-            del self.loaded_skills[skill_name]
-            self.logger.info(f"Successfully unloaded skill '{skill_name}'")
+            del self.loaded_skills[instance_key]
+            self.logger.info(f"Successfully unloaded skill instance '{instance_key}'")
             return True
         except Exception as e:
-            self.logger.error(f"Error unloading skill '{skill_name}': {e}")
+            self.logger.error(f"Error unloading skill '{skill_identifier}': {e}")
             return False
     
     def list_loaded_skills(self) -> List[str]:
-        """List names of currently loaded skills"""
+        """List instance keys of currently loaded skills"""
         return list(self.loaded_skills.keys())
     
-    def has_skill(self, skill_name: str) -> bool:
-        """Check if skill is currently loaded"""
-        return skill_name in self.loaded_skills
+    def has_skill(self, skill_identifier: str) -> bool:
+        """
+        Check if skill is currently loaded
+        
+        Args:
+            skill_identifier: Either a skill name or an instance key
+            
+        Returns:
+            bool: True if loaded, False otherwise
+        """
+        # First try as direct instance key
+        if skill_identifier in self.loaded_skills:
+            return True
+        
+        # Try to find by skill name (for backwards compatibility)
+        for instance in self.loaded_skills.values():
+            if instance.SKILL_NAME == skill_identifier:
+                return True
+        
+        return False
     
-    def get_skill(self, skill_name: str) -> Optional[SkillBase]:
-        """Get a loaded skill instance by name"""
-        return self.loaded_skills.get(skill_name) 
+    def get_skill(self, skill_identifier: str) -> Optional[SkillBase]:
+        """
+        Get a loaded skill instance by identifier
+        
+        Args:
+            skill_identifier: Either a skill name or an instance key
+            
+        Returns:
+            SkillBase: The skill instance if found, None otherwise
+        """
+        # First try as direct instance key
+        if skill_identifier in self.loaded_skills:
+            return self.loaded_skills[skill_identifier]
+        
+        # Try to find by skill name (for backwards compatibility)
+        for instance in self.loaded_skills.values():
+            if instance.SKILL_NAME == skill_identifier:
+                return instance
+        
+        return None 

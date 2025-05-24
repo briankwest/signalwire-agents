@@ -422,6 +422,64 @@ agent.add_skill("math")
 # Agent can now perform calculations like "2 + 3 * 4"
 ```
 
+#### DataSphere Skill (`datasphere`)
+Provides knowledge search capabilities using SignalWire DataSphere RAG stack.
+
+**Requirements:**
+- Packages: `requests`
+
+**Parameters:**
+- `space_name` (required): SignalWire space name
+- `project_id` (required): SignalWire project ID 
+- `token` (required): SignalWire authentication token
+- `document_id` (required): DataSphere document ID to search
+- `count` (default: 1): Number of search results to return
+- `distance` (default: 3.0): Distance threshold for search matching
+- `tags` (optional): List of tags to filter search results
+- `language` (optional): Language code to limit search
+- `pos_to_expand` (optional): List of parts of speech for synonym expansion (e.g., ["NOUN", "VERB"])
+- `max_synonyms` (optional): Maximum number of synonyms to use for each word
+- `tool_name` (default: "search_knowledge"): Custom name for the search tool
+- `no_results_message` (default: "I couldn't find any relevant information for '{query}' in the knowledge base. Try rephrasing your question or asking about a different topic."): Custom message when no results found
+
+**Multiple Instance Support:**
+The DataSphere skill supports multiple instances with different tool names, allowing you to search multiple knowledge bases:
+
+**Example:**
+```python
+# Basic single instance
+agent.add_skill("datasphere", {
+    "space_name": "my-space",
+    "project_id": "my-project",
+    "token": "my-token",
+    "document_id": "general-knowledge"
+})
+# Creates tool: search_knowledge
+
+# Multiple instances for different knowledge bases
+agent.add_skill("datasphere", {
+    "space_name": "my-space",
+    "project_id": "my-project", 
+    "token": "my-token",
+    "document_id": "product-docs",
+    "tool_name": "search_products",
+    "tags": ["Products", "Features"],
+    "count": 3
+})
+# Creates tool: search_products
+
+agent.add_skill("datasphere", {
+    "space_name": "my-space",
+    "project_id": "my-project",
+    "token": "my-token", 
+    "document_id": "support-kb",
+    "tool_name": "search_support",
+    "no_results_message": "I couldn't find support information about '{query}'. Try contacting our support team.",
+    "distance": 5.0
+})
+# Creates tool: search_support
+```
+
 ### Skill Management
 
 ```python
