@@ -719,6 +719,28 @@ class AgentBase(SWMLService):
         )
         return self
     
+    def register_swaig_function(self, function_dict: Dict[str, Any]) -> 'AgentBase':
+        """
+        Register a raw SWAIG function dictionary (e.g., from DataMap.to_swaig_function())
+        
+        Args:
+            function_dict: Complete SWAIG function definition dictionary
+            
+        Returns:
+            Self for method chaining
+        """
+        function_name = function_dict.get('function')
+        if not function_name:
+            raise ValueError("Function dictionary must contain 'function' field with the function name")
+            
+        if function_name in self._swaig_functions:
+            raise ValueError(f"Tool with name '{function_name}' already exists")
+        
+        # Store the raw function dictionary for data_map tools
+        # These don't have handlers since they execute on SignalWire's server
+        self._swaig_functions[function_name] = function_dict
+        return self
+    
     def _tool_decorator(self, name=None, **kwargs):
         """
         Decorator for defining SWAIG tools in a class
@@ -875,11 +897,19 @@ class AgentBase(SWMLService):
         Define the tools this agent can use
         
         Returns:
-            List of SWAIGFunction objects
+            List of SWAIGFunction objects or raw dictionaries (for data_map tools)
             
         This method can be overridden by subclasses.
         """
-        return list(self._swaig_functions.values())
+        tools = []
+        for func in self._swaig_functions.values():
+            if isinstance(func, dict):
+                # Raw dictionary from register_swaig_function (e.g., DataMap)
+                tools.append(func)
+            else:
+                # SWAIGFunction object from define_tool
+                tools.append(func)
+        return tools
     
     def on_summary(self, summary: Optional[Dict[str, Any]], raw_data: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -912,7 +942,13 @@ class AgentBase(SWMLService):
         # Get the function
         func = self._swaig_functions[name]
         
-        # Call the handler
+        # Check if this is a data_map function (raw dictionary)
+        if isinstance(func, dict):
+            # Data_map functions execute on SignalWire's server, not here
+            # This should never be called, but if it is, return an error
+            return {"response": f"Data map function '{name}' should be executed by SignalWire server, not locally"}
+        
+        # Call the handler for regular SWAIG functions
         try:
             result = func.handler(args, raw_data)
             if result is None:
@@ -979,8 +1015,19 @@ class AgentBase(SWMLService):
                 self.log.warning("unknown_function", function=function_name)
                 return False
                 
+            # Get the function and check if it's secure
+            func = self._swaig_functions[function_name]
+            is_secure = True  # Default to secure
+            
+            if isinstance(func, dict):
+                # For raw dictionaries (DataMap functions), they're always secure
+                is_secure = True
+            else:
+                # For SWAIGFunction objects, check the secure attribute
+                is_secure = func.secure
+                
             # Always allow non-secure functions
-            if not self._swaig_functions[function_name].secure:
+            if not is_secure:
                 self.log.debug("non_secure_function_allowed", function=function_name)
                 return True
             
@@ -1251,33 +1298,43 @@ class AgentBase(SWMLService):
         
         # Add each function to the functions array
         for name, func in self._swaig_functions.items():
-            # Get token for secure functions when we have a call_id
-            token = None
-            if func.secure and call_id:
-                token = self._create_tool_token(tool_name=name, call_id=call_id)
+            if isinstance(func, dict):
+                # For raw dictionaries (DataMap functions), use the entire dictionary as-is
+                # This preserves data_map and any other special fields
+                function_entry = func.copy()
                 
-            # Prepare function entry
-            function_entry = {
-                "function": name,
-                "description": func.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": func.parameters
+                # Ensure the function name is set correctly
+                function_entry["function"] = name
+                
+            else:
+                # For SWAIGFunction objects, build the entry manually
+                # Check if it's secure and get token for secure functions when we have a call_id
+                token = None
+                if func.secure and call_id:
+                    token = self._create_tool_token(tool_name=name, call_id=call_id)
+                    
+                # Prepare function entry
+                function_entry = {
+                    "function": name,
+                    "description": func.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": func.parameters
+                    }
                 }
-            }
-            
-            # Add fillers if present
-            if func.fillers:
-                function_entry["fillers"] = func.fillers
                 
-            # Add token to URL if we have one
-            if token:
-                # Create token params without call_id
-                token_params = {"token": token}
-                function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
-                
+                # Add fillers if present
+                if func.fillers:
+                    function_entry["fillers"] = func.fillers
+                    
+                # Add token to URL if we have one
+                if token:
+                    # Create token params without call_id
+                    token_params = {"token": token}
+                    function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
+                    
             functions.append(function_entry)
-            
+        
         # Add functions array to SWAIG object if we have any
         if functions:
             swaig_obj["functions"] = functions
