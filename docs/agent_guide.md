@@ -431,6 +431,43 @@ if agent.has_skill("web_search"):
 agent.remove_skill("math")
 ```
 
+### Advanced Skill Configuration with swaig_fields
+
+Skills support a special `swaig_fields` parameter that allows you to customize how SWAIG functions are registered. This parameter gets merged into the function decorator object, enabling the skill loader to add additional configuration to the tools.
+
+```python
+# Add a skill with swaig_fields to customize SWAIG function properties
+agent.add_skill("math", {
+    "precision": 2,  # Regular skill parameter
+    "swaig_fields": {  # Special fields merged into SWAIG function
+        "secure": False,  # Override default security requirement
+        "fillers": {
+            "en-US": ["Let me calculate that...", "Computing the result..."],
+            "es-ES": ["Déjame calcular eso...", "Calculando el resultado..."]
+        }
+    }
+})
+
+# Add web search with custom security and fillers
+agent.add_skill("web_search", {
+    "num_results": 3,
+    "delay": 0.5,
+    "swaig_fields": {
+        "secure": True,  # Require authentication
+        "fillers": {
+            "en-US": ["Searching the web...", "Looking that up...", "Finding information..."]
+        }
+    }
+})
+```
+
+The `swaig_fields` can include any parameter accepted by `AgentBase.define_tool()`:
+- `secure`: Boolean indicating if the function requires authentication
+- `fillers`: Dictionary mapping language codes to arrays of filler phrases
+- Any other fields supported by the SWAIG function system
+
+This feature enables advanced customization of how skills integrate with the agent's SWAIG system.
+
 ### Error Handling
 
 The skills system provides detailed error messages for common issues:
@@ -473,7 +510,7 @@ class WeatherSkill(SkillBase):
     
     def register_tools(self) -> None:
         """Register tools with the agent"""
-        self.agent.define_tool(
+        self.define_tool_with_swaig_fields(
             name="get_weather",
             description="Get current weather for a location",
             parameters={

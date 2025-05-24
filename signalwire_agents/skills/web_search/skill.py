@@ -149,19 +149,13 @@ class WebSearchSkill(SkillBase):
         
     def register_tools(self) -> None:
         """Register web search tool with the agent"""
-        self.agent.define_tool(
+        self.define_tool_with_swaig_fields(
             name="web_search",
             description="Search the web for information on any topic and return detailed results with content from multiple sources",
             parameters={
                 "query": {
                     "type": "string",
                     "description": "The search query - what you want to find information about"
-                },
-                "num_results": {
-                    "type": "integer", 
-                    "description": f"Number of web pages to search and extract content from (1-10, default: {self.default_num_results})",
-                    "minimum": 1,
-                    "maximum": 10
                 }
             },
             handler=self._web_search_handler
@@ -170,19 +164,14 @@ class WebSearchSkill(SkillBase):
     def _web_search_handler(self, args, raw_data):
         """Handler for web search tool"""
         query = args.get("query", "").strip()
-        num_results = args.get("num_results", self.default_num_results)
         
         if not query:
             return SwaigFunctionResult(
                 "Please provide a search query. What would you like me to search for?"
             )
         
-        # Validate num_results
-        try:
-            num_results = int(num_results)
-            num_results = max(1, min(num_results, 10))
-        except (ValueError, TypeError):
-            num_results = self.default_num_results
+        # Use the configured number of results (no longer a parameter)
+        num_results = self.default_num_results
         
         self.logger.info(f"Web search requested: '{query}' ({num_results} results)")
         

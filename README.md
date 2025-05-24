@@ -37,6 +37,14 @@ agent.add_skill("web_search", {
     "delay": 0.5       # Small delay between requests
 })
 
+# Advanced: Customize SWAIG function properties
+agent.add_skill("math", {
+    "swaig_fields": {
+        "secure": False,  # Override security settings
+        "fillers": {"en-US": ["Calculating..."]}  # Custom filler phrases
+    }
+})
+
 agent.serve()
 ```
 
