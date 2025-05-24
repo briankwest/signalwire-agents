@@ -128,13 +128,37 @@ class WebSearchSkill(SkillBase):
     SKILL_DESCRIPTION = "Search the web for information using Google Custom Search API"
     SKILL_VERSION = "1.0.0"
     REQUIRED_PACKAGES = ["bs4", "requests"]
-    REQUIRED_ENV_VARS = ["GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID"]
+    REQUIRED_ENV_VARS = []  # No required env vars since all config comes from params
+    
+    # Enable multiple instances support
+    SUPPORTS_MULTIPLE_INSTANCES = True
+    
+    def get_instance_key(self) -> str:
+        """
+        Get the key used to track this skill instance
+        
+        For web search, we use the search_engine_id to differentiate instances
+        """
+        search_engine_id = self.params.get('search_engine_id', 'default')
+        tool_name = self.params.get('tool_name', 'web_search')
+        return f"{self.SKILL_NAME}_{search_engine_id}_{tool_name}"
     
     def setup(self) -> bool:
         """Setup the web search skill"""
-        if not self.validate_env_vars() or not self.validate_packages():
+        # Validate required parameters
+        required_params = ['api_key', 'search_engine_id']
+        missing_params = [param for param in required_params if not self.params.get(param)]
+        if missing_params:
+            self.logger.error(f"Missing required parameters: {missing_params}")
+            return False
+        
+        if not self.validate_packages():
             return False
             
+        # Set parameters from config
+        self.api_key = self.params['api_key']
+        self.search_engine_id = self.params['search_engine_id']
+        
         # Set default parameters
         self.default_num_results = self.params.get('num_results', 1)
         self.default_delay = self.params.get('delay', 0)
@@ -144,10 +168,13 @@ class WebSearchSkill(SkillBase):
             "Try rephrasing your search or asking about a different topic."
         )
         
+        # Tool name (for multiple instances)
+        self.tool_name = self.params.get('tool_name', 'web_search')
+        
         # Initialize the search scraper
         self.search_scraper = GoogleSearchScraper(
-            api_key=os.getenv('GOOGLE_SEARCH_API_KEY'),
-            search_engine_id=os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+            api_key=self.api_key,
+            search_engine_id=self.search_engine_id
         )
         
         return True
@@ -155,7 +182,7 @@ class WebSearchSkill(SkillBase):
     def register_tools(self) -> None:
         """Register web search tool with the agent"""
         self.define_tool_with_swaig_fields(
-            name="web_search",
+            name=self.tool_name,
             description="Search the web for information on any topic and return detailed results with content from multiple sources",
             parameters={
                 "query": {
@@ -221,9 +248,9 @@ class WebSearchSkill(SkillBase):
         return [
             {
                 "title": "Web Search Capability",
-                "body": "You can search the internet for current, accurate information on any topic.",
+                "body": f"You can search the internet for current, accurate information on any topic using the {self.tool_name} tool.",
                 "bullets": [
-                    "Use the web_search tool when users ask for information you need to look up",
+                    f"Use the {self.tool_name} tool when users ask for information you need to look up",
                     "Search for news, current events, product information, or any current data",
                     "Summarize search results in a clear, helpful way",
                     "Include relevant URLs so users can read more if interested"

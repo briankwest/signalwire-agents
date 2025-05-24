@@ -366,27 +366,66 @@ class SkillfulAgent(AgentBase):
 Provides web search capabilities using Google Custom Search API with web scraping.
 
 **Requirements:**
-- Environment variables: `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_ENGINE_ID`
 - Packages: `beautifulsoup4`, `requests`
 
 **Parameters:**
+- `api_key` (required): Google Custom Search API key
+- `search_engine_id` (required): Google Custom Search Engine ID
 - `num_results` (default: 1): Number of search results to return
 - `delay` (default: 0): Delay in seconds between requests
+- `tool_name` (default: "web_search"): Custom name for the search tool
 - `no_results_message` (default: "I couldn't find any results for '{query}'. This might be due to a very specific query or temporary issues. Try rephrasing your search or asking about a different topic."): Custom message to return when no search results are found. Use `{query}` as a placeholder for the search query.
+
+**Multiple Instance Support:**
+The web_search skill supports multiple instances with different search engines and tool names, allowing you to search different data sources:
 
 **Example:**
 ```python
-# Fast single result (default)
-agent.add_skill("web_search")
+# Basic single instance
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id"
+})
+# Creates tool: web_search
+
+# Fast single result (previous default)
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
+    "num_results": 1,
+    "delay": 0
+})
 
 # Multiple results with delay
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
     "num_results": 5,
     "delay": 1.0
 })
 
+# Multiple instances with different search engines
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "general-search-engine-id",
+    "tool_name": "search_general",
+    "num_results": 1
+})
+# Creates tool: search_general
+
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "news-search-engine-id",
+    "tool_name": "search_news",
+    "num_results": 3,
+    "delay": 0.5
+})
+# Creates tool: search_news
+
 # Custom no results message
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
     "no_results_message": "Sorry, I couldn't find information about '{query}'. Please try a different search term."
 })
 ```

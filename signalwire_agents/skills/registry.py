@@ -89,7 +89,8 @@ class SkillRegistry:
                 "description": skill_class.SKILL_DESCRIPTION,
                 "version": skill_class.SKILL_VERSION,
                 "required_packages": skill_class.REQUIRED_PACKAGES,
-                "required_env_vars": skill_class.REQUIRED_ENV_VARS
+                "required_env_vars": skill_class.REQUIRED_ENV_VARS,
+                "supports_multiple_instances": skill_class.SUPPORTS_MULTIPLE_INSTANCES
             }
             for skill_class in self._skills.values()
         ]

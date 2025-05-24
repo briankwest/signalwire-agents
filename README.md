@@ -27,12 +27,17 @@ from signalwire_agents import AgentBase
 agent = AgentBase("My Assistant", route="/assistant")
 
 # Add skills with one-liners
-agent.add_skill("web_search")   # Web search capability
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id"
+})   # Web search capability
 agent.add_skill("datetime")     # Current date/time info  
 agent.add_skill("math")         # Mathematical calculations
 
 # Configure skills with parameters
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
     "num_results": 1,  # Get 1 search results
     "no_results_message": "Sorry, I couldn't find anything about '{query}'. Try rephrasing your question."
 })
@@ -43,6 +48,22 @@ agent.add_skill("math", {
         "secure": False,  # Override security settings
         "fillers": {"en-US": ["Calculating..."]}  # Custom filler phrases
     }
+})
+
+# Multiple web search instances with different tool names
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key", 
+    "search_engine_id": "general-search-engine-id",
+    "tool_name": "search_general",  # Creates search_general tool
+    "num_results": 1
+})
+
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "news-search-engine-id", 
+    "tool_name": "search_news",  # Creates search_news tool
+    "num_results": 3,
+    "delay": 0.5
 })
 
 # Multiple DataSphere instances with different tool names
@@ -69,7 +90,7 @@ agent.serve()
 
 ### Available Built-in Skills
 
-- **web_search**: Google Custom Search API integration with web scraping
+- **web_search**: Google Custom Search API integration with web scraping (supports multiple instances)
 - **datetime**: Current date and time with timezone support
 - **math**: Safe mathematical expression evaluation
 - **datasphere**: SignalWire DataSphere knowledge search (supports multiple instances)

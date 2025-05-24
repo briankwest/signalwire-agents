@@ -43,9 +43,18 @@ def main():
         print(f"Failed to add math skill: {e}")
     
     try:
+        # Get credentials from environment variables
+        google_api_key = os.getenv('GOOGLE_SEARCH_API_KEY')
+        google_search_engine_id = os.getenv('GOOGLE_SEARCH_ENGINE_ID')
+        
+        if not google_api_key or not google_search_engine_id:
+            raise ValueError("Missing GOOGLE_SEARCH_API_KEY or GOOGLE_SEARCH_ENGINE_ID environment variables")
+        
         # Add web search with custom parameters and swaig_fields for fillers
-        # num_results=1 (default) for fast responses, delay=0 (default) for no latency
+        # Pass API credentials as parameters instead of using env vars
         agent.add_skill("web_search", {
+            "api_key": google_api_key,
+            "search_engine_id": google_search_engine_id,
             "num_results": 1,  # Just get one result for faster responses
             "delay": 0,        # No delay between requests for minimal latency
             "no_results_message": "I apologize, but I wasn't able to find any information about '{query}' in my web search. Could you try rephrasing your question or asking about something else?",
@@ -64,7 +73,7 @@ def main():
         print("Added web search skill with optimized parameters and custom fillers")
     except Exception as e:
         print(f"Failed to add web search skill: {e}")
-        print("   Note: Web search requires GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID")
+        print("   Note: Web search requires GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID environment variables")
     
     # Show what skills are loaded
     loaded_skills = agent.list_skills()
@@ -81,6 +90,10 @@ def main():
                 print(f"    Requires env vars: {', '.join(skill['required_env_vars'])}")
             if skill['required_packages']:
                 print(f"    Requires packages: {', '.join(skill['required_packages'])}")
+            if skill['supports_multiple_instances']:
+                print(f"    Supports multiple instances: Yes")
+            else:
+                print(f"    Supports multiple instances: No")
     except Exception as e:
         print(f"Failed to list available skills: {e}")
     
@@ -93,32 +106,47 @@ def main():
         print("     (optimized for speed: 1 result, no delay)")
     
     print("\nSkill Parameter Examples:")
-    print("   # Default web search (1 result, no delay)")
-    print("   agent.add_skill('web_search')")
+    print("   # Default web search (requires API credentials)")
+    print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-google-api-key',")
+    print("       'search_engine_id': 'your-search-engine-id'")
+    print("   })")
     print("   ")
     print("   # Custom web search (3 results, 0.5s delay)")
-    print("   agent.add_skill('web_search', {'num_results': 3, 'delay': 0.5})")
+    print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-api-key',")
+    print("       'search_engine_id': 'your-engine-id',")
+    print("       'num_results': 3,")
+    print("       'delay': 0.5")
+    print("   })")
     print("   ")
-    print("   # Fast web search (1 result, no delay)")
-    print("   agent.add_skill('web_search', {'num_results': 1, 'delay': 0})")
+    print("   # Multiple web search instances with different engines")
+    print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-api-key',")
+    print("       'search_engine_id': 'general-engine-id',")
+    print("       'tool_name': 'search_general',")
+    print("       'num_results': 1")
+    print("   })")
+    print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-api-key',")
+    print("       'search_engine_id': 'news-engine-id',") 
+    print("       'tool_name': 'search_news',")
+    print("       'num_results': 3")
+    print("   })")
     print("   ")
     print("   # Web search with custom no results message")
     print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-api-key',")
+    print("       'search_engine_id': 'your-engine-id',")
     print("       'no_results_message': 'Sorry, no results found for \"{query}\". Please try a different search.'")
     print("   })")
     print("   ")
     print("   # Web search with custom fillers using swaig_fields")
     print("   agent.add_skill('web_search', {")
+    print("       'api_key': 'your-api-key',")
+    print("       'search_engine_id': 'your-engine-id',")
     print("       'swaig_fields': {")
     print("           'fillers': {'en-US': ['Let me google that...', 'Searching now...']}") 
-    print("       }")
-    print("   })")
-    print("   ")
-    print("   # Math skill with no security and custom fillers")
-    print("   agent.add_skill('math', {")
-    print("       'swaig_fields': {")
-    print("           'secure': False,")
-    print("           'fillers': {'en-US': ['Calculating...', 'Computing the result...']}") 
     print("       }")
     print("   })")
     
