@@ -283,7 +283,9 @@ class AgentBase(SWMLService):
         agent_id: Optional[str] = None,
         native_functions: Optional[List[str]] = None,
         schema_path: Optional[str] = None,
-        suppress_logs: bool = False
+        suppress_logs: bool = False,
+        enable_post_prompt_override: bool = False,
+        check_for_input_override: bool = False
     ):
         """
         Initialize a new agent
@@ -307,6 +309,8 @@ class AgentBase(SWMLService):
             native_functions: Optional list of native functions to include in the SWAIG object
             schema_path: Optional path to the schema file
             suppress_logs: Whether to suppress structured logs
+            enable_post_prompt_override: Whether to enable post-prompt override
+            check_for_input_override: Whether to enable check-for-input override
         """
         # Import SWMLService here to avoid circular imports
         from signalwire_agents.core.swml_service import SWMLService
@@ -409,6 +413,10 @@ class AgentBase(SWMLService):
         
         # Initialize skill manager
         self.skill_manager = SkillManager(self)
+        
+        # Initialize contexts system
+        self._contexts_builder = None
+        self._contexts_defined = False
     
     def _process_prompt_sections(self):
         """
@@ -511,6 +519,39 @@ class AgentBase(SWMLService):
     # Prompt Building Methods
     # ----------------------------------------------------------------------
     
+    def define_contexts(self) -> 'ContextBuilder':
+        """
+        Define contexts and steps for this agent (alternative to POM/prompt)
+        
+        Returns:
+            ContextBuilder for method chaining
+            
+        Note:
+            Contexts can coexist with traditional prompts. The restriction is only
+            that you can't mix POM sections with raw text in the main prompt.
+        """
+        # Import here to avoid circular imports
+        from signalwire_agents.core.contexts import ContextBuilder
+        
+        if self._contexts_builder is None:
+            self._contexts_builder = ContextBuilder(self)
+            self._contexts_defined = True
+        
+        return self._contexts_builder
+    
+    def _validate_prompt_mode_exclusivity(self):
+        """
+        Validate that POM sections and raw text are not mixed in the main prompt
+        
+        Note: This does NOT prevent contexts from being used alongside traditional prompts
+        """
+        # Only check for mixing POM sections with raw text in the main prompt
+        if self._raw_prompt and (self.pom and hasattr(self.pom, 'sections') and self.pom.sections):
+            raise ValueError(
+                "Cannot mix raw text prompt with POM sections in the main prompt. "
+                "Use either set_prompt_text() OR prompt_add_section() methods, not both."
+            )
+    
     def set_prompt_text(self, text: str) -> 'AgentBase':
         """
         Set the prompt as raw text instead of using POM
@@ -521,6 +562,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
+        self._validate_prompt_mode_exclusivity()
         self._raw_prompt = text
         return self
     
@@ -576,6 +618,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
+        self._validate_prompt_mode_exclusivity()
         if self._use_pom and self.pom:
             # Create parameters for add_section based on what's supported
             kwargs = {}
@@ -1370,14 +1413,29 @@ class AgentBase(SWMLService):
         ai_handler = self.verb_registry.get_handler("ai")
         if ai_handler:
             try:
-                # Build AI config using the proper handler
-                ai_config = ai_handler.build_config(
-                    prompt_text=None if prompt_is_pom else prompt,
-                    prompt_pom=prompt if prompt_is_pom else None,
-                    post_prompt=post_prompt,
-                    post_prompt_url=post_prompt_url,
-                    swaig=swaig_obj if swaig_obj else None
-                )
+                # Check if we're in contexts mode
+                if self._contexts_defined and self._contexts_builder:
+                    # Generate contexts instead of prompt
+                    contexts_dict = self._contexts_builder.to_dict()
+                    
+                    # Build AI config with contexts
+                    ai_config = ai_handler.build_config(
+                        prompt_text=None,
+                        prompt_pom=None,
+                        contexts=contexts_dict,
+                        post_prompt=post_prompt,
+                        post_prompt_url=post_prompt_url,
+                        swaig=swaig_obj if swaig_obj else None
+                    )
+                else:
+                    # Build AI config using the traditional prompt approach
+                    ai_config = ai_handler.build_config(
+                        prompt_text=None if prompt_is_pom else prompt,
+                        prompt_pom=prompt if prompt_is_pom else None,
+                        post_prompt=post_prompt,
+                        post_prompt_url=post_prompt_url,
+                        swaig=swaig_obj if swaig_obj else None
+                    )
                 
                 # Add new configuration parameters to the AI config
                 

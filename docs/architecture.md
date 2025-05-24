@@ -762,6 +762,223 @@ The POM (Prompt Object Model) represents a structured approach to prompt constru
 └───────────────────────────────────────────────┘
 ```
 
+### Contexts and Steps Architecture
+
+The Contexts and Steps system provides an alternative to traditional POM prompts for building structured, workflow-driven AI interactions. This system represents a fundamental shift from unstructured conversation to guided workflow execution.
+
+#### Core Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ContextBuilder                                              │
+├─────────────────────────────────────────────────────────────┤
+│ ┌─────────────────┐   ┌─────────────────┐   ┌─────────────┐ │
+│ │ Context A       │   │ Context B       │   │ Context C   │ │
+│ │ ┌─────────────┐ │   │ ┌─────────────┐ │   │ ┌─────────┐ │ │
+│ │ │ Step 1      │ │   │ │ Step 1      │ │   │ │ Step 1  │ │ │
+│ │ │ - Content   │ │   │ │ - Content   │ │   │ │ - Content│ │ │
+│ │ │ - Criteria  │ │   │ │ - Criteria  │ │   │ │ - Criteria│ │ │
+│ │ │ - Functions │ │   │ │ - Functions │ │   │ │ - Functions│ │ │
+│ │ │ - Navigation│ │   │ │ - Navigation│ │   │ │ - Navigation│ │ │
+│ │ └─────────────┘ │   │ └─────────────┘ │   │ └─────────┘ │ │
+│ │ ┌─────────────┐ │   │ ┌─────────────┐ │   │           │ │ │
+│ │ │ Step 2      │ │   │ │ Step 2      │ │   │           │ │ │
+│ │ └─────────────┘ │   │ └─────────────┘ │   │           │ │ │
+│ └─────────────────┘   └─────────────────┘   └─────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Navigation Flow Control
+
+The system implements sophisticated navigation control through two primary mechanisms:
+
+**Intra-Context Navigation (Steps within a Context):**
+```
+Context: Customer Service
+┌────────────┐    valid_steps    ┌──────────────┐    valid_steps    ┌──────────────┐
+│  greeting  │ ────────────────▶ │   identify   │ ────────────────▶ │   resolve    │
+└────────────┘                  └──────────────┘                  └──────────────┘
+      │                               │                                   │
+      │ valid_steps = ["identify"]    │ valid_steps = ["resolve", "escalate"] │
+      └───────────────────────────────┘                                   │
+                                                                          │
+                                      ┌──────────────┐ ◀────────────────────┘
+                                      │   escalate   │   valid_steps = ["escalate"]
+                                      └──────────────┘
+```
+
+**Inter-Context Navigation (Switching between Contexts):**
+```
+┌─────────────────┐    valid_contexts    ┌─────────────────┐    valid_contexts    ┌─────────────────┐
+│     Triage      │ ─────────────────▶   │   Technical     │ ─────────────────▶   │    Billing      │
+│                 │                      │   Support       │                      │                 │
+└─────────────────┘                      └─────────────────┘                      └─────────────────┘
+         │                                        │                                        │
+         │ valid_contexts = ["technical", "billing", "general"]      │                    │
+         └────────────────────────────────────────────────────────────┘                    │
+                                                                                           │
+         ┌─────────────────┐ ◀──────────────────────────────────────────────────────────────┘
+         │    General      │                 valid_contexts = ["triage"]
+         │   Inquiries     │
+         └─────────────────┘
+```
+
+#### Function Restriction System
+
+Each step can restrict available AI functions to enhance security and user experience:
+
+```
+┌─────────────────────────────────────────────────┐
+│ Function Access Control by Step                │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│ Public Context                                  │
+│ ┌─────────────────┐                             │
+│ │ Initial Contact │ Functions: ["datetime"]     │
+│ └─────────────────┘                             │
+│                                                 │
+│ Authenticated Context                           │
+│ ┌─────────────────┐                             │
+│ │ User Verified   │ Functions: ["datetime",     │
+│ └─────────────────┘            "web_search"]    │
+│                                                 │
+│ Sensitive Context                               │
+│ ┌─────────────────┐                             │
+│ │ Account Access  │ Functions: "none"           │
+│ └─────────────────┘                             │
+└─────────────────────────────────────────────────┘
+```
+
+#### SWML Generation Process
+
+The contexts system integrates with the existing SWML generation pipeline:
+
+```
+┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+│ ContextBuilder  │ ───▶ │ Context Data    │ ───▶ │ SWML AI Verb    │
+│                 │      │ Serialization   │      │ Generation      │
+└─────────────────┘      └─────────────────┘      └─────────────────┘
+         │                        │                        │
+         │                        │                        ▼
+         │                        │               ┌─────────────────┐
+         │                        │               │ prompt: {       │
+         │                        │               │   contexts: {   │
+         │                        │               │     "context1": │
+         │                        │               │       steps: {} │
+         │                        │               │   }             │
+         │                        │               │ }               │
+         │                        │               └─────────────────┘
+         │                        │
+         ▼                        ▼
+┌─────────────────┐      ┌─────────────────┐
+│ Step Content    │      │ Navigation      │
+│ - Text/POM      │      │ - valid_steps   │
+│ - Functions     │      │ - valid_contexts│
+│ - Criteria      │      │ - Restrictions  │
+└─────────────────┘      └─────────────────┘
+```
+
+#### Integration with Existing Systems
+
+**Coexistence with Traditional Prompts:**
+```
+┌─────────────────────────────────────────────────┐
+│ Agent Configuration                             │
+├─────────────────────────────────────────────────┤
+│ ┌─────────────────┐   ┌─────────────────────┐   │
+│ │ Traditional     │   │ Contexts and        │   │
+│ │ POM Sections    │   │ Steps Workflow      │   │
+│ │ (from skills,   │   │                     │   │
+│ │ global config)  │   │                     │   │
+│ └─────────────────┘   └─────────────────────┘   │
+│         │                       │               │
+│         └───────────┬───────────┘               │
+│                     ▼                           │
+│           ┌─────────────────┐                   │
+│           │ Combined SWML   │                   │
+│           │ Output          │                   │
+│           └─────────────────┘                   │
+└─────────────────────────────────────────────────┘
+```
+
+**Skills and Function Integration:**
+- Skills continue to work normally
+- Function restrictions apply per-step
+- DataMap tools integrate seamlessly
+- State management remains unchanged
+
+#### Implementation Details
+
+**Context Validation Rules:**
+- Single context must be named "default"
+- Multiple contexts can have any names
+- Context names must be unique within an agent
+- All referenced contexts in navigation must exist
+
+**Step Content Rules:**
+- Cannot mix `set_text()` with `add_section()` in same step
+- POM sections support full feature set (bullets, numbering, etc.)
+- Direct text provides simpler prompt definition
+- Content is mandatory for each step
+
+**Navigation Validation:**
+- Referenced steps in `valid_steps` must exist in same context
+- Referenced contexts in `valid_contexts` must exist in agent
+- Empty lists explicitly block navigation
+- Omitted navigation settings have specific defaults
+
+**Function Security:**
+- Functions must match exact names from agent's registered functions
+- "none" keyword blocks all functions
+- Missing `set_functions()` allows all functions
+- Function restrictions are enforced at SWML generation time
+
+#### Performance Considerations
+
+**Memory Usage:**
+- Contexts are built once at agent initialization
+- Serialization occurs only during SWML requests
+- Navigation validation happens at build time
+
+**Execution Flow:**
+- No runtime performance impact
+- SWML generation includes contexts data
+- SignalWire server handles workflow execution
+
+**Scalability:**
+- Supports complex multi-context workflows
+- No limit on number of contexts or steps
+- Efficient serialization format for large workflows
+
+#### When to Use Contexts vs DataMap vs Skills vs Custom Tools
+
+**Use Contexts and Steps when:**
+- Building guided, multi-step workflows
+- Need explicit control over conversation flow
+- Want to restrict function access by conversation stage
+- Creating customer service or support flows
+- Building applications, surveys, or onboarding processes
+
+**Use DataMap when:**
+- Integrating with REST APIs
+- Need serverless tool execution
+- Want rapid API tool development
+- Building simple request/response tools
+
+**Use Skills when:**
+- Adding reusable capabilities
+- Need one-liner integration
+- Building general-purpose agent features
+- Want community-developed functionality
+
+**Use Custom Tools when:**
+- Need complex business logic
+- Require custom webhook endpoints
+- Building agent-specific functionality
+- Need maximum flexibility and control
+
+The architecture supports using all these approaches together, allowing developers to choose the right tool for each specific requirement within a single agent.
+
 ### SWAIG Function Definition
 
 Functions are defined with:

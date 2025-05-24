@@ -93,17 +93,33 @@ class AIVerbHandler(SWMLVerbHandler):
         """
         errors = []
         
-        # Check required fields
+        # Check that prompt is present
         if "prompt" not in config:
             errors.append("Missing required field 'prompt'")
+            return False, errors
         
-        # Validate prompt structure if present
-        if "prompt" in config:
-            prompt = config["prompt"]
-            if not isinstance(prompt, dict):
-                errors.append("'prompt' must be an object")
-            elif "text" not in prompt and "pom" not in prompt:
-                errors.append("'prompt' must contain either 'text' or 'pom'")
+        prompt = config["prompt"]
+        if not isinstance(prompt, dict):
+            errors.append("'prompt' must be an object")
+            return False, errors
+        
+        # Check that prompt contains one of: text, pom, or contexts
+        has_text = "text" in prompt
+        has_pom = "pom" in prompt
+        has_contexts = "contexts" in prompt
+        
+        options_count = sum([has_text, has_pom, has_contexts])
+        
+        if options_count == 0:
+            errors.append("'prompt' must contain one of: 'text', 'pom', or 'contexts'")
+        elif options_count > 1:
+            errors.append("'prompt' can only contain one of: 'text', 'pom', or 'contexts'")
+        
+        # Validate contexts structure if present
+        if has_contexts:
+            contexts = prompt["contexts"]
+            if not isinstance(contexts, dict):
+                errors.append("'prompt.contexts' must be an object")
         
         # Validate SWAIG structure if present
         if "SWAIG" in config:
@@ -116,6 +132,7 @@ class AIVerbHandler(SWMLVerbHandler):
     def build_config(self, 
                     prompt_text: Optional[str] = None,
                     prompt_pom: Optional[List[Dict[str, Any]]] = None,
+                    contexts: Optional[Dict[str, Any]] = None,
                     post_prompt: Optional[str] = None,
                     post_prompt_url: Optional[str] = None,
                     swaig: Optional[Dict[str, Any]] = None,
@@ -124,8 +141,9 @@ class AIVerbHandler(SWMLVerbHandler):
         Build a configuration for the AI verb
         
         Args:
-            prompt_text: Text prompt for the AI (mutually exclusive with prompt_pom)
-            prompt_pom: POM structure for the AI prompt (mutually exclusive with prompt_text)
+            prompt_text: Text prompt for the AI (mutually exclusive with prompt_pom and contexts)
+            prompt_pom: POM structure for the AI prompt (mutually exclusive with prompt_text and contexts)
+            contexts: Contexts and steps configuration (mutually exclusive with prompt_text and prompt_pom)
             post_prompt: Optional post-prompt text
             post_prompt_url: Optional URL for post-prompt processing
             swaig: Optional SWAIG configuration
@@ -136,13 +154,19 @@ class AIVerbHandler(SWMLVerbHandler):
         """
         config = {}
         
-        # Add prompt (either text or POM)
+        # Add prompt (either text, POM, or contexts - mutually exclusive)
+        prompt_options_count = sum(x is not None for x in [prompt_text, prompt_pom, contexts])
+        if prompt_options_count == 0:
+            raise ValueError("One of prompt_text, prompt_pom, or contexts must be provided")
+        elif prompt_options_count > 1:
+            raise ValueError("prompt_text, prompt_pom, and contexts are mutually exclusive")
+        
         if prompt_text is not None:
             config["prompt"] = {"text": prompt_text}
         elif prompt_pom is not None:
             config["prompt"] = {"pom": prompt_pom}
-        else:
-            raise ValueError("Either prompt_text or prompt_pom must be provided")
+        elif contexts is not None:
+            config["prompt"] = {"contexts": contexts}
         
         # Add post-prompt if provided
         if post_prompt is not None:

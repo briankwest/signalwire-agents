@@ -17,14 +17,15 @@ A package for building AI agents using SignalWire's AI and SWML capabilities.
 __version__ = "0.1.9"
 
 # Import core classes for easier access
-from signalwire_agents.core.agent_base import AgentBase
+from .core.agent_base import AgentBase
+from .core.contexts import ContextBuilder, Context, Step, create_simple_context
+from .core.data_map import DataMap, create_simple_api_tool, create_expression_tool
+from .core.state import StateManager, FileStateManager
 from signalwire_agents.agent_server import AgentServer
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_builder import SWMLBuilder
-from signalwire_agents.core.state import StateManager, FileStateManager
 from signalwire_agents.core.function_result import SwaigFunctionResult
 from signalwire_agents.core.swaig_function import SWAIGFunction
-from .core.data_map import DataMap, create_simple_api_tool, create_expression_tool
 
 # Import skills to trigger discovery
 import signalwire_agents.skills
@@ -53,6 +54,10 @@ __all__ = [
     "DataMap",
     "create_simple_api_tool", 
     "create_expression_tool",
+    "ContextBuilder",
+    "Context", 
+    "Step",
+    "create_simple_context",
     "start_agent",
     "run_agent",
     "list_skills"
