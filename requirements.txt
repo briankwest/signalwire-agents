@@ -1,9 +1,10 @@
 fastapi==0.115.12
 pydantic==2.11.4
 PyYAML==6.0.2
-PyYAML==6.0.2
 Requests==2.32.3
 setuptools==66.1.1
 signalwire_pom==2.7.1
 structlog==25.3.0
 uvicorn==0.34.2
+beautifulsoup4==4.12.3
+pytz==2023.3

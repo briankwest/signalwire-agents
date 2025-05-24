@@ -23,4 +23,7 @@ from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_builder import SWMLBuilder
 from signalwire_agents.core.state import StateManager, FileStateManager
 
+# Import skills to trigger discovery
+import signalwire_agents.skills
+
 __all__ = ["AgentBase", "AgentServer", "SWMLService", "SWMLBuilder", "StateManager", "FileStateManager"]

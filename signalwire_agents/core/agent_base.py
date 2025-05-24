@@ -75,6 +75,7 @@ from signalwire_agents.core.security.session_manager import SessionManager
 from signalwire_agents.core.state import StateManager, FileStateManager
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_handler import AIVerbHandler
+from signalwire_agents.core.skill_manager import SkillManager
 
 # Create a logger
 logger = structlog.get_logger("agent_base")
@@ -404,6 +405,9 @@ class AgentBase(SWMLService):
         
         # Dynamic configuration callback
         self._dynamic_config_callback = None
+        
+        # Initialize skill manager
+        self.skill_manager = SkillManager(self)
     
     def _process_prompt_sections(self):
         """
@@ -2792,3 +2796,39 @@ class AgentBase(SWMLService):
             self.log.info("proxy_url_manually_set", proxy_url_base=self._proxy_url_base)
             
         return self
+
+    # ----------------------------------------------------------------------
+    # Skill Management Methods
+    # ----------------------------------------------------------------------
+
+    def add_skill(self, skill_name: str, params: Optional[Dict[str, Any]] = None) -> 'AgentBase':
+        """
+        Add a skill to this agent
+        
+        Args:
+            skill_name: Name of the skill to add
+            params: Optional parameters to pass to the skill for configuration
+            
+        Returns:
+            Self for method chaining
+            
+        Raises:
+            ValueError: If skill not found or failed to load with detailed error message
+        """
+        success, error_message = self.skill_manager.load_skill(skill_name, params=params)
+        if not success:
+            raise ValueError(f"Failed to load skill '{skill_name}': {error_message}")
+        return self
+
+    def remove_skill(self, skill_name: str) -> 'AgentBase':
+        """Remove a skill from this agent"""
+        self.skill_manager.unload_skill(skill_name)
+        return self
+
+    def list_skills(self) -> List[str]:
+        """List currently loaded skills"""
+        return self.skill_manager.list_loaded_skills()
+
+    def has_skill(self, skill_name: str) -> bool:
+        """Check if skill is loaded"""
+        return self.skill_manager.has_skill(skill_name)

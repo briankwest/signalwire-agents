@@ -27,6 +27,42 @@ pip install signalwire-pom
 
 ## Available Examples
 
+### web_search_agent.py
+
+An intelligent web search agent that can search the internet for real-time information using Google Custom Search API. This example demonstrates:
+- Integration with external APIs (Google Custom Search)
+- Web scraping capabilities with BeautifulSoup
+- Environment variable configuration for API credentials
+- SWAIG tools with parameters (query and number of results)
+- Error handling and content formatting for AI responses
+
+**Required Setup:**
+1. Get a Google Custom Search API key from [Google Cloud Console](https://console.developers.google.com/)
+2. Create a Custom Search Engine at [Google CSE](https://cse.google.com/cse/)
+3. Set environment variables:
+
+```bash
+export GOOGLE_SEARCH_API_KEY="your_api_key_here"
+export GOOGLE_SEARCH_ENGINE_ID="your_search_engine_id_here"
+```
+
+Or use the setup script:
+
+```bash
+./setup_web_search_agent.sh
+```
+
+To run:
+
+```bash
+python web_search_agent.py
+```
+
+The agent can respond to queries like:
+- "Search for the latest AI news"
+- "Find information about Python programming"
+- "Look up reviews of electric cars"
+
 ### simple_agent.py
 
 A simple agent that demonstrates the basic functionality of the SDK, including:

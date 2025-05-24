@@ -31,13 +31,15 @@ dependencies = [
     "signalwire_pom==2.7.1",
     "structlog==25.3.0",
     "uvicorn==0.34.2",
+    "beautifulsoup4==4.12.3",
+    "pytz==2023.3",
 ]
 
 [project.urls]
 Homepage = "https://github.com/signalwire/signalwire-ai-agents"
 
 [tool.setuptools]
-packages = ["signalwire_agents", "signalwire_agents.prefabs", "signalwire_agents.utils", "signalwire_agents.core", "signalwire_agents.core.state", "signalwire_agents.core.security"]
+packages = ["signalwire_agents", "signalwire_agents.prefabs", "signalwire_agents.utils", "signalwire_agents.core", "signalwire_agents.core.state", "signalwire_agents.core.security", "signalwire_agents.skills", "signalwire_agents.skills.web_search", "signalwire_agents.skills.datetime", "signalwire_agents.skills.math"]
 include-package-data = true
 
 [tool.setuptools.package-data]
