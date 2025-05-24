@@ -21,6 +21,7 @@ import base64
 import logging
 import inspect
 import functools
+import re
 from typing import Optional, Union, List, Dict, Any, Tuple, Callable, Type
 from urllib.parse import urlparse, urlencode
 
