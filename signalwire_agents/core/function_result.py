@@ -187,6 +187,55 @@ class SwaigFunctionResult:
         # Add to actions list
         self.action.append(swml_action)
         return self
+
+    def swml_transfer(self, dest: str, ai_response: str) -> 'SwaigFunctionResult':
+        """
+        Add a SWML transfer action with AI response setup for when transfer completes.
+        
+        This is a virtual helper that generates SWML to transfer the call to another
+        destination and sets up an AI response for when the transfer completes and
+        control returns to the agent.
+        
+        For transfers, you typically want to enable post-processing so the AI speaks
+        the response first before executing the transfer.
+        
+        Args:
+            dest: Destination URL for the transfer (SWML endpoint, SIP address, etc.)
+            ai_response: Message the AI should say when transfer completes and control returns
+                        
+        Returns:
+            Self for method chaining
+            
+        Example:
+            # Transfer with post-processing (speak first, then transfer)
+            result = (
+                SwaigFunctionResult("I'm transferring you to support", post_process=True)
+                .swml_transfer(
+                    "https://support.example.com/swml",
+                    "The support call is complete. How else can I help?"
+                )
+            )
+            
+            # Or enable post-processing with method chaining
+            result.swml_transfer(dest, ai_response).set_post_process(True)
+        """
+        # Create the SWML action structure directly
+        swml_action = {
+            "SWML": {
+                "version": "1.0.0",
+                "sections": {
+                    "main": [
+                        {"set": {"ai_response": ai_response}},
+                        {"transfer": {"dest": dest}}
+                    ]
+                }
+            }
+        }
+        
+        # Add to actions list directly
+        self.action.append(swml_action)
+        
+        return self
     
     def update_global_data(self, data: Dict[str, Any]) -> 'SwaigFunctionResult':
         """
