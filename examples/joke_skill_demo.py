@@ -6,9 +6,11 @@ This demo shows how to use the joke skill which integrates with API Ninjas
 using DataMap for serverless execution. Compare this with the raw joke_agent.py
 example to see the benefits of the skills system.
 
-Run with: python examples/joke_skill_demo.py
+Run with: API_NINJAS_KEY=your_api_key python examples/joke_skill_demo.py
 """
 
+import os
+import sys
 from signalwire_agents import AgentBase
 
 
@@ -21,6 +23,14 @@ class JokeSkillAgent(AgentBase):
             route="/joke-skill-demo"
         )
         
+        # Get API key from environment variable
+        api_key = os.environ.get("API_NINJAS_KEY")
+        if not api_key:
+            print("Error: API_NINJAS_KEY environment variable is required")
+            print("Get your free API key from https://api.api-ninjas.com/")
+            print("Then run: API_NINJAS_KEY=your_api_key python examples/joke_skill_demo.py")
+            sys.exit(1)
+        
         # Configure the agent's personality
         self.prompt_add_section("Personality", body="You are a cheerful comedian who loves sharing jokes and making people laugh.")
         self.prompt_add_section("Goal", body="Entertain users with great jokes and spread joy.")
@@ -30,15 +40,14 @@ class JokeSkillAgent(AgentBase):
             "You can tell both regular jokes and dad jokes"
         ])
         
-        # Add joke skill with API key
-        # Replace with your actual API Ninjas API key
+        # Add joke skill with API key from environment
         self.add_skill("joke", {
-            "api_key": "your-api-ninjas-api-key-here"
+            "api_key": api_key
         })
         
         # Optional: Add multiple joke instances for different types
         # self.add_skill("joke", {
-        #     "api_key": "your-api-key",
+        #     "api_key": api_key,
         #     "tool_name": "get_dad_joke",
         #     "default_joke_type": "dadjokes"
         # })
@@ -65,7 +74,8 @@ def main():
     print("\nAPI Key Setup:")
     print("1. Sign up at https://api.api-ninjas.com/")
     print("2. Get your free API key")
-    print("3. Replace 'your-api-ninjas-api-key-here' in this file")
+    print("3. Set environment variable: export API_NINJAS_KEY=your_api_key")
+    print("4. Or run with: API_NINJAS_KEY=your_api_key python examples/joke_skill_demo.py")
     
     print("\nStarting agent...")
     print("Ask for jokes like:")

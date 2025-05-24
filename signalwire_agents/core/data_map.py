@@ -25,7 +25,7 @@ class DataMap:
     to SwaigFunctionResult but for building data_map structures.
     
     Example usage:
-        # Simple API call
+        # Simple API call - output goes inside webhook
         data_map = (DataMap('get_weather')
             .purpose('Get current weather information')
             .parameter('location', 'string', 'City name', required=True)
@@ -33,12 +33,23 @@ class DataMap:
             .output(SwaigFunctionResult('Weather in ${location}: ${response.current.condition.text}, ${response.current.temp_f}°F'))
         )
         
+        # Multiple webhooks with fallback
+        data_map = (DataMap('search_multi')
+            .purpose('Search with fallback APIs')
+            .parameter('query', 'string', 'Search query', required=True)
+            .webhook('GET', 'https://api.primary.com/search?q=${query}')
+            .output(SwaigFunctionResult('Primary result: ${response.title}'))
+            .webhook('GET', 'https://api.fallback.com/search?q=${query}')
+            .output(SwaigFunctionResult('Fallback result: ${response.title}'))
+            .fallback_output(SwaigFunctionResult('Sorry, all search APIs are unavailable'))
+        )
+        
         # Expression-based responses (no API calls)
         data_map = (DataMap('file_control')
             .purpose('Control file playback')
             .parameter('command', 'string', 'Playback command')
             .parameter('filename', 'string', 'File to control', required=False)
-            .expression(r'start.*', SwaigFunctionResult().add_action('start_playback', {'file': '${args.filename}'}))
+            .expression(r'start.*', SwaigFunctionResult().add_action('start_playbook', {'file': '${args.filename}'}))
             .expression(r'stop.*', SwaigFunctionResult().add_action('stop_playback', True))
         )
         
@@ -48,8 +59,8 @@ class DataMap:
             .parameter('query', 'string', 'Search query', required=True)
             .webhook('POST', 'https://api.docs.com/search', headers={'Authorization': 'Bearer TOKEN'})
             .body({'query': '${query}', 'limit': 3})
+            .output(SwaigFunctionResult('Found: ${response.results[0].title} - ${response.results[0].summary}'))
             .foreach('${response.results}')
-            .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
         )
     """
     
@@ -203,20 +214,54 @@ class DataMap:
     
     def output(self, result: SwaigFunctionResult) -> 'DataMap':
         """
-        Set the final output result
+        Set the output result for the most recent webhook
         
         Args:
-            result: SwaigFunctionResult defining the final response
+            result: SwaigFunctionResult defining the response for this webhook
+            
+        Returns:
+            Self for method chaining
+        """
+        if not self._webhooks:
+            raise ValueError("Must add webhook before setting output")
+            
+        self._webhooks[-1]["output"] = result.to_dict()
+        return self
+    
+    def fallback_output(self, result: SwaigFunctionResult) -> 'DataMap':
+        """
+        Set a fallback output result at the top level (used when all webhooks fail)
+        
+        Args:
+            result: SwaigFunctionResult defining the fallback response
             
         Returns:
             Self for method chaining
         """
         self._output = result.to_dict()
         return self
-    
+
     def error_keys(self, keys: List[str]) -> 'DataMap':
         """
-        Set keys that indicate API errors
+        Set error keys for the most recent webhook (if webhooks exist) or top-level
+        
+        Args:
+            keys: List of JSON keys whose presence indicates an error
+            
+        Returns:
+            Self for method chaining
+        """
+        if self._webhooks:
+            # Add to most recent webhook
+            self._webhooks[-1]["error_keys"] = keys
+        else:
+            # Store as top-level error keys
+            self._error_keys = keys
+        return self
+    
+    def global_error_keys(self, keys: List[str]) -> 'DataMap':
+        """
+        Set top-level error keys (applies to all webhooks)
         
         Args:
             keys: List of JSON keys whose presence indicates an error
