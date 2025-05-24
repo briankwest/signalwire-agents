@@ -50,6 +50,13 @@ The SDK is built around a clear class hierarchy:
    - Customizable configurations
    - Extensible designs for common use cases
 
+7. **Skills System**
+   - Modular skill architecture for extending agent capabilities
+   - Automatic skill discovery from directory structure
+   - Parameter-configurable skills for customization
+   - Dependency validation (packages and environment variables)
+   - Built-in skills (web_search, datetime, math)
+
 ## Request Flow
 
 ### SWML Document Request (GET/POST /)
@@ -99,6 +106,114 @@ Common state management methods:
 - `update_state(call_id, data)`: Update state for a call
 - `set_state(call_id, data)`: Set state for a call (overriding existing)
 - `clear_state(call_id)`: Remove state for a call
+
+## Skills System
+
+The Skills System provides a modular architecture for extending agent capabilities through self-contained, reusable components. Skills are automatically discovered, validated, and can be configured with parameters.
+
+### Architecture Overview
+
+The skills system follows a three-layer architecture:
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Agent Layer     │    │ Management      │    │ Skills Layer    │
+│                 │    │ Layer           │    │                 │
+│ AgentBase       │━━━▶│ SkillManager    │━━━▶│ SkillBase       │
+│ .add_skill()    │    │ .load_skill()   │    │ .setup()        │
+│                 │    │ .unload_skill() │    │ .register_tools()│
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         │                       │                       │
+    ┌────▼────┐             ┌────▼────┐             ┌────▼────┐
+    │Request  │             │Registry │             │Skill    │
+    │Routing  │             │Discovery│             │Instance │
+    │         │             │         │             │         │
+    └─────────┘             └─────────┘             └─────────┘
+```
+
+### Core Components
+
+1. **SkillBase**: Abstract base class defining the skill interface
+   - Dependency validation (packages and environment variables)
+   - Tool registration with the agent
+   - Parameter support for configuration
+   - Lifecycle management (setup, cleanup)
+
+2. **SkillManager**: Manages skill loading and lifecycle
+   - Skill discovery and registration
+   - Dependency validation and error reporting
+   - Parameter passing to skills
+   - Integration with agent prompt and tool systems
+
+3. **SkillRegistry**: Automatic skill discovery system
+   - Directory-based skill discovery
+   - Class introspection and registration
+   - Metadata extraction for skill information
+
+### Skill Lifecycle
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ Discovery       │    │ Loading         │    │ Registration    │
+│                 │    │                 │    │                 │
+│ 1. Scan dirs    │━━━▶│ 1. Validate     │━━━▶│ 1. Add tools    │
+│ 2. Import mods  │    │    deps         │    │ 2. Add prompts  │
+│ 3. Find classes │    │ 2. Create       │    │ 3. Add hints    │
+│ 4. Register     │    │    instance     │    │ 4. Store ref    │
+│                 │    │ 3. Call setup() │    │                 │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Parameter System
+
+Skills support configurable parameters for customization:
+
+```python
+# Default behavior
+agent.add_skill("web_search")
+
+# Custom configuration
+agent.add_skill("web_search", {
+    "num_results": 3,
+    "delay": 0.5
+})
+```
+
+Parameters are passed to the skill constructor and accessible via `self.params`:
+
+```python
+class WebSearchSkill(SkillBase):
+    def setup(self) -> bool:
+        self.num_results = self.params.get('num_results', 1)
+        self.delay = self.params.get('delay', 0)
+        # Configure behavior based on parameters
+```
+
+### Error Handling
+
+The system provides detailed error reporting for common issues:
+
+- **Missing Dependencies**: Lists specific missing packages or environment variables
+- **Discovery Failures**: Reports issues during skill discovery or import
+- **Setup Failures**: Provides details when skill setup fails
+- **Parameter Validation**: Validates parameter types and values
+
+Error messages are actionable and specific:
+```
+Failed to load skill 'web_search': Missing required environment variables: ['GOOGLE_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID']
+```
+
+### Integration Points
+
+Skills integrate seamlessly with existing agent systems:
+
+1. **SWAIG Tools**: Skills register tools that become available to the AI
+2. **Prompt System**: Skills can add prompt sections and hints
+3. **Global Data**: Skills can contribute to agent context
+4. **State Management**: Skills can access agent state if needed
+
+This architecture enables powerful one-liner integration while maintaining flexibility and extensibility.
 
 ## Security Model
 
@@ -183,6 +298,39 @@ The SDK is designed to be highly extensible:
    self.set_dynamic_config_callback(self.configure_agent_dynamically)
    ```
 
+8. **Skills Integration**: Add capabilities with one-liner calls
+   ```python
+   # Add built-in skills
+   agent.add_skill("web_search")
+   agent.add_skill("datetime")
+   agent.add_skill("math")
+   
+   # Configure skills with parameters
+   agent.add_skill("web_search", {
+       "num_results": 3,
+       "delay": 0.5
+   })
+   ```
+
+9. **Custom Skills**: Create reusable skill modules
+   ```python
+   from signalwire_agents.core.skill_base import SkillBase
+   
+   class MyCustomSkill(SkillBase):
+       SKILL_NAME = "my_skill"
+       SKILL_DESCRIPTION = "A custom skill"
+       REQUIRED_PACKAGES = ["requests"]
+       REQUIRED_ENV_VARS = ["API_KEY"]
+       
+       def setup(self) -> bool:
+           # Initialize the skill
+           return True
+           
+       def register_tools(self) -> None:
+           # Register tools with the agent
+           self.agent.define_tool(...)
+   ```
+
 ### Dynamic Configuration
 
 The dynamic configuration system enables agents to adapt their behavior on a per-request basis by examining incoming HTTP request data. This architectural pattern supports complex use cases like multi-tenant applications, A/B testing, and personalization while maintaining a single agent deployment.
@@ -201,7 +349,7 @@ Dynamic configuration intercepts the SWML document generation process to apply r
    ┌───▼────┐           ┌────▼─────┐            ┌─────▼──────┐          ┌────▼────┐
    │Query   │           │Request   │            │Agent       │          │Rendered │
    │Params  │           │Data      │            │Builder     │          │Response │
-   │Body    │           │Analysis  │            │Methods     │          │Content  │
+   │Body    │           │Analysis  │            │Methods     │          │         │
    │Headers │           │Logic     │            │Execution   │          │         │
    └────────┘           └──────────┘            └────────────┘          └─────────┘
 ```
@@ -278,7 +426,7 @@ The `EphemeralAgentConfig` object provides the same familiar methods as `AgentBa
 │ │ Global Data     │   │ Hints & Speech  │   │ Functions       │              │
 │ │ ─────────────── │   │ ─────────────── │   │ ─────────────── │              │
 │ │ • set_global()  │   │ • add_hints()   │   │ • native_funcs()│              │
-│ │ • update_data() │   │ • pronunciation │   │ • includes      │              │
+│ │ • update_data() │   │ • pronunciation │   │ • recognition   │              │
 │ │ • session data  │   │ • recognition   │   │ • external URLs │              │
 │ └─────────────────┘   └─────────────────┘   └─────────────────┘              │
 │                                                                               │

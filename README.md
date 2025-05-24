@@ -14,6 +14,47 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **State Management**: Persistent conversation state with automatic tracking
 - **Prefab Archetypes**: Ready-to-use agent types for common scenarios
 - **Multi-Agent Support**: Host multiple agents on a single server
+- **Modular Skills System**: Add capabilities to agents with simple one-liner calls
+
+## Skills System
+
+The SignalWire Agents SDK includes a powerful modular skills system that allows you to add complex capabilities to your agents with simple one-liner calls:
+
+```python
+from signalwire_agents import AgentBase
+
+# Create an agent
+agent = AgentBase("My Assistant", route="/assistant")
+
+# Add skills with one-liners
+agent.add_skill("web_search")   # Web search capability
+agent.add_skill("datetime")     # Current date/time info  
+agent.add_skill("math")         # Mathematical calculations
+
+# Configure skills with parameters
+agent.add_skill("web_search", {
+    "num_results": 3,  # Get 3 search results
+    "delay": 0.5       # Small delay between requests
+})
+
+agent.serve()
+```
+
+### Available Built-in Skills
+
+- **web_search**: Google Custom Search API integration with web scraping
+- **datetime**: Current date and time with timezone support
+- **math**: Safe mathematical expression evaluation
+
+### Benefits
+
+- **One-liner integration**: `agent.add_skill("skill_name")`
+- **Configurable parameters**: `agent.add_skill("skill_name", {"param": "value"})`
+- **Automatic discovery**: Skills are automatically found from the skills directory
+- **Dependency validation**: Clear error messages for missing requirements
+- **Modular architecture**: Skills are self-contained and reusable
+
+For detailed documentation, see [Skills System README](docs/SKILLS_SYSTEM_README.md).
 
 ## Installation
 

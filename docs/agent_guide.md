@@ -6,6 +6,7 @@
 - [Creating an Agent](#creating-an-agent)
 - [Prompt Building](#prompt-building)
 - [SWAIG Functions](#swaig-functions)
+- [Skills System](#skills-system)
 - [Multilingual Support](#multilingual-support)
 - [Agent Configuration](#agent-configuration)
 - [Dynamic Agent Configuration](#dynamic-agent-configuration)
@@ -333,6 +334,260 @@ The expiration timer resets each time a function is successfully called, so as l
 #### Custom Token Validation
 
 You can override the default token validation by implementing your own `validate_tool_token` method in your custom agent class.
+
+## Skills System
+
+The Skills System allows you to extend your agents with powerful capabilities using simple one-liner calls. Skills are modular, reusable components that can be easily added to any agent and configured with parameters.
+
+### Quick Start
+
+```python
+from signalwire_agents import AgentBase
+
+class SkillfulAgent(AgentBase):
+    def __init__(self):
+        super().__init__(name="skillful-agent", route="/skillful")
+        
+        # Add skills with one-liners
+        self.add_skill("web_search")    # Web search capability
+        self.add_skill("datetime")      # Current date/time info
+        self.add_skill("math")          # Mathematical calculations
+        
+        # Configure skills with parameters
+        self.add_skill("web_search", {
+            "num_results": 3,  # Get 3 search results instead of default 1
+            "delay": 0.5       # Add delay between requests
+        })
+```
+
+### Available Built-in Skills
+
+#### Web Search Skill (`web_search`)
+Provides web search capabilities using Google Custom Search API with web scraping.
+
+**Requirements:**
+- Environment variables: `GOOGLE_SEARCH_API_KEY`, `GOOGLE_SEARCH_ENGINE_ID`
+- Packages: `beautifulsoup4`, `requests`
+
+**Parameters:**
+- `num_results` (default: 1): Number of search results to return
+- `delay` (default: 0): Delay in seconds between requests
+
+**Example:**
+```python
+# Fast single result (default)
+agent.add_skill("web_search")
+
+# Multiple results with delay
+agent.add_skill("web_search", {
+    "num_results": 5,
+    "delay": 1.0
+})
+```
+
+#### DateTime Skill (`datetime`)
+Provides current date and time information with timezone support.
+
+**Requirements:**
+- Packages: `pytz`
+
+**Tools Added:**
+- `get_current_time`: Get current time with optional timezone
+- `get_current_date`: Get current date with optional timezone
+
+**Example:**
+```python
+agent.add_skill("datetime")
+# Agent can now tell users the current time and date
+```
+
+#### Math Skill (`math`)
+Provides safe mathematical expression evaluation.
+
+**Requirements:**
+- None (uses built-in Python functionality)
+
+**Tools Added:**
+- `calculate`: Evaluate mathematical expressions safely
+
+**Example:**
+```python
+agent.add_skill("math")
+# Agent can now perform calculations like "2 + 3 * 4"
+```
+
+### Skill Management
+
+```python
+# Check what skills are loaded
+loaded_skills = agent.list_skills()
+print(f"Loaded skills: {', '.join(loaded_skills)}")
+
+# Check if a specific skill is loaded
+if agent.has_skill("web_search"):
+    print("Web search is available")
+
+# Remove a skill (if needed)
+agent.remove_skill("math")
+```
+
+### Error Handling
+
+The skills system provides detailed error messages for common issues:
+
+```python
+try:
+    agent.add_skill("web_search")
+except ValueError as e:
+    print(f"Failed to load skill: {e}")
+    # Output: "Failed to load skill 'web_search': Missing required environment variables: ['GOOGLE_SEARCH_API_KEY']"
+```
+
+### Creating Custom Skills
+
+You can create your own skills by extending the `SkillBase` class:
+
+```python
+from signalwire_agents.core.skill_base import SkillBase
+from signalwire_agents.core.function_result import SwaigFunctionResult
+
+class WeatherSkill(SkillBase):
+    """A custom skill for weather information"""
+    
+    SKILL_NAME = "weather"
+    SKILL_DESCRIPTION = "Get weather information for locations"
+    SKILL_VERSION = "1.0.0"
+    REQUIRED_PACKAGES = ["requests"]
+    REQUIRED_ENV_VARS = ["WEATHER_API_KEY"]
+    
+    def setup(self) -> bool:
+        """Setup the skill - validate dependencies and initialize"""
+        if not self.validate_env_vars() or not self.validate_packages():
+            return False
+        
+        # Get configuration parameters
+        self.default_units = self.params.get('units', 'fahrenheit')
+        self.timeout = self.params.get('timeout', 10)
+        
+        return True
+    
+    def register_tools(self) -> None:
+        """Register tools with the agent"""
+        self.agent.define_tool(
+            name="get_weather",
+            description="Get current weather for a location",
+            parameters={
+                "location": {
+                    "type": "string",
+                    "description": "City or location name"
+                },
+                "units": {
+                    "type": "string",
+                    "description": "Temperature units (fahrenheit or celsius)",
+                    "enum": ["fahrenheit", "celsius"]
+                }
+            },
+            handler=self._get_weather_handler
+        )
+    
+    def _get_weather_handler(self, args, raw_data):
+        """Handle weather requests"""
+        location = args.get("location", "")
+        units = args.get("units", self.default_units)
+        
+        if not location:
+            return SwaigFunctionResult("Please provide a location")
+        
+        # Your weather API integration here
+        weather_data = f"Weather for {location}: 72°F and sunny"
+        return SwaigFunctionResult(weather_data)
+    
+    def get_hints(self) -> List[str]:
+        """Return speech recognition hints"""
+        return ["weather", "temperature", "forecast", "conditions"]
+    
+    def get_prompt_sections(self) -> List[Dict[str, Any]]:
+        """Return prompt sections to add to agent"""
+        return [
+            {
+                "title": "Weather Information",
+                "body": "You can provide current weather information for any location.",
+                "bullets": [
+                    "Use get_weather tool when users ask about weather",
+                    "Always specify the location clearly",
+                    "Include temperature and conditions in your response"
+                ]
+            }
+        ]
+```
+
+**Using the custom skill:**
+```python
+# Place the skill in signalwire_agents/skills/weather/skill.py
+# Then use it in your agent:
+
+agent.add_skill("weather", {
+    "units": "celsius",
+    "timeout": 15
+})
+```
+
+### Skills with Dynamic Configuration
+
+Skills work seamlessly with dynamic configuration:
+
+```python
+class DynamicSkillAgent(AgentBase):
+    def __init__(self):
+        super().__init__(name="dynamic-skill-agent")
+        self.set_dynamic_config_callback(self.configure_per_request)
+    
+    def configure_per_request(self, query_params, body_params, headers, agent):
+        # Add different skills based on request parameters
+        tier = query_params.get('tier', 'basic')
+        
+        # Basic skills for all users
+        agent.add_skill("datetime")
+        agent.add_skill("math")
+        
+        # Premium skills for premium users
+        if tier == 'premium':
+            agent.add_skill("web_search", {
+                "num_results": 5,
+                "delay": 0.5
+            })
+        elif tier == 'basic':
+            agent.add_skill("web_search", {
+                "num_results": 1,
+                "delay": 0
+            })
+```
+
+### Best Practices
+
+1. **Choose appropriate parameters**: Configure skills for your use case
+   ```python
+   # For speed (customer service)
+   agent.add_skill("web_search", {"num_results": 1, "delay": 0})
+   
+   # For research (detailed analysis)
+   agent.add_skill("web_search", {"num_results": 5, "delay": 1.0})
+   ```
+
+2. **Handle missing dependencies gracefully**:
+   ```python
+   try:
+       agent.add_skill("web_search")
+   except ValueError as e:
+       self.logger.warning(f"Web search unavailable: {e}")
+       # Continue without web search capability
+   ```
+
+3. **Document your custom skills**: Include clear descriptions and parameter documentation
+
+4. **Test skills in isolation**: Create simple test scripts to verify skill functionality
+
+For more detailed information about the skills system architecture and advanced customization, see the [Skills System README](SKILLS_SYSTEM_README.md).
 
 ## Multilingual Support
 
