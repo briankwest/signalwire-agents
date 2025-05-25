@@ -110,30 +110,33 @@ SignalWire's architecture is built upon FreeSWITCH, the open-source telephony pl
 
 ### Programmable Unified Communications (PUC)
 
-SignalWire introduces the concept of **Programmable Unified Communications (PUC)** - a composable infrastructure approach that abstracts telecom primitives into reusable building blocks:
+SignalWire has created a category in the communications space called **PUC (Programmable Unified Communications)** - a cloud replacement for local VoIP infrastructure and services that makes communication programmable, composable, and easy to manage.
+
+#### Call Fabric: PUC Implementation
+
+**Call Fabric** is SignalWire's implementation of Programmable Unified Communications, providing the foundation for building communications solutions through composable resources.
 
 #### Composable Resources
-- **AI Agents**: Intelligent conversation handlers
-- **Call Routing Scripts**: Dynamic call flow management
-- **IVRs**: Interactive voice response systems
-- **Conferences**: Multi-party communication rooms
-- **Registered Users**: Managed user identities with roles
-- **Queue Systems**: Advanced call distribution logic
 
-#### Developer Benefits
-```python
-# Mix and match resources to create complex systems
-healthcare_system = PUCApplication([
-    AIAgent("appointment_scheduler"),
-    CallQueue("nurse_line"),
-    Conference("doctor_consultations"),
-    UserRegistry("medical_staff"),
-    ComplianceLayer("hipaa_protection")
-])
+SignalWire introduces composable telecom infrastructure where every element is modular and reusable:
 
-# Deploy applications in weeks, not years
-healthcare_system.deploy()
-```
+- **Rooms**: Multi-party conferencing spaces that support phone, SIP, and browser participants
+- **Subscribers**: SIP endpoints or mobile apps for registered users
+- **Scripts (SWML)**: Call logic and interactive voice response systems
+- **AI Agents**: Intelligent conversation handlers with real-time capabilities
+- **Queues**: Dynamic traffic routing and call distribution systems
+
+#### Resource-Based Architecture
+
+SWML scripts, Subscribers, AI Agents, and Rooms are resources in SignalWire that enable a resource model similar to familiar Internet components. Clients connect to Resources via Addresses, making applications available at scale.
+
+#### Dynamic Composition
+
+When resources are composed, you can use APIs to interact with callers and build custom solutions:
+
+- **Dynamic Call Routing**: IVR scripts that connect calls to AI agents or live support
+- **Multi-Channel Conferencing**: Seamless integration of phone, SIP, and browser participants  
+- **Scalable Infrastructure**: All resources scale dynamically with low-latency performance and geographic redundancy
 
 ### Cloud-Agnostic Global Infrastructure
 
@@ -1128,45 +1131,6 @@ class CustomerServiceAgent(AgentBase):
 ---
 
 ## Real-World Applications
-
-### Programmable Unified Communications (PUC) in Action
-
-SignalWire's composable infrastructure approach enables developers to mix and match resources to create sophisticated communication systems in weeks rather than years. Here are real-world examples:
-
-#### Healthcare: Secure HIPAA-Compliant Appointment System
-
-**Goal**: Let patients schedule, confirm, or cancel appointments via voice
-
-**Composable Resources Used**:
-- AI Agent for appointment interaction
-- AI Gateway for EMR and scheduling system integration  
-- Conference Room for escalated audio/video calls with doctors
-- User Management System for back-office agents or nurse line
-- Lightweight Scripting for call routing and compliance logic
-
-**Flow**:
-1. Patient calls a number tied to a pre-composed call routing script
-2. AI Agent confirms identity and retrieves availability via SignalWire AI Gateway and RAG
-3. Patient confirms or changes appointments
-4. If escalation needed, patient is transferred to a Room or Subscriber
-5. Sensitive information remains compliant with PCI and HIPAA requirements
-
-#### Enterprise: Virtual Receptionist for Distributed Teams
-
-**Goal**: Build a smart receptionist for distributed, hybrid staff across the globe
-
-**Composable Resources Used**:
-- AI Agent for natural conversation + name/intent capture
-- User Management System for remote employees with SIP/WebRTC endpoints
-- Call Queue for when staff is unavailable
-- Script for core logic
-- SendSMS to notify team members of missed calls
-
-**Flow**:
-1. Caller is greeted by the AI agent
-2. AI asks "Who are you trying to reach?" or "How can I help you?"
-3. Based on user intent, routes to correct Subscriber (registered user)
-4. If person is away, call goes to Voicemail, then sends SMS/email notification
 
 ### Use Cases
 
