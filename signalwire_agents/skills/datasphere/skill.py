@@ -134,20 +134,21 @@ class DataSphereSkill(SkillBase):
             response.raise_for_status()
             data = response.json()
             
-            # Check if we have results
+            # Check if we have valid response data
             if not data or not isinstance(data, dict):
+                self.logger.warning(f"DataSphere API returned invalid data: {data}")
                 formatted_message = self.no_results_message.format(query=query) if '{query}' in self.no_results_message else self.no_results_message
                 return SwaigFunctionResult(formatted_message)
             
-            # Extract results (assuming the API returns a list of results)
-            results = data.get('results', [])  # Adjust this based on actual API response format
+            # Extract results - DataSphere API returns 'chunks', not 'results'
+            chunks = data.get('chunks', [])
             
-            if not results:
+            if not chunks:
                 formatted_message = self.no_results_message.format(query=query) if '{query}' in self.no_results_message else self.no_results_message
                 return SwaigFunctionResult(formatted_message)
             
             # Format the results
-            formatted_results = self._format_search_results(query, results)
+            formatted_results = self._format_search_results(query, chunks)
             return SwaigFunctionResult(formatted_results)
             
         except requests.exceptions.Timeout:
@@ -166,29 +167,28 @@ class DataSphereSkill(SkillBase):
                 "Sorry, I encountered an error while searching the knowledge base. Please try again later."
             )
     
-    def _format_search_results(self, query: str, results: List[Dict[str, Any]]) -> str:
+    def _format_search_results(self, query: str, chunks: List[Dict[str, Any]]) -> str:
         """Format search results for display"""
-        if len(results) == 1:
+        if len(chunks) == 1:
             result_text = f"I found 1 result for '{query}':\n\n"
         else:
-            result_text = f"I found {len(results)} results for '{query}':\n\n"
+            result_text = f"I found {len(chunks)} results for '{query}':\n\n"
         
         formatted_results = []
         
-        for i, result in enumerate(results, 1):
+        for i, chunk in enumerate(chunks, 1):
             result_content = f"=== RESULT {i} ===\n"
             
-            # Handle different possible result formats from DataSphere API
-            # Adjust these field names based on the actual API response format
-            if 'content' in result:
-                result_content += result['content']
-            elif 'text' in result:
-                result_content += result['text']
-            elif 'chunk' in result:
-                result_content += result['chunk']
+            # DataSphere API returns chunks with 'text' field
+            if 'text' in chunk:
+                result_content += chunk['text']
+            elif 'content' in chunk:
+                result_content += chunk['content']
+            elif 'chunk' in chunk:
+                result_content += chunk['chunk']
             else:
                 # Fallback to the entire result as JSON if we don't recognize the format
-                result_content += json.dumps(result, indent=2)
+                result_content += json.dumps(chunk, indent=2)
             
             result_content += f"\n{'='*50}\n\n"
             formatted_results.append(result_content)

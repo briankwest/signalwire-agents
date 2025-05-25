@@ -6,85 +6,79 @@ The DataMap system allows you to create SWAIG tools that integrate directly with
 
 - [Overview](#overview)
 - [Basic Usage](#basic-usage)
-- [Core Concepts](#core-concepts)
+- [DataMap Builder Pattern](#datamap-builder-pattern)
+- [Processing Pipeline](#processing-pipeline)
 - [Variable Expansion](#variable-expansion)
 - [Webhook Configuration](#webhook-configuration)
+- [Array Processing with Foreach](#array-processing-with-foreach)
 - [Expression-Based Tools](#expression-based-tools)
-- [Array Processing](#array-processing)
 - [Error Handling](#error-handling)
 - [Helper Functions](#helper-functions)
 - [Real-World Examples](#real-world-examples)
 - [Best Practices](#best-practices)
-- [API Reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-DataMap tools provide a declarative way to define API integrations that run on SignalWire's infrastructure. Instead of creating webhook endpoints, you describe the API call and response processing using a fluent builder interface.
+DataMap tools provide a declarative way to define API integrations that run on SignalWire's infrastructure. Instead of creating webhook endpoints, you describe the API call and response processing using JSON configuration that gets executed serverlessly.
 
-### Benefits
+### Key Benefits
 
-- **Serverless execution**: No need to host webhook endpoints
-- **Simplified deployment**: No infrastructure to manage
-- **Built-in authentication**: Support for various auth methods
-- **Response processing**: JSON path traversal and array iteration
-- **Error handling**: Automatic error detection
-- **Variable expansion**: Dynamic parameter substitution
+- **No webhook infrastructure**: Tools run on SignalWire servers
+- **Simplified deployment**: No need to expose endpoints  
+- **Built-in authentication**: Support for API keys, Bearer tokens, Basic auth
+- **Response processing**: Built-in JSON path traversal and array processing
+- **Error handling**: Automatic error detection with `error_keys`
+- **Pattern matching**: Expression-based responses without API calls
 
 ### When to Use DataMap vs Skills vs Custom Tools
 
 - **DataMap**: Simple REST API integrations, no complex processing needed
-- **Skills**: Complex multi-step workflows, custom logic, state management
-- **Custom Tools**: Full control over execution, database access, complex business logic
+- **Skills**: Reusable capabilities with complex logic or dependencies
+- **Custom Tools**: Full control over webhook handling and processing
 
 ## Basic Usage
 
 ```python
-from signalwire_agents import AgentBase
 from signalwire_agents.core.data_map import DataMap
 from signalwire_agents.core.function_result import SwaigFunctionResult
 
-class WeatherAgent(AgentBase):
-    def __init__(self):
-        super().__init__(name="weather-agent", route="/weather")
-        
-        # Create a weather API tool - output goes inside webhook
+class MyAgent(AgentBase):
+    def setup_tools(self):
+        # Simple weather API integration
         weather_tool = (DataMap('get_weather')
             .description('Get current weather information')
             .parameter('location', 'string', 'City name', required=True)
-            .webhook('GET', 'https://api.weather.com/v1/current?key=YOUR_API_KEY&q=${location}')
-            .output(SwaigFunctionResult('Weather in ${location}: ${response.current.condition.text}, ${response.current.temp_f}°F'))
+            .webhook('GET', 'https://api.weather.com/v1/current?key=YOUR_API_KEY&q=${args.location}')
+            .output(SwaigFunctionResult('Weather in ${args.location}: ${response.current.condition.text}, ${response.current.temp_f}°F'))
             .error_keys(['error'])
         )
         
-        # Register the tool
+        # Register with agent
         self.register_swaig_function(weather_tool.to_swaig_function())
-
-agent = WeatherAgent()
-agent.serve()
 ```
 
-## Core Concepts
-
-### DataMap Builder Pattern
+## DataMap Builder Pattern
 
 DataMap uses a fluent interface where methods can be chained together:
 
 ```python
 tool = (DataMap('function_name')
-    .description('What this function does')
-    .parameter('param1', 'string', 'Parameter description', required=True)
-    .webhook('GET', 'https://api.example.com/endpoint')
-    .output(SwaigFunctionResult('Response: ${response.field}'))
+    .description('Tool description')
+    .parameter('param', 'string', 'Parameter description', required=True)
+    .webhook('POST', 'https://api.example.com/endpoint')
+    .body({'data': '${args.param}'})
+    .output(SwaigFunctionResult('Result: ${response.value}'))
 )
 ```
 
-### Processing Pipeline
+## Processing Pipeline
 
 DataMap tools follow this execution order:
 
 1. **Expressions**: Pattern matching against arguments (if defined)
-2. **Webhooks**: API calls (if expressions don't match)
-3. **Foreach**: Array processing (if webhook returns array)
+2. **Webhooks**: API calls (if expressions don't match or aren't defined)
+3. **Foreach**: Array processing (if webhook returns array and foreach is configured)
 4. **Output**: Final response generation
 
 The pipeline stops at the first successful step.
@@ -133,7 +127,8 @@ DataMap supports powerful variable substitution using `${variable}` syntax:
 | `${args.param_name}` | Function arguments | `${args.location}` |
 | `${array[0].field}` | API response data (array) | `${array[0].joke}` |
 | `${response.field}` | API response data (object) | `${response.status}` |
-| `${foreach.field}` | Current array item | `${foreach.title}` |
+| `${this.field}` | Current item in foreach | `${this.title}` |
+| `${output_key}` | Built string from foreach | `${formatted_results}` |
 | `${global_data.key}` | Agent global data | `${global_data.user_id}` |
 | `${meta_data.call_id}` | Call metadata | `${meta_data.call_id}` |
 
@@ -160,7 +155,7 @@ Understanding when to use different variable types:
 |---------|---------------|---------|-------------|
 | **Array APIs** | `${array[0].field}` | `${array[0].joke}` | API returns JSON array `[{...}]` |
 | **Object APIs** | `${response.field}` | `${response.temperature}` | API returns JSON object `{...}` |
-| **Foreach loops** | `${foreach.field}` | `${foreach.title}` | Inside array processing |
+| **Foreach processing** | `${this.field}` | `${this.title}` | Inside foreach append template |
 | **Function args** | `${args.field}` | `${args.location}` | User-provided parameters |
 | **Agent data** | `${global_data.field}` | `${global_data.api_key}` | Agent configuration |
 
@@ -185,7 +180,7 @@ Understanding when to use different variable types:
     {"title": "Result 2", "snippet": "..."}
   ]
 }
-# Use: .foreach('${response.results}') then ${foreach.title}
+# Configure foreach and use: ${this.title} in append template
 ```
 
 ### Examples
@@ -246,6 +241,77 @@ Understanding when to use different variable types:
          })
 ```
 
+## Array Processing with Foreach
+
+The `foreach` mechanism processes arrays by building a concatenated string. It does **not** iterate like JavaScript forEach - instead it builds a single output string from array elements.
+
+### How Foreach Works
+
+1. **input_key**: Specifies which key in the API response contains the array
+2. **output_key**: Names the string variable that gets built up  
+3. **max**: Limits how many array items to process
+4. **append**: Template string that gets evaluated for each item and concatenated
+
+```python
+search_tool = (DataMap('search_docs')
+    .description('Search documentation')
+    .parameter('query', 'string', 'Search query', required=True)
+    .webhook('GET', 'https://api.docs.com/search?q=${args.query}')
+    .foreach({
+        "input_key": "results",           # API response key containing array
+        "output_key": "formatted_results", # Name for the built string
+        "max": 3,                         # Process max 3 items
+        "append": "Document: ${this.title} - ${this.summary}\n"  # Template for each item
+    })
+    .output(SwaigFunctionResult('Search results for "${args.query}":\n\n${formatted_results}'))
+)
+```
+
+### Array Response Example
+
+If the API returns:
+```json
+{
+  "results": [
+    {"title": "Getting Started", "summary": "Basic setup"},
+    {"title": "Advanced Features", "summary": "Complex workflows"}
+  ]
+}
+```
+
+The foreach will build a string in `formatted_results`:
+```
+Document: Getting Started - Basic setup
+Document: Advanced Features - Complex workflows
+```
+
+### Foreach vs Direct Array Access
+
+| Approach | Use Case | Example |
+|----------|----------|---------|
+| **Direct access** | Single array item | `${array[0].joke}` |
+| **Foreach** | Multiple items formatted as string | `${formatted_results}` after foreach |
+
+```python
+# Direct access - single item from array response
+joke_tool = (DataMap('get_joke')
+    .webhook('GET', 'https://api.jokes.com/random')
+    .output(SwaigFunctionResult('${array[0].joke}'))  # Just first joke
+)
+
+# Foreach - multiple items formatted
+search_tool = (DataMap('search_all')
+    .webhook('GET', 'https://api.search.com/query')
+    .foreach({
+        "input_key": "results",
+        "output_key": "all_results", 
+        "max": 5,
+        "append": "- ${this.title}: ${this.description}\n"
+    })
+    .output(SwaigFunctionResult('Found multiple results:\n${all_results}'))
+)
+```
+
 ## Expression-Based Tools
 
 For simple pattern matching without API calls, use expressions:
@@ -274,36 +340,6 @@ file_control = (DataMap('file_control')
 .expression(r'start|begin|play', SwaigFunctionResult().add_action('start', True))
 .expression(r'stop|end|pause', SwaigFunctionResult().add_action('stop', True))
 ```
-
-## Array Processing
-
-When an API returns an array, use `foreach` to process each item:
-
-```python
-search_tool = (DataMap('search_docs')
-    .description('Search documentation')
-    .parameter('query', 'string', 'Search query', required=True)
-    .webhook('GET', 'https://api.docs.com/search?q=${args.query}')
-    .foreach('${response.results}')  # Process each result
-    .output(SwaigFunctionResult('Document: ${foreach.title} - ${foreach.summary}'))
-)
-```
-
-### Array Response Example
-
-If the API returns:
-```json
-{
-  "results": [
-    {"title": "Getting Started", "summary": "Basic setup"},
-    {"title": "Advanced Features", "summary": "Complex workflows"}
-  ]
-}
-```
-
-The foreach will generate:
-- "Document: Getting Started - Basic setup"
-- "Document: Advanced Features - Complex workflows"
 
 ## Error Handling
 
@@ -371,13 +407,13 @@ weather_tool = (DataMap('get_weather')
     .description('Get current weather conditions')
     .parameter('location', 'string', 'City and state/country', required=True)
     .parameter('units', 'string', 'Temperature units', enum=['fahrenheit', 'celsius'])
-    .webhook('GET', 'https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${global_data.api_key}&units=${"imperial" if args.units == "fahrenheit" else "metric"}')
+    .webhook('GET', 'https://api.openweathermap.org/data/2.5/weather?q=${args.location}&appid=${global_data.api_key}&units=${"imperial" if args.units == "fahrenheit" else "metric"}')
     .error_keys(['cod', 'message'])
-    .output(SwaigFunctionResult('Weather in ${location}: ${response.weather[0].description}, ${response.main.temp}°${"F" if args.units == "fahrenheit" else "C"}. Feels like ${response.main.feels_like}°.'))
+    .output(SwaigFunctionResult('Weather in ${args.location}: ${response.weather[0].description}, ${response.main.temp}°${"F" if args.units == "fahrenheit" else "C"}. Feels like ${response.main.feels_like}°.'))
 )
 ```
 
-### Knowledge Search
+### Knowledge Search with Foreach
 
 ```python
 knowledge_tool = (DataMap('search_knowledge')
@@ -389,10 +425,15 @@ knowledge_tool = (DataMap('search_knowledge')
     .body({
         'query': '${args.query}',
         'category': '${args.category}',
-        'max_results': 3
+        'max_results': 5
     })
-    .foreach('${response.articles}')
-    .output(SwaigFunctionResult('Article: ${foreach.title}\n${foreach.summary}\nRelevance: ${foreach.score}'))
+    .foreach({
+        "input_key": "articles",
+        "output_key": "article_summaries",
+        "max": 3,
+        "append": "Article: ${this.title}\nSummary: ${this.summary}\nRelevance: ${this.score}\n\n"
+    })
+    .output(SwaigFunctionResult('Found articles for "${args.query}":\n\n${article_summaries}'))
 )
 ```
 
@@ -413,7 +454,7 @@ joke_tool = (DataMap('get_joke')
 ### API with Array Response
 
 ```python
-# For APIs that return arrays, use ${array[0].field} syntax
+# For APIs that return arrays, use ${array[0].field} syntax for single items
 joke_ninja_tool = (DataMap('get_joke')
     .description('Get a random joke from API Ninjas')
     .parameter('type', 'string', 'Type of joke', enum=['jokes', 'dadjokes'])
@@ -479,249 +520,90 @@ Store API keys and tokens in global data, not hardcoded:
 ### 4. Handle Errors Gracefully
 
 ```python
-# Add error detection
-.error_keys(['error', 'message', 'code'])
-
-# Provide fallback webhooks
-.webhook('GET', 'https://primary-api.com/data')
-.webhook('GET', 'https://backup-api.com/data')  # Fallback
+# Always include error handling
+.error_keys(['error', 'message', 'status'])
+.fallback_output(SwaigFunctionResult('Service temporarily unavailable'))
 ```
 
-### 5. Use Enums for Limited Options
+### 5. Use Foreach for Multiple Items
 
 ```python
-.parameter('units', 'string', 'Temperature units', enum=['celsius', 'fahrenheit'])
-.parameter('category', 'string', 'News category', enum=['business', 'tech', 'sports'])
-```
-
-## API Reference
-
-### DataMap Class
-
-#### Constructor
-
-```python
-DataMap(function_name: str)
-```
-
-#### Methods
-
-| Method | Parameters | Description |
-|--------|------------|-------------|
-| `description(desc)` | `desc: str` | Set function description |
-| `purpose(desc)` | `desc: str` | Alias for description |
-| `parameter(name, type, desc, required, enum)` | `name: str, type: str, desc: str, required: bool, enum: List[str]` | Add parameter |
-| `webhook(method, url, headers)` | `method: str, url: str, headers: Dict[str, str]` | Add API call |
-| `body(data)` | `data: Dict[str, Any]` | Set request body |
-| `expression(pattern, output)` | `pattern: str/Pattern, output: SwaigFunctionResult` | Add pattern match |
-| `foreach(array_path)` | `array_path: str` | Process array response |
-| `output(result)` | `result: SwaigFunctionResult` | Set final output |
-| `error_keys(keys)` | `keys: List[str]` | Set error indicators |
-| `to_swaig_function()` | - | Generate SWAIG function |
-
-### Helper Functions
-
-#### create_simple_api_tool
-
-```python
-create_simple_api_tool(
-    name: str,
-    url: str, 
-    response_template: str,
-    parameters: Optional[Dict[str, Dict]] = None,
-    method: str = "GET",
-    headers: Optional[Dict[str, str]] = None,
-    body: Optional[Dict[str, Any]] = None,
-    error_keys: Optional[List[str]] = None
-) -> DataMap
-```
-
-#### create_expression_tool
-
-```python
-create_expression_tool(
-    name: str,
-    patterns: Dict[Union[str, Pattern], SwaigFunctionResult],
-    parameters: Optional[Dict[str, Dict]] = None
-) -> DataMap
-```
-
-## Integration with AgentBase
-
-### Registration
-
-```python
-class MyAgent(AgentBase):
-    def __init__(self):
-        super().__init__(name="my-agent", route="/agent")
-        
-        # Create DataMap tool
-        tool = DataMap('my_tool').description('My tool').output(SwaigFunctionResult('Result'))
-        
-        # Register with agent
-        self.register_swaig_function(tool.to_swaig_function())
-```
-
-### Setting Global Data
-
-```python
-agent.set_global_data({
-    'api_key': 'your-api-key',
-    'user_id': 'current-user',
-    'preferences': {'theme': 'dark'}
+# Good: Use foreach for multiple formatted results
+.foreach({
+    "input_key": "results",
+    "output_key": "formatted_list", 
+    "append": "- ${this.title}: ${this.summary}\n"
 })
-```
 
-### Dynamic Configuration
-
-```python
-def configure_per_request(self, query_params, body_params, headers, agent):
-    # Set API keys based on tenant
-    tenant_id = query_params.get('tenant')
-    api_key = get_api_key_for_tenant(tenant_id)
-    
-    agent.set_global_data({'api_key': api_key, 'tenant': tenant_id})
+# Less optimal: Only showing first result
+.output(SwaigFunctionResult('First result: ${response.results[0].title}'))
 ```
 
 ## Troubleshooting
 
-### Common Issues and Solutions
+### Common Issues
 
-#### 1. "Output is undefined" or Empty Responses
+#### 1. Variable Not Expanding
 
-**Problem**: Your DataMap tool returns empty or undefined results.
-
-**Common Causes**:
-- Wrong variable syntax (`${response.field}` vs `${array[0].field}`)
-- Incorrect JSON path
-- API returns different structure than expected
+**Problem**: Variables like `${args.location}` showing up as literal text.
 
 **Solutions**:
-```python
-# Test your API response structure first
-# If API returns: {"data": [{"joke": "text"}]}
-.output(SwaigFunctionResult('${response.data[0].joke}'))  # Correct
+- Check variable name matches parameter name exactly
+- Ensure proper `${variable}` syntax 
+- Verify the variable is in scope for that context
 
-# If API returns: [{"joke": "text"}]  
-.output(SwaigFunctionResult('${array[0].joke}'))  # Correct
+#### 2. Array Access Not Working
 
-# Debug by returning the raw response
-.output(SwaigFunctionResult('Raw response: ${response}'))
-```
+**Problem**: `${array[0].field}` returns undefined.
 
-#### 2. Authentication Failures
+**Solutions**:
+- Verify API actually returns an array `[{...}]`
+- Check if API returns object with array property: use `${response.arrayfield[0].field}`
+- For multiple items, consider using foreach instead
+
+#### 3. Foreach Not Processing Arrays
+
+**Problem**: Foreach output is empty or not working.
+
+**Solutions**:
+- Check `input_key` matches the actual API response structure
+- Verify array exists and has items: `"input_key": "results"` for `{"results": [...]}`
+- Ensure `append` template uses `${this.property}` syntax
+- Check `max` value isn't zero
+
+#### 4. Authentication Failures  
 
 **Problem**: API returns 401/403 errors.
 
 **Solutions**:
-```python
-# Ensure API key is in global_data
-agent.set_global_data({'api_key': 'your-actual-key'})
-
-# Check header format
-.webhook('GET', 'https://api.service.com/data',
-         headers={'X-API-Key': '${global_data.api_key}'})  # Correct
-         
-# Not in the URL if it should be in headers
-.webhook('GET', 'https://api.service.com/data?key=${global_data.api_key}')  # Check API docs
-```
-
-#### 3. Parameter Validation Errors
-
-**Problem**: "Missing required parameter" or validation failures.
-
-**Solutions**:
-```python
-# Ensure required parameters are marked correctly
-.parameter('location', 'string', 'City name', required=True)
-
-# Use enums for limited options
-.parameter('units', 'string', 'Temperature units', 
-           required=True, enum=['celsius', 'fahrenheit'])
-```
-
-#### 4. Webhook Never Executes
-
-**Problem**: Tool doesn't seem to call the API.
-
-**Common Causes**:
-- Expressions match first (expressions run before webhooks)
-- Wrong parameter names in URL template
-
-**Solutions**:
-```python
-# Check if expressions are matching unexpectedly
-# Remove or modify expressions if they're catching all inputs
-
-# Verify parameter names match
-.parameter('query', 'string', 'Search query')  # Parameter name
-.webhook('GET', 'https://api.search.com?q=${args.query}')  # Same name
-```
+- Verify API key/token is correct in global_data
+- Check header format matches API requirements
+- Test API credentials outside of DataMap first
 
 #### 5. Error Keys Not Working
 
-**Problem**: API errors aren't being caught.
+**Problem**: Tool doesn't detect API errors properly.
 
 **Solutions**:
-```python
-# Check actual error response structure
-# If API returns: {"error": {"message": "Not found"}}
-.error_keys(['error'])  # Correct
+- Check actual API error response structure
+- Add all possible error field names to `error_keys`
+- Use `fallback_output` for generic error handling
 
-# If API returns: {"status": "error", "msg": "Not found"}  
-.error_keys(['status', 'msg'])  # Check top-level keys
-```
+### Debug Tools
 
-#### 6. Foreach Not Processing Arrays
-
-**Problem**: Array items aren't being processed individually.
-
-**Solutions**:
-```python
-# Ensure you're pointing to the actual array
-# If response is: {"results": [{"title": "..."}, {"title": "..."}]}
-.foreach('${response.results}')  # Correct
-
-# Then use foreach variables
-.output(SwaigFunctionResult('Title: ${foreach.title}'))
-```
-
-### Debugging Tips
-
-1. **Start Simple**: Begin with a basic webhook that just returns `${response}` to see the raw API response
-
-2. **Test API Directly**: Use curl or Postman to verify the API works and see the response structure
-
-3. **Use Fallback Output**: Add fallback messages to catch when webhooks fail:
-   ```python
-   .fallback_output(SwaigFunctionResult('All webhooks failed - check API'))
-   ```
-
-4. **Check Agent Logs**: Look for error messages in the agent console output
-
-5. **Validate JSON Paths**: Use online JSON path testers to verify your variable paths
-
-### Testing Strategies
+Enable debug mode to see variable expansion:
 
 ```python
-# Create a test tool that echoes inputs
 debug_tool = (DataMap('debug_echo')
-    .description('Debug tool to test parameters')
-    .parameter('test_param', 'string', 'Test parameter')
-    .webhook('GET', 'https://httpbin.org/get?test=${args.test_param}')
-    .output(SwaigFunctionResult('Sent: ${args.test_param}, Got: ${response.args.test}'))
+    .parameter('test', 'string', 'Test parameter')
+    .output(SwaigFunctionResult('Input: ${args.test}, All args: ${args}'))
 )
 
-# Test variable scoping with a mock API
+# Test variable expansion
 test_variables = (DataMap('test_vars')
-    .description('Test variable access')
-    .parameter('user_input', 'string', 'User input to echo')
-    .webhook('GET', 'https://httpbin.org/json')
-    .output(SwaigFunctionResult('''
-        Input: ${args.user_input}
-        API Response: ${response.slideshow.title}
-        Global Data: ${global_data.api_key}
-    '''))
+    .parameter('location', 'string', 'Location')
+    .webhook('GET', 'https://httpbin.org/get?location=${args.location}')
+    .output(SwaigFunctionResult('URL was: ${response.url}, Args: ${response.args}'))
 )
 ```
 

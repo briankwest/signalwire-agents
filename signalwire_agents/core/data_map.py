@@ -11,7 +11,7 @@ See LICENSE file in the project root for full license information.
 DataMap class for building SWAIG data_map configurations
 """
 
-from typing import Dict, List, Any, Optional, Union, Pattern
+from typing import Dict, List, Any, Optional, Union, Pattern, Tuple
 import re
 from .function_result import SwaigFunctionResult
 
@@ -49,8 +49,8 @@ class DataMap:
             .purpose('Control file playback')
             .parameter('command', 'string', 'Playback command')
             .parameter('filename', 'string', 'File to control', required=False)
-            .expression(r'start.*', SwaigFunctionResult().add_action('start_playbook', {'file': '${args.filename}'}))
-            .expression(r'stop.*', SwaigFunctionResult().add_action('stop_playback', True))
+            .expression('${args.command}', r'start.*', SwaigFunctionResult().add_action('start_playbook', {'file': '${args.filename}'}))
+            .expression('${args.command}', r'stop.*', SwaigFunctionResult().add_action('stop_playback', True))
         )
         
         # API with array processing
@@ -76,7 +76,6 @@ class DataMap:
         self._parameters = {}
         self._expressions = []
         self._webhooks = []
-        self._foreach = None
         self._output = None
         self._error_keys = []
         
@@ -138,13 +137,16 @@ class DataMap:
         
         return self
     
-    def expression(self, pattern: Union[str, Pattern], output: SwaigFunctionResult) -> 'DataMap':
+    def expression(self, test_value: str, pattern: Union[str, Pattern], output: SwaigFunctionResult, 
+                   nomatch_output: Optional[SwaigFunctionResult] = None) -> 'DataMap':
         """
         Add an expression pattern for pattern-based responses
         
         Args:
-            pattern: Regex pattern string or compiled Pattern object
+            test_value: Template string to test (e.g., "${args.command}")
+            pattern: Regex pattern string or compiled Pattern object to match against
             output: SwaigFunctionResult to return when pattern matches
+            nomatch_output: Optional SwaigFunctionResult to return when pattern doesn't match
             
         Returns:
             Self for method chaining
@@ -154,13 +156,22 @@ class DataMap:
         else:
             pattern_str = str(pattern)
             
-        self._expressions.append({
-            "string": pattern_str,
+        expr_def = {
+            "string": test_value,
+            "pattern": pattern_str,
             "output": output.to_dict()
-        })
+        }
+        
+        if nomatch_output:
+            expr_def["nomatch-output"] = nomatch_output.to_dict()
+            
+        self._expressions.append(expr_def)
         return self
     
-    def webhook(self, method: str, url: str, headers: Optional[Dict[str, str]] = None) -> 'DataMap':
+    def webhook(self, method: str, url: str, headers: Optional[Dict[str, str]] = None,
+               form_param: Optional[str] = None, 
+               input_args_as_params: bool = False,
+               require_args: Optional[List[str]] = None) -> 'DataMap':
         """
         Add a webhook API call
         
@@ -168,6 +179,9 @@ class DataMap:
             method: HTTP method (GET, POST, PUT, DELETE, etc.)
             url: API endpoint URL (can include ${variable} substitutions)
             headers: Optional HTTP headers
+            form_param: Send JSON body as single form parameter with this name
+            input_args_as_params: Merge function arguments into params
+            require_args: Only execute if these arguments are present
             
         Returns:
             Self for method chaining
@@ -179,8 +193,30 @@ class DataMap:
         
         if headers:
             webhook_def["headers"] = headers
+        if form_param:
+            webhook_def["form_param"] = form_param
+        if input_args_as_params:
+            webhook_def["input_args_as_params"] = True
+        if require_args:
+            webhook_def["require_args"] = require_args
             
         self._webhooks.append(webhook_def)
+        return self
+    
+    def webhook_expressions(self, expressions: List[Dict[str, Any]]) -> 'DataMap':
+        """
+        Add expressions that run after the most recent webhook completes
+        
+        Args:
+            expressions: List of expression definitions to check post-webhook
+            
+        Returns:
+            Self for method chaining
+        """
+        if not self._webhooks:
+            raise ValueError("Must add webhook before setting webhook expressions")
+            
+        self._webhooks[-1]["expressions"] = expressions
         return self
     
     def body(self, data: Dict[str, Any]) -> 'DataMap':
@@ -199,17 +235,72 @@ class DataMap:
         self._webhooks[-1]["body"] = data
         return self
     
-    def foreach(self, array_path: str) -> 'DataMap':
+    def params(self, data: Dict[str, Any]) -> 'DataMap':
         """
-        Process an array from the webhook response
+        Set request params for the last added webhook (alias for body)
         
         Args:
-            array_path: JSON path to array in response (e.g., '${response.results}')
+            data: Request params data (can include ${variable} substitutions)
             
         Returns:
             Self for method chaining
         """
-        self._foreach = array_path
+        if not self._webhooks:
+            raise ValueError("Must add webhook before setting params")
+            
+        self._webhooks[-1]["params"] = data
+        return self
+    
+    def foreach(self, foreach_config: Union[str, Dict[str, Any]]) -> 'DataMap':
+        """
+        Process an array from the webhook response using foreach mechanism
+        
+        Args:
+            foreach_config: Either:
+                - String: JSON path to array in response (deprecated, kept for compatibility)
+                - Dict: Foreach configuration with keys:
+                    - input_key: Key in API response containing the array
+                    - output_key: Name for the built string variable
+                    - max: Maximum number of items to process (optional)
+                    - append: Template string to append for each item
+            
+        Returns:
+            Self for method chaining
+            
+        Example:
+            .foreach({
+                "input_key": "results",
+                "output_key": "formatted_results", 
+                "max": 3,
+                "append": "Result: ${this.title} - ${this.summary}\n"
+            })
+        """
+        if not self._webhooks:
+            raise ValueError("Must add webhook before setting foreach")
+            
+        if isinstance(foreach_config, str):
+            # Legacy support - convert string to basic foreach config
+            # Extract the key from "${response.key}" format if present
+            if foreach_config.startswith("${response.") and foreach_config.endswith("}"):
+                key = foreach_config[12:-1]  # Remove "${response." and "}"
+            else:
+                key = foreach_config
+            
+            foreach_data = {
+                "input_key": key,
+                "output_key": "foreach_output",
+                "append": "${this}"
+            }
+        else:
+            # New format - validate required keys
+            required_keys = ["input_key", "output_key", "append"]
+            missing_keys = [key for key in required_keys if key not in foreach_config]
+            if missing_keys:
+                raise ValueError(f"foreach config missing required keys: {missing_keys}")
+            
+            foreach_data = foreach_config
+            
+        self._webhooks[-1]["foreach"] = foreach_data
         return self
     
     def output(self, result: SwaigFunctionResult) -> 'DataMap':
@@ -305,10 +396,6 @@ class DataMap:
         if self._webhooks:
             data_map["webhooks"] = self._webhooks
             
-        # Add foreach if present
-        if self._foreach:
-            data_map["foreach"] = self._foreach
-            
         # Add output if present
         if self._output:
             data_map["output"] = self._output
@@ -379,14 +466,14 @@ def create_simple_api_tool(name: str, url: str, response_template: str,
     return data_map
 
 
-def create_expression_tool(name: str, patterns: Dict[Union[str, Pattern], SwaigFunctionResult],
+def create_expression_tool(name: str, patterns: Dict[str, Tuple[str, SwaigFunctionResult]],
                           parameters: Optional[Dict[str, Dict]] = None) -> DataMap:
     """
     Create an expression-based tool for pattern matching responses
     
     Args:
         name: Function name
-        patterns: Dictionary mapping regex patterns to SwaigFunctionResult responses
+        patterns: Dictionary mapping test_values to (pattern, SwaigFunctionResult) tuples
         parameters: Optional parameter definitions
         
     Returns:
@@ -405,8 +492,8 @@ def create_expression_tool(name: str, patterns: Dict[Union[str, Pattern], SwaigF
                 required=required
             )
     
-    # Add expressions
-    for pattern, result in patterns.items():
-        data_map.expression(pattern, result)
+    # Add expressions with corrected signature
+    for test_value, (pattern, result) in patterns.items():
+        data_map.expression(test_value, pattern, result)
         
     return data_map 
