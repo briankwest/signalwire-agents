@@ -11,9 +11,16 @@ import os
 import importlib
 import importlib.util
 import inspect
+import sys
 from typing import Dict, List, Type, Optional
 from pathlib import Path
-import logging
+
+try:
+    import structlog
+    logger_available = True
+except ImportError:
+    import logging
+    logger_available = False
 
 from signalwire_agents.core.skill_base import SkillBase
 
@@ -22,7 +29,14 @@ class SkillRegistry:
     
     def __init__(self):
         self._skills: Dict[str, Type[SkillBase]] = {}
-        self.logger = logging.getLogger("skill_registry")
+        
+        # Use structlog if available, fallback to logging
+        if logger_available:
+            self.logger = structlog.get_logger("skill_registry")
+        else:
+            import logging
+            self.logger = logging.getLogger("skill_registry")
+            
         self._discovered = False
     
     def discover_skills(self) -> None:
@@ -39,7 +53,11 @@ class SkillRegistry:
                 self._load_skill_from_directory(item)
         
         self._discovered = True
-        self.logger.info(f"Discovered {len(self._skills)} skills")
+        
+        # Check if we're in raw mode (used by swaig-test --raw) and suppress logging
+        is_raw_mode = "--raw" in sys.argv
+        if not is_raw_mode:
+            self.logger.info(f"Discovered {len(self._skills)} skills")
     
     def _load_skill_from_directory(self, skill_dir: Path) -> None:
         """Load a skill from a directory"""

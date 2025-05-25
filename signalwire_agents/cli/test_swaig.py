@@ -26,6 +26,24 @@ Examples:
     
     # Test with minimal data
     swaig-test examples/my_agent.py my_tool '{"param":"value"}' --minimal
+    
+    # List available tools
+    swaig-test examples/my_agent.py --list-tools
+    
+    # Dump SWML document
+    swaig-test examples/my_agent.py --dump-swml
+    
+    # Dump SWML with verbose output
+    swaig-test examples/my_agent.py --dump-swml --verbose
+    
+    # Dump raw SWML JSON (for piping to jq/yq)
+    swaig-test examples/my_agent.py --dump-swml --raw
+    
+    # Pipe to jq for pretty formatting
+    swaig-test examples/my_agent.py --dump-swml --raw | jq '.'
+    
+    # Extract specific fields with jq
+    swaig-test examples/my_agent.py --dump-swml --raw | jq '.sections.main[1].ai.SWAIG.functions'
 """
 
 import sys
@@ -41,6 +59,38 @@ import requests
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+import logging
+
+# Check for --raw flag early to suppress logging before any signalwire imports
+if "--raw" in sys.argv:
+    # More aggressive logging suppression for raw mode
+    logging.getLogger().setLevel(logging.CRITICAL + 1)  # Suppress everything
+    logging.getLogger().addHandler(logging.NullHandler())
+    
+    # Monkey-patch specific loggers to completely silence them
+    def silent_log(*args, **kwargs):
+        pass
+    
+    # Also suppress specific loggers
+    loggers_to_suppress = [
+        "skill_registry",
+        "simple_agent", 
+        "swml_service",
+        "agent_base",
+        "signalwire_agents"
+    ]
+    
+    for logger_name in loggers_to_suppress:
+        # Suppress standard Python logger
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.CRITICAL + 1)
+        logger.addHandler(logging.NullHandler())
+        # Monkey-patch all logging methods
+        logger.debug = silent_log
+        logger.info = silent_log
+        logger.warning = silent_log
+        logger.error = silent_log
+        logger.critical = silent_log
 
 # Add the parent directory to the path so we can import signalwire_agents
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -640,7 +690,7 @@ def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any
     return error_result
 
 
-def load_agent_from_file(agent_path: str) -> AgentBase:
+def load_agent_from_file(agent_path: str) -> 'AgentBase':
     """
     Load an agent from a Python file
     
@@ -781,6 +831,11 @@ Examples:
   %(prog)s examples/simple_agent.py calculate '{"expression":"2+2"}' --fake-full-data
   %(prog)s examples/my_agent.py my_datamap_func '{"input":"value"}' --datamap
   %(prog)s examples/my_agent.py --list-tools
+  %(prog)s examples/my_agent.py --dump-swml
+  %(prog)s examples/my_agent.py --dump-swml --verbose
+  %(prog)s examples/my_agent.py --dump-swml --raw
+  %(prog)s examples/my_agent.py --dump-swml --raw | jq '.'
+  %(prog)s examples/my_agent.py --dump-swml --raw | jq '.sections.main[1].ai.SWAIG.functions'
         """
     )
     
@@ -831,20 +886,32 @@ Examples:
         help="Use minimal post_data (only essential keys)"
     )
     
+    parser.add_argument(
+        "--dump-swml",
+        action="store_true",
+        help="Dump the SWML document from the agent and exit"
+    )
+    
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help="Output raw SWML JSON only (no headers, useful for piping to jq/yq)"
+    )
+    
     args = parser.parse_args()
     
     # Validate arguments
-    if not args.list_tools and (not args.tool_name or not args.args_json):
-        parser.error("tool_name and args_json are required unless --list-tools is used")
+    if not args.list_tools and not args.dump_swml and (not args.tool_name or not args.args_json):
+        parser.error("tool_name and args_json are required unless --list-tools or --dump-swml is used")
     
     try:
         # Load the agent
-        if args.verbose:
+        if args.verbose and not args.raw:
             print(f"Loading agent from: {args.agent_path}")
         
         agent = load_agent_from_file(args.agent_path)
         
-        if args.verbose:
+        if args.verbose and not args.raw:
             print(f"Loaded agent: {agent.get_name()}")
             print(f"Agent route: {agent.route}")
             
@@ -873,6 +940,65 @@ Examples:
             else:
                 print("  No SWAIG functions registered")
             return 0
+        
+        # Dump SWML if requested
+        if args.dump_swml:
+            if not args.raw:
+                print("\nGenerating SWML document...")
+                if args.verbose:
+                    print(f"Agent: {agent.get_name()}")
+                    print(f"Route: {agent.route}")
+                    
+                    # Show loaded skills
+                    skills = agent.list_skills()
+                    if skills:
+                        print(f"Skills: {', '.join(skills)}")
+                        
+                    # Show available functions
+                    if hasattr(agent, '_swaig_functions') and agent._swaig_functions:
+                        print(f"Functions: {', '.join(agent._swaig_functions.keys())}")
+                    
+                    print("-" * 60)
+            
+            try:
+                # Generate the SWML document
+                swml_doc = agent._render_swml()
+                
+                if args.raw:
+                    # Output only the raw JSON for piping to jq/yq
+                    print(swml_doc)
+                else:
+                    # Normal output with headers
+                    print("SWML Document:")
+                    print("=" * 50)
+                    print(swml_doc)
+                    print("=" * 50)
+                    
+                    if args.verbose:
+                        # Parse and show formatted JSON for better readability
+                        try:
+                            swml_parsed = json.loads(swml_doc)
+                            print("\nFormatted SWML:")
+                            print(json.dumps(swml_parsed, indent=2))
+                        except json.JSONDecodeError:
+                            print("\nNote: SWML document is not valid JSON format")
+                
+                return 0
+                
+            except Exception as e:
+                if args.raw:
+                    # For raw mode, output error to stderr to not interfere with JSON output
+                    import sys
+                    print(f"Error generating SWML: {e}", file=sys.stderr)
+                    if args.verbose:
+                        import traceback
+                        traceback.print_exc(file=sys.stderr)
+                else:
+                    print(f"Error generating SWML: {e}")
+                    if args.verbose:
+                        import traceback
+                        traceback.print_exc()
+                return 1
         
         # Parse arguments
         try:
