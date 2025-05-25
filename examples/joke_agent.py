@@ -5,9 +5,11 @@ Joke Agent Example
 This agent demonstrates using a raw data_map configuration 
 to integrate with the API Ninjas joke API.
 
-Run with: python examples/joke_agent.py
+Run with: API_NINJAS_KEY=your_api_key python examples/joke_agent.py
 """
 
+import os
+import sys
 from signalwire_agents import AgentBase
 
 
@@ -20,6 +22,14 @@ class JokeAgent(AgentBase):
             route="/joke-agent"
         )
         
+        # Get API key from environment variable
+        api_key = os.environ.get("API_NINJAS_KEY")
+        if not api_key:
+            print("Error: API_NINJAS_KEY environment variable is required")
+            print("Get your free API key from https://api.api-ninjas.com/")
+            print("Then run: API_NINJAS_KEY=your_api_key python examples/joke_agent.py")
+            sys.exit(1)
+        
         # Configure the agent's personality and behavior
         self.prompt_add_section("Personality", body="You are a funny assistant who loves to tell jokes.")
         self.prompt_add_section("Goal", body="Make people laugh with great jokes.")
@@ -30,9 +40,9 @@ class JokeAgent(AgentBase):
         ])
         
         # Register the joke function with raw data_map configuration
-        self._add_joke_function()
+        self._add_joke_function(api_key)
     
-    def _add_joke_function(self):
+    def _add_joke_function(self, api_key):
         """Add the joke function using raw data_map configuration"""
         joke_function = {
             "function": "get_joke",
@@ -42,7 +52,7 @@ class JokeAgent(AgentBase):
                     {
                         "url": "https://api.api-ninjas.com/v1/%{args.type}",
                         "headers": {
-                            "X-Api-Key": "your-api-key"
+                            "X-Api-Key": api_key
                         },
                         "output": {
                             "response": "Tell the user: %{array[0].joke}",
@@ -66,7 +76,10 @@ class JokeAgent(AgentBase):
                         "error_keys": "error",
                         "method": "GET"
                     }
-                ]
+                ],
+                "output": {
+                    "response": "Tell the user that the joke service is not working right now and just make up a joke on your own"
+                }
             },
             "parameters": {
                 "properties": {
