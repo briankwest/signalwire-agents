@@ -22,6 +22,8 @@ import logging
 import inspect
 import functools
 import re
+import signal
+import sys
 from typing import Optional, Union, List, Dict, Any, Tuple, Callable, Type
 from urllib.parse import urlparse, urlencode
 
@@ -1638,11 +1640,47 @@ class AgentBase(SWMLService):
         
         # Print the auth credentials with source
         username, password, source = self.get_basic_auth_credentials(include_source=True)
+        
+        # Log startup information using structured logging
+        self.log.info("agent_starting",
+                     agent=self.name,
+                     url=f"http://{host}:{port}{self.route}",
+                     username=username,
+                     password_length=len(password),
+                     auth_source=source)
+        
+        # Print user-friendly startup message (keep this for development UX)
         print(f"Agent '{self.name}' is available at:")
         print(f"URL: http://{host}:{port}{self.route}")
         print(f"Basic Auth: {username}:{password} (source: {source})")
         
         uvicorn.run(self._app, host=host, port=port)
+
+    def setup_graceful_shutdown(self) -> None:
+        """
+        Setup signal handlers for graceful shutdown (useful for Kubernetes)
+        """
+        def signal_handler(signum, frame):
+            self.log.info("shutdown_signal_received", signal=signum)
+            
+            # Perform cleanup
+            try:
+                # Close any open resources
+                if hasattr(self, '_session_manager'):
+                    # Could add cleanup logic here
+                    pass
+                
+                self.log.info("cleanup_completed")
+            except Exception as e:
+                self.log.error("cleanup_error", error=str(e))
+            finally:
+                sys.exit(0)
+        
+        # Register handlers for common termination signals
+        signal.signal(signal.SIGTERM, signal_handler)  # Kubernetes sends this
+        signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+        
+        self.log.debug("graceful_shutdown_handlers_registered")
 
     def on_swml_request(self, request_data: Optional[dict] = None, callback_path: Optional[str] = None) -> Optional[dict]:
         """
@@ -1668,6 +1706,40 @@ class AgentBase(SWMLService):
         Args:
             router: FastAPI router to register routes with
         """
+        # Health check endpoints for Kubernetes
+        @router.get("/health")
+        @router.post("/health")
+        async def health_check():
+            """Health check endpoint for Kubernetes liveness probe"""
+            return {
+                "status": "healthy",
+                "agent": self.get_name(),
+                "route": self.route,
+                "functions": len(self._swaig_functions)
+            }
+        
+        @router.get("/ready")
+        @router.post("/ready")
+        async def readiness_check():
+            """Readiness check endpoint for Kubernetes readiness probe"""
+            # Check if agent is properly initialized
+            ready = (
+                hasattr(self, '_swaig_functions') and
+                hasattr(self, 'schema_utils') and
+                self.schema_utils is not None
+            )
+            
+            status_code = 200 if ready else 503
+            return Response(
+                content=json.dumps({
+                    "status": "ready" if ready else "not_ready",
+                    "agent": self.get_name(),
+                    "initialized": ready
+                }),
+                status_code=status_code,
+                media_type="application/json"
+            )
+        
         # Root endpoint (handles both with and without trailing slash)
         @router.get("/")
         @router.post("/")
