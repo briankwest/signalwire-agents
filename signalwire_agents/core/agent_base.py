@@ -888,12 +888,102 @@ class AgentBase(SWMLService):
     
     def get_name(self) -> str:
         """
-        Get the agent name
+        Get agent name
         
         Returns:
-            Agent name/identifier
+            Agent name
         """
         return self.name
+
+    def get_app(self):
+        """
+        Get the FastAPI application instance for deployment adapters like Lambda/Mangum
+        
+        This method ensures the FastAPI app is properly initialized and configured,
+        then returns it for use with deployment adapters like Mangum for AWS Lambda.
+        
+        Returns:
+            FastAPI: The configured FastAPI application instance
+        """
+        if self._app is None:
+            # Initialize the app if it hasn't been created yet
+            # This follows the same initialization logic as serve() but without running uvicorn
+            from fastapi import FastAPI
+            from fastapi.middleware.cors import CORSMiddleware
+            
+            # Create a FastAPI app with explicit redirect_slashes=False
+            app = FastAPI(redirect_slashes=False)
+            
+            # Add health and ready endpoints directly to the main app to avoid conflicts with catch-all
+            @app.get("/health")
+            @app.post("/health")
+            async def health_check():
+                """Health check endpoint for Kubernetes liveness probe"""
+                return {
+                    "status": "healthy",
+                    "agent": self.get_name(),
+                    "route": self.route,
+                    "functions": len(self._swaig_functions)
+                }
+            
+            @app.get("/ready")
+            @app.post("/ready")
+            async def readiness_check():
+                """Readiness check endpoint for Kubernetes readiness probe"""
+                return {
+                    "status": "ready",
+                    "agent": self.get_name(),
+                    "route": self.route,
+                    "functions": len(self._swaig_functions)
+                }
+            
+            # Add CORS middleware if needed
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=["*"],
+                allow_credentials=True,
+                allow_methods=["*"],
+                allow_headers=["*"],
+            )
+            
+            # Create router and register routes
+            router = self.as_router()
+            
+            # Log registered routes for debugging
+            self.log.debug("router_routes_registered")
+            for route in router.routes:
+                if hasattr(route, "path"):
+                    self.log.debug("router_route", path=route.path)
+            
+            # Include the router
+            app.include_router(router, prefix=self.route)
+            
+            # Register a catch-all route for debugging and troubleshooting
+            @app.get("/{full_path:path}")
+            @app.post("/{full_path:path}")
+            async def handle_all_routes(request: Request, full_path: str):
+                self.log.debug("request_received", path=full_path)
+                
+                # Check if the path is meant for this agent
+                if not full_path.startswith(self.route.lstrip("/")):
+                    return {"error": "Invalid route"}
+                
+                # Extract the path relative to this agent's route
+                relative_path = full_path[len(self.route.lstrip("/")):]
+                relative_path = relative_path.lstrip("/")
+                self.log.debug("relative_path_extracted", path=relative_path)
+                
+                return {"error": "Path not found"}
+            
+            # Log all app routes for debugging
+            self.log.debug("app_routes_registered")
+            for route in app.routes:
+                if hasattr(route, "path"):
+                    self.log.debug("app_route", path=route.path)
+            
+            self._app = app
+        
+        return self._app
     
     def get_prompt(self) -> Union[str, List[Dict[str, Any]]]:
         """
