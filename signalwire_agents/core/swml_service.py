@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Copyright (c) 2025 SignalWire
 
@@ -7,11 +8,9 @@ Licensed under the MIT License.
 See LICENSE file in the project root for full license information.
 """
 
+# -*- coding: utf-8 -*-
 """
-SWMLService - Base class for SWML document creation and serving
-
-This class provides the foundation for creating and serving SWML documents.
-It handles schema validation, document creation, and web service functionality.
+Base SWML Service for SignalWire Agents
 """
 
 import os
@@ -188,17 +187,21 @@ class SWMLService:
         """
         Create auto-vivified methods for all verbs at initialization time
         """
-        print("Creating auto-vivified methods for all verbs")
+        self.log.debug("creating_verb_methods")
         
         # Get all verb names from the schema
+        if not self.schema_utils:
+            self.log.warning("no_schema_utils_available")
+            return
+            
         verb_names = self.schema_utils.get_all_verb_names()
-        print(f"Found {len(verb_names)} verbs in schema")
+        self.log.debug("found_verbs_in_schema", count=len(verb_names))
         
         # Create a method for each verb
         for verb_name in verb_names:
             # Skip verbs that already have specific methods
             if hasattr(self, verb_name):
-                print(f"Skipping {verb_name} - already has a method")
+                self.log.debug("skipping_verb_has_method", verb=verb_name)
                 continue
             
             # Handle sleep verb specially since it takes an integer directly
@@ -210,7 +213,7 @@ class SWMLService:
                     Args:
                         duration: The amount of time to sleep in milliseconds
                     """
-                    print(f"Executing auto-vivified method for 'sleep'")
+                    self.log.debug("executing_sleep_verb", duration=duration)
                     # Sleep verb takes a direct integer parameter in SWML
                     if duration is not None:
                         return self_instance.add_verb("sleep", duration)
@@ -226,7 +229,7 @@ class SWMLService:
                 # Also cache it for later
                 self._verb_methods_cache[verb_name] = sleep_method
                 
-                print(f"Created special method for {verb_name}")
+                self.log.debug("created_special_method", verb=verb_name)
                 continue
                 
             # Generate the method implementation for normal verbs
@@ -235,7 +238,7 @@ class SWMLService:
                     """
                     Dynamically generated method for SWML verb
                     """
-                    print(f"Executing auto-vivified method for '{name}'")
+                    self.log.debug("executing_verb_method", verb=name, kwargs_count=len(kwargs))
                     config = {}
                     for key, value in kwargs.items():
                         if value is not None:
@@ -260,7 +263,7 @@ class SWMLService:
             # Also cache it for later
             self._verb_methods_cache[verb_name] = method
             
-            print(f"Created method for {verb_name}")
+            self.log.debug("created_verb_method", verb=verb_name)
     
     def __getattr__(self, name: str) -> Any:
         """
@@ -280,21 +283,26 @@ class SWMLService:
         Raises:
             AttributeError: If name is not a valid SWML verb
         """
-        print(f"DEBUG: __getattr__ called for '{name}'")
+        self.log.debug("getattr_called", attribute=name)
         
         # Simple version to match our test script
         # First check if this is a valid SWML verb
+        if not self.schema_utils:
+            msg = f"'{self.__class__.__name__}' object has no attribute '{name}' (no schema available)"
+            self.log.debug("getattr_no_schema", attribute=name)
+            raise AttributeError(msg)
+            
         verb_names = self.schema_utils.get_all_verb_names()
         
         if name in verb_names:
-            print(f"DEBUG: '{name}' is a valid verb")
+            self.log.debug("getattr_valid_verb", verb=name)
             
             # Check if we already have this method in the cache
             if not hasattr(self, '_verb_methods_cache'):
                 self._verb_methods_cache = {}
                 
             if name in self._verb_methods_cache:
-                print(f"DEBUG: Using cached method for '{name}'")
+                self.log.debug("getattr_cached_method", verb=name)
                 return types.MethodType(self._verb_methods_cache[name], self)
             
             # Handle sleep verb specially since it takes an integer directly
@@ -306,7 +314,7 @@ class SWMLService:
                     Args:
                         duration: The amount of time to sleep in milliseconds
                     """
-                    print(f"DEBUG: Executing auto-vivified method for 'sleep'")
+                    self.log.debug("executing_sleep_method", duration=duration)
                     # Sleep verb takes a direct integer parameter in SWML
                     if duration is not None:
                         return self_instance.add_verb("sleep", duration)
@@ -317,7 +325,7 @@ class SWMLService:
                         raise TypeError("sleep() missing required argument: 'duration'")
                 
                 # Cache the method for future use
-                print(f"DEBUG: Caching special method for '{name}'")
+                self.log.debug("caching_sleep_method", verb=name)
                 self._verb_methods_cache[name] = sleep_method
                 
                 # Return the bound method
@@ -328,7 +336,7 @@ class SWMLService:
                 """
                 Dynamically generated method for SWML verb
                 """
-                print(f"DEBUG: Executing auto-vivified method for '{name}'")
+                self.log.debug("executing_dynamic_verb", verb=name, kwargs_count=len(kwargs))
                 config = {}
                 for key, value in kwargs.items():
                     if value is not None:
@@ -343,7 +351,7 @@ class SWMLService:
                 verb_method.__doc__ = f"Add the {name} verb to the document."
             
             # Cache the method for future use
-            print(f"DEBUG: Caching method for '{name}'")
+            self.log.debug("caching_verb_method", verb=name)
             self._verb_methods_cache[name] = verb_method
             
             # Return the bound method
@@ -351,7 +359,7 @@ class SWMLService:
         
         # Not a valid verb
         msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
-        print(f"DEBUG: {msg}")
+        self.log.debug("getattr_invalid_attribute", attribute=name, error=msg)
         raise AttributeError(msg)
     
     def _find_schema_path(self) -> Optional[str]:
@@ -823,7 +831,7 @@ class SWMLService:
                 route_with_slash = route_path + "/"
                 
                 # Log the incoming path for debugging
-                print(f"Catch-all received: '{full_path}', route: '{route_path}'")
+                self.log.debug("catch_all_route_hit", path=full_path, route=route_path)
                 
                 # Check for exact match to our route (without trailing slash)
                 if full_path == route_path:
@@ -851,21 +859,21 @@ class SWMLService:
                                 return await self._handle_request(request, response)
                 
                 # Not our route or not matching our patterns
-                print(f"No match for path: '{full_path}'")
+                self.log.debug("no_route_match", path=full_path)
                 return {"error": "Path not found"}
             
-            # Print all routes for debugging
-            print(f"All routes for {self.name}:")
+            # Log all routes for debugging
+            self.log.debug("registered_routes", service=self.name)
             for route in app.routes:
                 if hasattr(route, "path"):
-                    print(f"  {route.path}")
+                    self.log.debug("route_registered", path=route.path)
             
             self._app = app
         
         host = host or self.host
         port = port or self.port
         
-        # Print the auth credentials
+        # Get the auth credentials
         username, password = self._basic_auth
         
         # Use correct protocol and host in displayed URL
@@ -878,12 +886,13 @@ class SWMLService:
                      username=username,
                      password_length=len(password))
         
+        # Print user-friendly startup message (keep for UX)
         print(f"Service '{self.name}' is available at:")
         print(f"URL: {protocol}://{display_host}{self.route}")
         print(f"URL with trailing slash: {protocol}://{display_host}{self.route}/")
         print(f"Basic Auth: {username}:{password}")
         
-        # Check if SIP routing is enabled and print additional info
+        # Check if SIP routing is enabled and log additional info
         if self._routing_callbacks:
             print(f"Callback endpoints:")
             for path in self._routing_callbacks:

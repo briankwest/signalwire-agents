@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Copyright (c) 2025 SignalWire
 
@@ -7,47 +8,69 @@ Licensed under the MIT License.
 See LICENSE file in the project root for full license information.
 """
 
+# -*- coding: utf-8 -*-
 """
-Utilities for working with the SWML JSON schema.
-
-This module provides functions for loading, parsing, and validating SWML schemas.
-It also provides utilities for working with SWML documents based on the schema.
+Schema utilities for SWML validation and verb extraction
 """
 
-import json
 import os
-import re
-from typing import Dict, List, Any, Optional, Set, Tuple, Callable
+import json
+import logging
+from typing import Dict, Any, List, Optional, Tuple
 
+try:
+    import structlog
+    # Ensure structlog is configured
+    if not structlog.is_configured():
+        structlog.configure(
+            processors=[
+                structlog.stdlib.filter_by_level,
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.UnicodeDecoder(),
+                structlog.processors.JSONRenderer()
+            ],
+            context_class=dict,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            wrapper_class=structlog.stdlib.BoundLogger,
+            cache_logger_on_first_use=True,
+        )
+except ImportError:
+    raise ImportError(
+        "structlog is required. Install it with: pip install structlog"
+    )
+
+# Create a logger
+logger = structlog.get_logger("schema_utils")
 
 class SchemaUtils:
     """
-    Utilities for working with SWML JSON schema.
-    
-    This class provides methods for:
-    - Loading and parsing schema files
-    - Extracting verb definitions
-    - Validating SWML objects against the schema
-    - Generating helpers for schema operations
+    Utility class for loading and working with SWML schemas
     """
     
     def __init__(self, schema_path: Optional[str] = None):
         """
-        Initialize the SchemaUtils with the provided schema
+        Initialize the schema utilities
         
         Args:
-            schema_path: Path to the schema file (optional)
+            schema_path: Path to the schema file
         """
+        self.log = logger.bind(component="schema_utils")
+        
         self.schema_path = schema_path
         if not self.schema_path:
             self.schema_path = self._get_default_schema_path()
-            print(f"No schema_path provided, using default: {self.schema_path}")
+            self.log.debug("using_default_schema_path", path=self.schema_path)
         
         self.schema = self.load_schema()
         self.verbs = self._extract_verb_definitions()
-        print(f"Extracted {len(self.verbs)} verbs from schema")
+        self.log.debug("schema_initialized", verb_count=len(self.verbs))
         if self.verbs:
-            print(f"First few verbs: {list(self.verbs.keys())[:5]}")
+            self.log.debug("first_verbs_extracted", verbs=list(self.verbs.keys())[:5])
         
     def _get_default_schema_path(self) -> str:
         """
@@ -59,8 +82,9 @@ class SchemaUtils:
         # Default path is the schema.json in the root directory
         package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         default_path = os.path.join(package_dir, "schema.json")
-        print(f"Default schema path: {default_path}")
-        print(f"Path exists: {os.path.exists(default_path)}")
+        self.log.debug("default_schema_path_check", 
+                      path=default_path, 
+                      exists=os.path.exists(default_path))
         
         return default_path
         
@@ -72,27 +96,26 @@ class SchemaUtils:
             The schema as a dictionary
         """
         if not self.schema_path:
-            print(f"Warning: No schema path provided. Using empty schema.")
+            self.log.warning("no_schema_path_provided")
             return {}
             
         try:
-            print(f"Attempting to load schema from: {self.schema_path}")
-            print(f"File exists: {os.path.exists(self.schema_path)}")
+            self.log.debug("loading_schema", path=self.schema_path, exists=os.path.exists(self.schema_path))
             
             if os.path.exists(self.schema_path):
                 with open(self.schema_path, "r") as f:
                     schema = json.load(f)
-                print(f"Successfully loaded schema from {self.schema_path}")
-                print(f"Schema has {len(schema.keys()) if schema else 0} top-level keys")
+                self.log.debug("schema_loaded_successfully", 
+                              path=self.schema_path,
+                              top_level_keys=len(schema.keys()) if schema else 0)
                 if "$defs" in schema:
-                    print(f"Schema has {len(schema['$defs'])} definitions")
+                    self.log.debug("schema_definitions_found", count=len(schema['$defs']))
                 return schema
             else:
-                print(f"Schema file not found at {self.schema_path}")
+                self.log.error("schema_file_not_found", path=self.schema_path)
                 return {}
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"Error loading schema: {e}")
-            print(f"Using empty schema as fallback")
+            self.log.error("schema_loading_error", error=str(e), path=self.schema_path)
             return {}
     
     def _extract_verb_definitions(self) -> Dict[str, Dict[str, Any]]:
@@ -107,17 +130,17 @@ class SchemaUtils:
         # Extract from SWMLMethod anyOf
         if "$defs" in self.schema and "SWMLMethod" in self.schema["$defs"]:
             swml_method = self.schema["$defs"]["SWMLMethod"]
-            print(f"Found SWMLMethod in schema with keys: {swml_method.keys()}")
+            self.log.debug("swml_method_found", keys=list(swml_method.keys()))
             
             if "anyOf" in swml_method:
-                print(f"Found anyOf in SWMLMethod with {len(swml_method['anyOf'])} items")
+                self.log.debug("anyof_found", count=len(swml_method['anyOf']))
                 
                 for ref in swml_method["anyOf"]:
                     if "$ref" in ref:
                         # Extract the verb name from the reference
                         verb_ref = ref["$ref"]
                         verb_name = verb_ref.split("/")[-1]
-                        print(f"Processing verb reference: {verb_ref} -> {verb_name}")
+                        self.log.debug("processing_verb_reference", ref=verb_ref, name=verb_name)
                         
                         # Look up the verb definition
                         if verb_name in self.schema["$defs"]:
@@ -133,11 +156,11 @@ class SchemaUtils:
                                         "schema_name": verb_name,
                                         "definition": verb_def
                                     }
-                                    print(f"Added verb: {actual_verb}")
+                                    self.log.debug("verb_added", verb=actual_verb)
         else:
-            print(f"Missing $defs or SWMLMethod in schema")
+            self.log.warning("missing_swml_method_or_defs")
             if "$defs" in self.schema:
-                print(f"Available definitions: {list(self.schema['$defs'].keys())}")
+                self.log.debug("available_definitions", defs=list(self.schema['$defs'].keys()))
         
         return verbs
     

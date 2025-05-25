@@ -79,6 +79,7 @@ from signalwire_agents.core.state import StateManager, FileStateManager
 from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_handler import AIVerbHandler
 from signalwire_agents.core.skill_manager import SkillManager
+from signalwire_agents.utils.schema_utils import SchemaUtils
 
 # Create a logger
 logger = structlog.get_logger("agent_base")
@@ -332,7 +333,7 @@ class AgentBase(SWMLService):
         
         # Log the schema path if found and not suppressing logs
         if self.schema_utils and self.schema_utils.schema_path and not suppress_logs:
-            print(f"Using schema.json at: {self.schema_utils.schema_path}")
+            self.log.debug("using_schema_path", path=self.schema_utils.schema_path)
         
         # Setup logger for this instance
         self.log = logger.bind(agent=name)
@@ -367,7 +368,7 @@ class AgentBase(SWMLService):
             self.pom = None
         
         # Initialize tool registry (separate from SWMLService verb registry)
-        self._swaig_functions: Dict[str, SWAIGFunction] = {}
+        self._swaig_functions = {}
         
         # Initialize session manager
         self._session_manager = SessionManager(token_expiry_secs=token_expiry_secs)
@@ -419,6 +420,13 @@ class AgentBase(SWMLService):
         # Initialize contexts system
         self._contexts_builder = None
         self._contexts_defined = False
+        
+        self.schema_utils = SchemaUtils(schema_path)
+        if self.schema_utils and self.schema_utils.schema:
+            self.log.debug("schema_loaded", path=self.schema_utils.schema_path)
+        
+        # Initialize our swaig functions
+        self._swaig_functions = {}
     
     def _process_prompt_sections(self):
         """
@@ -923,7 +931,7 @@ class AgentBase(SWMLService):
                         return pom_data['_sections']
                     # Fall through to default if nothing worked
             except Exception as e:
-                print(f"Error rendering POM: {e}")
+                self.log.error("pom_rendering_failed", error=str(e))
                 # Fall back to raw text if POM fails
                 
         # Return raw text (either explicitly set or default)
@@ -1463,7 +1471,7 @@ class AgentBase(SWMLService):
                     
             except ValueError as e:
                 if not self._suppress_logs:
-                    print(f"Error building AI verb configuration: {str(e)}")
+                    self.log.error("ai_verb_config_error", error=str(e))
         else:
             # Fallback if no handler (shouldn't happen but just in case)
             ai_config = {
@@ -1556,9 +1564,9 @@ class AgentBase(SWMLService):
         self._register_routes(router)
         
         # Log all registered routes for debugging
-        print(f"Registered routes for {self.name}:")
+        self.log.debug("routes_registered", agent=self.name)
         for route in router.routes:
-            print(f"  {route.path}")
+            self.log.debug("route_registered", path=route.path)
         
         return router
 
@@ -1576,6 +1584,40 @@ class AgentBase(SWMLService):
             # Create a FastAPI app with explicit redirect_slashes=False
             app = FastAPI(redirect_slashes=False)
             
+            # Add health and ready endpoints directly to the main app to avoid conflicts with catch-all
+            @app.get("/health")
+            @app.post("/health")
+            async def health_check():
+                """Health check endpoint for Kubernetes liveness probe"""
+                return {
+                    "status": "healthy",
+                    "agent": self.get_name(),
+                    "route": self.route,
+                    "functions": len(self._swaig_functions)
+                }
+            
+            @app.get("/ready")
+            @app.post("/ready")
+            async def readiness_check():
+                """Readiness check endpoint for Kubernetes readiness probe"""
+                # Check if agent is properly initialized
+                ready = (
+                    hasattr(self, '_swaig_functions') and
+                    hasattr(self, 'schema_utils') and
+                    self.schema_utils is not None
+                )
+                
+                status_code = 200 if ready else 503
+                return Response(
+                    content=json.dumps({
+                        "status": "ready" if ready else "not_ready",
+                        "agent": self.get_name(),
+                        "initialized": ready
+                    }),
+                    status_code=status_code,
+                    media_type="application/json"
+                )
+            
             # Get router for this agent
             router = self.as_router()
             
@@ -1583,7 +1625,7 @@ class AgentBase(SWMLService):
             @app.get("/{full_path:path}")
             @app.post("/{full_path:path}")
             async def handle_all_routes(request: Request, full_path: str):
-                print(f"Received request for path: {full_path}")
+                self.log.debug("request_received", path=full_path)
                 
                 # Check if the path is meant for this agent
                 if not full_path.startswith(self.route.lstrip("/")):
@@ -1592,7 +1634,7 @@ class AgentBase(SWMLService):
                 # Extract the path relative to this agent's route
                 relative_path = full_path[len(self.route.lstrip("/")):]
                 relative_path = relative_path.lstrip("/")
-                print(f"Relative path: {relative_path}")
+                self.log.debug("path_extracted", relative_path=relative_path)
                 
                 # Perform routing based on the relative path
                 if not relative_path or relative_path == "/":
@@ -1627,11 +1669,11 @@ class AgentBase(SWMLService):
             # Include router with prefix
             app.include_router(router, prefix=self.route)
             
-            # Print all app routes for debugging
-            print(f"All app routes:")
+            # Log all app routes for debugging
+            self.log.debug("app_routes_registered")
             for route in app.routes:
                 if hasattr(route, "path"):
-                    print(f"  {route.path}")
+                    self.log.debug("app_route", path=route.path)
             
             self._app = app
         
@@ -1706,39 +1748,7 @@ class AgentBase(SWMLService):
         Args:
             router: FastAPI router to register routes with
         """
-        # Health check endpoints for Kubernetes
-        @router.get("/health")
-        @router.post("/health")
-        async def health_check():
-            """Health check endpoint for Kubernetes liveness probe"""
-            return {
-                "status": "healthy",
-                "agent": self.get_name(),
-                "route": self.route,
-                "functions": len(self._swaig_functions)
-            }
-        
-        @router.get("/ready")
-        @router.post("/ready")
-        async def readiness_check():
-            """Readiness check endpoint for Kubernetes readiness probe"""
-            # Check if agent is properly initialized
-            ready = (
-                hasattr(self, '_swaig_functions') and
-                hasattr(self, 'schema_utils') and
-                self.schema_utils is not None
-            )
-            
-            status_code = 200 if ready else 503
-            return Response(
-                content=json.dumps({
-                    "status": "ready" if ready else "not_ready",
-                    "agent": self.get_name(),
-                    "initialized": ready
-                }),
-                status_code=status_code,
-                media_type="application/json"
-            )
+        # Health check endpoints are now registered directly on the main app
         
         # Root endpoint (handles both with and without trailing slash)
         @router.get("/")
