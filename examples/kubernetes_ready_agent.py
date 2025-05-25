@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""
+Kubernetes-Ready Agent Example
+
+This demonstrates an agent configured for production Kubernetes deployment with:
+- Health and readiness endpoints
+- Structured JSON logging
+- Graceful shutdown handling
+- Environment variable configuration
+
+Usage:
+    # Use default port (8080)
+    python kubernetes_ready_agent.py
+    
+    # Use custom port via environment variable
+    PORT=8081 python kubernetes_ready_agent.py
+    
+    # Use custom port via command line
+    python kubernetes_ready_agent.py --port 8081
+"""
+
+import os
+import sys
+import logging
+from signalwire_agents import AgentBase
+
+class KubernetesReadyAgent(AgentBase):
+    def __init__(self, port=None):
+        # Allow port override via parameter, environment, or default
+        if port is None:
+            port = int(os.environ.get("PORT", 8080))
+            
+        super().__init__(
+            name="k8s-agent",
+            route="/",  # Root route for simplicity
+            host="0.0.0.0",  # Bind to all interfaces
+            port=port,
+            suppress_logs=False  # Keep structured logging
+        )
+        
+        # Setup graceful shutdown for Kubernetes
+        self.setup_graceful_shutdown()
+        
+        # Log initialization
+        self.log.info("kubernetes_agent_initialized", 
+                     port=self.port,
+                     route=self.route)
+    
+    def get_prompt(self):
+        return """You are a production-ready AI agent running in Kubernetes. 
+        You can help users with general questions and demonstrate cloud-native deployment patterns."""
+    
+    @AgentBase.tool(
+        name="health_status",
+        description="Get the health status of this agent"
+    )
+    def health_status(self, args, raw_data):
+        return {
+            "status": "healthy",
+            "agent": self.get_name(),
+            "route": self.route,
+            "port": self.port,
+            "functions": len(self._swaig_functions),
+            "environment": "kubernetes"
+        }
+
+if __name__ == "__main__":
+    # Simple command line argument parsing
+    port = None
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--port" and len(sys.argv) > 2:
+            try:
+                port = int(sys.argv[2])
+            except ValueError:
+                print("Error: Port must be a number")
+                sys.exit(1)
+        elif sys.argv[1] in ["--help", "-h"]:
+            print(__doc__)
+            sys.exit(0)
+    
+    # Environment variable configuration
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    
+    # Configure root logger level
+    logging.getLogger().setLevel(getattr(logging, log_level))
+    
+    # Create agent
+    agent = KubernetesReadyAgent(port=port)
+    
+    # Log startup with environment info
+    agent.log.info("agent_starting_production",
+                   log_level=log_level,
+                   port=agent.port,
+                   health_endpoints=["/health", "/ready"])
+    
+    print(f"🚀 Kubernetes-ready agent starting on port {agent.port}")
+    print(f"📊 Health check: http://localhost:{agent.port}/health")
+    print(f"✅ Readiness check: http://localhost:{agent.port}/ready")
+    print(f"🔍 Log level: {log_level}")
+    
+    try:
+        agent.serve()
+    except KeyboardInterrupt:
+        agent.log.info("agent_shutdown_requested")
+        print("\n🛑 Agent shutdown complete") 
