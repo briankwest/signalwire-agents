@@ -76,6 +76,583 @@ from signalwire_agents import AgentBase
 from signalwire_agents.core.function_result import SwaigFunctionResult
 
 
+# ===== MOCK REQUEST OBJECTS FOR DYNAMIC AGENT TESTING =====
+
+class MockQueryParams:
+    """Mock FastAPI QueryParams (case-sensitive dict-like)"""
+    def __init__(self, params: Optional[Dict[str, str]] = None):
+        self._params = params or {}
+    
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        return self._params.get(key, default)
+    
+    def __getitem__(self, key: str) -> str:
+        return self._params[key]
+    
+    def __contains__(self, key: str) -> bool:
+        return key in self._params
+    
+    def items(self):
+        return self._params.items()
+    
+    def keys(self):
+        return self._params.keys()
+    
+    def values(self):
+        return self._params.values()
+
+
+class MockHeaders:
+    """Mock FastAPI Headers (case-insensitive dict-like)"""
+    def __init__(self, headers: Optional[Dict[str, str]] = None):
+        # Store headers with lowercase keys for case-insensitive lookup
+        self._headers = {}
+        if headers:
+            for k, v in headers.items():
+                self._headers[k.lower()] = v
+    
+    def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        return self._headers.get(key.lower(), default)
+    
+    def __getitem__(self, key: str) -> str:
+        return self._headers[key.lower()]
+    
+    def __contains__(self, key: str) -> bool:
+        return key.lower() in self._headers
+    
+    def items(self):
+        return self._headers.items()
+    
+    def keys(self):
+        return self._headers.keys()
+    
+    def values(self):
+        return self._headers.values()
+
+
+class MockURL:
+    """Mock FastAPI URL object"""
+    def __init__(self, url: str = "http://localhost:8080/swml"):
+        self._url = url
+        # Parse basic components
+        if "?" in url:
+            self.path, query_string = url.split("?", 1)
+            self.query = query_string
+        else:
+            self.path = url
+            self.query = ""
+        
+        # Extract scheme and netloc
+        if "://" in url:
+            self.scheme, rest = url.split("://", 1)
+            if "/" in rest:
+                self.netloc = rest.split("/", 1)[0]
+            else:
+                self.netloc = rest
+        else:
+            self.scheme = "http"
+            self.netloc = "localhost:8080"
+    
+    def __str__(self):
+        return self._url
+
+
+class MockRequest:
+    """Mock FastAPI Request object for dynamic agent testing"""
+    def __init__(self, method: str = "POST", url: str = "http://localhost:8080/swml",
+                 headers: Optional[Dict[str, str]] = None,
+                 query_params: Optional[Dict[str, str]] = None,
+                 json_body: Optional[Dict[str, Any]] = None):
+        self.method = method
+        self.url = MockURL(url)
+        self.headers = MockHeaders(headers)
+        self.query_params = MockQueryParams(query_params)
+        self._json_body = json_body or {}
+        self._body = json.dumps(self._json_body).encode('utf-8')
+    
+    async def json(self) -> Dict[str, Any]:
+        """Return the JSON body"""
+        return self._json_body
+    
+    async def body(self) -> bytes:
+        """Return the raw body bytes"""
+        return self._body
+    
+    def client(self):
+        """Mock client property"""
+        return type('MockClient', (), {'host': '127.0.0.1', 'port': 0})()
+
+
+def create_mock_request(method: str = "POST", url: str = "http://localhost:8080/swml",
+                       headers: Optional[Dict[str, str]] = None,
+                       query_params: Optional[Dict[str, str]] = None,
+                       body: Optional[Dict[str, Any]] = None) -> MockRequest:
+    """
+    Factory function to create a mock FastAPI Request object
+    
+    Args:
+        method: HTTP method (default: POST)
+        url: Request URL (default: http://localhost:8080/swml)
+        headers: HTTP headers dict
+        query_params: Query parameters dict
+        body: JSON body dict
+        
+    Returns:
+        MockRequest object compatible with agent callbacks
+    """
+    return MockRequest(
+        method=method,
+        url=url,
+        headers=headers,
+        query_params=query_params,
+        json_body=body
+    )
+
+
+# ===== FAKE SWML POST DATA GENERATION =====
+
+def generate_fake_uuid() -> str:
+    """Generate a fake UUID for testing"""
+    return str(uuid.uuid4())
+
+
+def generate_fake_node_id() -> str:
+    """Generate a fake node ID for testing"""
+    return f"test-node-{uuid.uuid4().hex[:8]}"
+
+
+def generate_fake_sip_from(call_type: str) -> str:
+    """Generate a fake 'from' address based on call type"""
+    if call_type == "sip":
+        return f"+1555{uuid.uuid4().hex[:7]}"  # Fake phone number
+    else:  # webrtc
+        return f"user-{uuid.uuid4().hex[:8]}@test.domain"
+
+
+def generate_fake_sip_to(call_type: str) -> str:
+    """Generate a fake 'to' address based on call type"""
+    if call_type == "sip":
+        return f"+1444{uuid.uuid4().hex[:7]}"  # Fake phone number
+    else:  # webrtc
+        return f"agent-{uuid.uuid4().hex[:8]}@test.domain"
+
+
+def adapt_for_call_type(call_data: Dict[str, Any], call_type: str) -> Dict[str, Any]:
+    """
+    Adapt call data structure based on call type (sip vs webrtc)
+    
+    Args:
+        call_data: Base call data structure
+        call_type: "sip" or "webrtc"
+        
+    Returns:
+        Adapted call data with appropriate addresses and metadata
+    """
+    call_data = call_data.copy()
+    
+    # Update addresses based on call type
+    call_data["from"] = generate_fake_sip_from(call_type)
+    call_data["to"] = generate_fake_sip_to(call_type)
+    
+    # Add call type specific metadata
+    if call_type == "sip":
+        call_data["type"] = "phone"
+        call_data["headers"] = {
+            "User-Agent": f"Test-SIP-Client/1.0.0",
+            "From": f"<sip:{call_data['from']}@test.sip.provider>",
+            "To": f"<sip:{call_data['to']}@test.sip.provider>",
+            "Call-ID": call_data["call_id"]
+        }
+    else:  # webrtc
+        call_data["type"] = "webrtc"
+        call_data["headers"] = {
+            "User-Agent": "Test-WebRTC-Client/1.0.0",
+            "Origin": "https://test.webrtc.app",
+            "Sec-WebSocket-Protocol": "sip"
+        }
+    
+    return call_data
+
+
+def generate_fake_swml_post_data(call_type: str = "webrtc", 
+                                call_direction: str = "inbound",
+                                call_state: str = "created") -> Dict[str, Any]:
+    """
+    Generate fake SWML post_data that matches real SignalWire structure
+    
+    Args:
+        call_type: "sip" or "webrtc" (default: webrtc)
+        call_direction: "inbound" or "outbound" (default: inbound)
+        call_state: Call state (default: created)
+        
+    Returns:
+        Fake post_data dict with call, vars, and envs structure
+    """
+    call_id = generate_fake_uuid()
+    project_id = generate_fake_uuid()
+    space_id = generate_fake_uuid()
+    current_time = datetime.now().isoformat()
+    
+    # Base call structure
+    call_data = {
+        "call_id": call_id,
+        "node_id": generate_fake_node_id(),
+        "segment_id": generate_fake_uuid(),
+        "call_session_id": generate_fake_uuid(),
+        "tag": call_id,
+        "state": call_state,
+        "direction": call_direction,
+        "type": call_type,
+        "from": generate_fake_sip_from(call_type),
+        "to": generate_fake_sip_to(call_type),
+        "timeout": 30,
+        "max_duration": 14400,
+        "answer_on_bridge": False,
+        "hangup_after_bridge": True,
+        "ringback": [],
+        "record": {},
+        "project_id": project_id,
+        "space_id": space_id,
+        "created_at": current_time,
+        "updated_at": current_time
+    }
+    
+    # Adapt for specific call type
+    call_data = adapt_for_call_type(call_data, call_type)
+    
+    # Complete post_data structure
+    post_data = {
+        "call": call_data,
+        "vars": {
+            "userVariables": {}  # Empty by default, can be filled via overrides
+        },
+        "envs": {}  # Empty by default, can be filled via overrides
+    }
+    
+    return post_data
+
+
+# ===== OVERRIDE SYSTEM =====
+
+def set_nested_value(data: Dict[str, Any], path: str, value: Any) -> None:
+    """
+    Set a nested value using dot notation path
+    
+    Args:
+        data: Dictionary to modify
+        path: Dot-notation path (e.g., "call.call_id" or "vars.userVariables.custom")
+        value: Value to set
+    """
+    keys = path.split('.')
+    current = data
+    
+    # Navigate to the parent of the target key
+    for key in keys[:-1]:
+        if key not in current:
+            current[key] = {}
+        current = current[key]
+    
+    # Set the final value
+    current[keys[-1]] = value
+
+
+def parse_value(value_str: str) -> Any:
+    """
+    Parse a string value into appropriate Python type
+    
+    Args:
+        value_str: String representation of value
+        
+    Returns:
+        Parsed value (str, int, float, bool, None, or JSON object)
+    """
+    # Handle special values
+    if value_str.lower() == 'null':
+        return None
+    elif value_str.lower() == 'true':
+        return True
+    elif value_str.lower() == 'false':
+        return False
+    
+    # Try parsing as number
+    try:
+        if '.' in value_str:
+            return float(value_str)
+        else:
+            return int(value_str)
+    except ValueError:
+        pass
+    
+    # Try parsing as JSON (for objects/arrays)
+    try:
+        return json.loads(value_str)
+    except json.JSONDecodeError:
+        pass
+    
+    # Return as string
+    return value_str
+
+
+def apply_overrides(data: Dict[str, Any], overrides: List[str], 
+                   json_overrides: List[str]) -> Dict[str, Any]:
+    """
+    Apply override values to data using dot notation paths
+    
+    Args:
+        data: Data dictionary to modify
+        overrides: List of "path=value" strings
+        json_overrides: List of "path=json_value" strings
+        
+    Returns:
+        Modified data dictionary
+    """
+    data = data.copy()
+    
+    # Apply simple overrides
+    for override in overrides:
+        if '=' not in override:
+            continue
+        path, value_str = override.split('=', 1)
+        value = parse_value(value_str)
+        set_nested_value(data, path, value)
+    
+    # Apply JSON overrides
+    for json_override in json_overrides:
+        if '=' not in json_override:
+            continue
+        path, json_str = json_override.split('=', 1)
+        try:
+            value = json.loads(json_str)
+            set_nested_value(data, path, value)
+        except json.JSONDecodeError as e:
+            print(f"Warning: Invalid JSON in override '{json_override}': {e}")
+    
+    return data
+
+
+def apply_convenience_mappings(data: Dict[str, Any], args: argparse.Namespace) -> Dict[str, Any]:
+    """
+    Apply convenience CLI arguments to data structure
+    
+    Args:
+        data: Data dictionary to modify
+        args: Parsed CLI arguments
+        
+    Returns:
+        Modified data dictionary
+    """
+    data = data.copy()
+    
+    # Map high-level arguments to specific paths
+    if hasattr(args, 'call_id') and args.call_id:
+        set_nested_value(data, "call.call_id", args.call_id)
+        set_nested_value(data, "call.tag", args.call_id)  # tag often matches call_id
+    
+    if hasattr(args, 'project_id') and args.project_id:
+        set_nested_value(data, "call.project_id", args.project_id)
+    
+    if hasattr(args, 'space_id') and args.space_id:
+        set_nested_value(data, "call.space_id", args.space_id)
+    
+    if hasattr(args, 'call_state') and args.call_state:
+        set_nested_value(data, "call.state", args.call_state)
+    
+    if hasattr(args, 'call_direction') and args.call_direction:
+        set_nested_value(data, "call.direction", args.call_direction)
+    
+    # Handle from/to addresses with fake generation if needed
+    if hasattr(args, 'from_number') and args.from_number:
+        # If looks like phone number, use as-is, otherwise generate fake
+        if args.from_number.startswith('+') or args.from_number.isdigit():
+            set_nested_value(data, "call.from", args.from_number)
+        else:
+            # Generate fake phone number or SIP address
+            call_type = getattr(args, 'call_type', 'webrtc')
+            if call_type == 'sip':
+                set_nested_value(data, "call.from", f"+1555{uuid.uuid4().hex[:7]}")
+            else:
+                set_nested_value(data, "call.from", f"{args.from_number}@test.domain")
+    
+    if hasattr(args, 'to_extension') and args.to_extension:
+        # Similar logic for 'to' address
+        if args.to_extension.startswith('+') or args.to_extension.isdigit():
+            set_nested_value(data, "call.to", args.to_extension)
+        else:
+            call_type = getattr(args, 'call_type', 'webrtc')
+            if call_type == 'sip':
+                set_nested_value(data, "call.to", f"+1444{uuid.uuid4().hex[:7]}")
+            else:
+                set_nested_value(data, "call.to", f"{args.to_extension}@test.domain")
+    
+    # Merge user variables
+    user_vars = {}
+    
+    # Add user_vars if provided
+    if hasattr(args, 'user_vars') and args.user_vars:
+        try:
+            user_vars.update(json.loads(args.user_vars))
+        except json.JSONDecodeError as e:
+            print(f"Warning: Invalid JSON in --user-vars: {e}")
+    
+    # Add query_params if provided (merged into userVariables)
+    if hasattr(args, 'query_params') and args.query_params:
+        try:
+            user_vars.update(json.loads(args.query_params))
+        except json.JSONDecodeError as e:
+            print(f"Warning: Invalid JSON in --query-params: {e}")
+    
+    # Set merged user variables
+    if user_vars:
+        set_nested_value(data, "vars.userVariables", user_vars)
+    
+    return data
+
+
+def handle_dump_swml(agent: 'AgentBase', args: argparse.Namespace) -> int:
+    """
+    Handle SWML dumping with fake post_data and mock request support
+    
+    Args:
+        agent: The loaded agent instance
+        args: Parsed CLI arguments
+        
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    if not args.raw:
+        print("\nGenerating SWML document...")
+        if args.verbose:
+            print(f"Agent: {agent.get_name()}")
+            print(f"Route: {agent.route}")
+            
+            # Show loaded skills
+            skills = agent.list_skills()
+            if skills:
+                print(f"Skills: {', '.join(skills)}")
+                
+            # Show available functions
+            if hasattr(agent, '_swaig_functions') and agent._swaig_functions:
+                print(f"Functions: {', '.join(agent._swaig_functions.keys())}")
+            
+            print("-" * 60)
+    
+    try:
+        # Generate fake SWML post_data
+        post_data = generate_fake_swml_post_data(
+            call_type=args.call_type,
+            call_direction=args.call_direction,
+            call_state=args.call_state
+        )
+        
+        # Apply convenience mappings from CLI args
+        post_data = apply_convenience_mappings(post_data, args)
+        
+        # Apply explicit overrides
+        post_data = apply_overrides(post_data, args.override, args.override_json)
+        
+        # Parse headers for mock request
+        headers = {}
+        for header in args.header:
+            if '=' in header:
+                key, value = header.split('=', 1)
+                headers[key] = value
+        
+        # Parse query params for mock request (separate from userVariables)
+        query_params = {}
+        if args.query_params:
+            try:
+                query_params = json.loads(args.query_params)
+            except json.JSONDecodeError as e:
+                if not args.raw:
+                    print(f"Warning: Invalid JSON in --query-params: {e}")
+        
+        # Parse request body
+        request_body = {}
+        if args.body:
+            try:
+                request_body = json.loads(args.body)
+            except json.JSONDecodeError as e:
+                if not args.raw:
+                    print(f"Warning: Invalid JSON in --body: {e}")
+        
+        # Create mock request object
+        mock_request = create_mock_request(
+            method=args.method,
+            headers=headers,
+            query_params=query_params,
+            body=request_body
+        )
+        
+        if args.verbose and not args.raw:
+            print(f"Using fake SWML post_data:")
+            print(json.dumps(post_data, indent=2))
+            print(f"\nMock request headers: {dict(mock_request.headers.items())}")
+            print(f"Mock request query params: {dict(mock_request.query_params.items())}")
+            print(f"Mock request method: {mock_request.method}")
+            print("-" * 60)
+        
+        # For dynamic agents, call on_swml_request if available
+        if hasattr(agent, 'on_swml_request'):
+            try:
+                # Dynamic agents expect (request_data, callback_path, request)
+                call_id = post_data.get('call', {}).get('call_id', 'test-call-id')
+                modifications = agent.on_swml_request(post_data, "/swml", mock_request)
+                
+                if args.verbose and not args.raw:
+                    print(f"Dynamic agent modifications: {modifications}")
+                
+                # Generate SWML with modifications
+                swml_doc = agent._render_swml(call_id, modifications)
+            except Exception as e:
+                if args.verbose and not args.raw:
+                    print(f"Dynamic agent callback failed, falling back to static SWML: {e}")
+                # Fall back to static SWML generation
+                swml_doc = agent._render_swml()
+        else:
+            # Static agent - generate SWML normally
+            swml_doc = agent._render_swml()
+        
+        if args.raw:
+            # Temporarily restore print for JSON output
+            if '--raw' in sys.argv and 'original_print' in globals():
+                import builtins
+                builtins.print = original_print
+            
+            # Output only the raw JSON for piping to jq/yq
+            print(swml_doc)
+        else:
+            # Normal output with headers
+            print("SWML Document:")
+            print("=" * 50)
+            print(swml_doc)
+            print("=" * 50)
+            
+            if args.verbose:
+                # Parse and show formatted JSON for better readability
+                try:
+                    swml_parsed = json.loads(swml_doc)
+                    print("\nFormatted SWML:")
+                    print(json.dumps(swml_parsed, indent=2))
+                except json.JSONDecodeError:
+                    print("\nNote: SWML document is not valid JSON format")
+        
+        return 0
+        
+    except Exception as e:
+        if args.raw:
+            # For raw mode, output error to stderr to not interfere with JSON output
+            original_print(f"Error generating SWML: {e}", file=sys.stderr)
+            if args.verbose:
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+        else:
+            print(f"Error generating SWML: {e}")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+        return 1
+
+
 def setup_raw_mode_suppression():
     """Set up comprehensive output suppression for raw mode"""
     # Suppress all warnings including RuntimeWarnings
@@ -956,17 +1533,34 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # JSON syntax (original)
+  # Function testing (existing functionality)
   %(prog)s examples/web_search_agent.py web_search '{"query":"test"}'
-  
-  # New --args syntax  
-  %(prog)s examples/web_search_agent.py web_search --args --query "who is the president"
   %(prog)s examples/agent.py search --args --query "AI" --limit 5 --verbose
+  
+  # SWML testing (enhanced with fake post_data)
+  %(prog)s examples/my_agent.py --dump-swml
+  %(prog)s examples/my_agent.py --dump-swml --raw | jq '.'
+  %(prog)s examples/my_agent.py --dump-swml --verbose
+  
+  # SWML testing with call customization
+  %(prog)s examples/agent.py --dump-swml --call-type sip --call-direction outbound
+  %(prog)s examples/agent.py --dump-swml --call-state answered --from-number +15551234567
+  
+  # SWML testing with data overrides
+  %(prog)s examples/agent.py --dump-swml --override call.project_id=my-project
+  %(prog)s examples/agent.py --dump-swml --user-vars '{"customer_id":"12345","tier":"gold"}'
+  %(prog)s examples/agent.py --dump-swml --override call.timeout=60 --override call.state=answered
+  
+  # Dynamic agent testing with mock request
+  %(prog)s examples/dynamic_agent.py --dump-swml --header "Authorization=Bearer token"
+  %(prog)s examples/dynamic_agent.py --dump-swml --query-params '{"source":"api","debug":"true"}'
+  %(prog)s examples/dynamic_agent.py --dump-swml --method GET --body '{"custom":"data"}'
+  
+  # Combined testing scenarios
+  %(prog)s examples/agent.py --dump-swml --call-type sip --user-vars '{"vip":"true"}' --header "X-Source=test" --verbose
   
   # Other commands
   %(prog)s examples/my_agent.py --list-tools
-  %(prog)s examples/my_agent.py --dump-swml
-  %(prog)s examples/my_agent.py --dump-swml --raw | jq '.'
         """
     )
     
@@ -1027,6 +1621,95 @@ Examples:
         "--raw",
         action="store_true",
         help="Output raw SWML JSON only (no headers, useful for piping to jq/yq)"
+    )
+    
+    # ===== NEW SWML TESTING ARGUMENTS =====
+    
+    parser.add_argument(
+        "--call-type",
+        choices=["sip", "webrtc"],
+        default="webrtc",
+        help="Type of call for SWML generation (default: webrtc)"
+    )
+    
+    parser.add_argument(
+        "--call-direction",
+        choices=["inbound", "outbound"],
+        default="inbound",
+        help="Direction of call for SWML generation (default: inbound)"
+    )
+    
+    parser.add_argument(
+        "--call-state",
+        default="created",
+        help="State of call for SWML generation (default: created)"
+    )
+    
+    parser.add_argument(
+        "--call-id",
+        help="Override call_id in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--project-id",
+        help="Override project_id in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--space-id", 
+        help="Override space_id in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--from-number",
+        help="Override 'from' address in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--to-extension",
+        help="Override 'to' address in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--user-vars",
+        help="JSON string for vars.userVariables in fake SWML post_data"
+    )
+    
+    parser.add_argument(
+        "--query-params",
+        help="JSON string for query parameters (merged into userVariables)"
+    )
+    
+    parser.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        help="Override specific values using dot notation (e.g., --override call.state=answered)"
+    )
+    
+    parser.add_argument(
+        "--override-json",
+        action="append", 
+        default=[],
+        help="Override with JSON values using dot notation (e.g., --override-json vars.custom='{\"key\":\"value\"}')"
+    )
+    
+    parser.add_argument(
+        "--header",
+        action="append",
+        default=[],
+        help="Add HTTP headers for mock request (e.g., --header Authorization=Bearer token)"
+    )
+    
+    parser.add_argument(
+        "--method",
+        default="POST",
+        help="HTTP method for mock request (default: POST)"
+    )
+    
+    parser.add_argument(
+        "--body",
+        help="JSON string for mock request body"
     )
     
     args = parser.parse_args()
@@ -1133,66 +1816,7 @@ Examples:
         
         # Dump SWML if requested
         if args.dump_swml:
-            if not args.raw:
-                print("\nGenerating SWML document...")
-                if args.verbose:
-                    print(f"Agent: {agent.get_name()}")
-                    print(f"Route: {agent.route}")
-                    
-                    # Show loaded skills
-                    skills = agent.list_skills()
-                    if skills:
-                        print(f"Skills: {', '.join(skills)}")
-                        
-                    # Show available functions
-                    if hasattr(agent, '_swaig_functions') and agent._swaig_functions:
-                        print(f"Functions: {', '.join(agent._swaig_functions.keys())}")
-                    
-                    print("-" * 60)
-            
-            try:
-                # Generate the SWML document
-                swml_doc = agent._render_swml()
-                
-                if args.raw:
-                    # Temporarily restore print for JSON output
-                    if '--raw' in sys.argv and 'original_print' in globals():
-                        import builtins
-                        builtins.print = original_print
-                    
-                    # Output only the raw JSON for piping to jq/yq
-                    print(swml_doc)
-                else:
-                    # Normal output with headers
-                    print("SWML Document:")
-                    print("=" * 50)
-                    print(swml_doc)
-                    print("=" * 50)
-                    
-                    if args.verbose:
-                        # Parse and show formatted JSON for better readability
-                        try:
-                            swml_parsed = json.loads(swml_doc)
-                            print("\nFormatted SWML:")
-                            print(json.dumps(swml_parsed, indent=2))
-                        except json.JSONDecodeError:
-                            print("\nNote: SWML document is not valid JSON format")
-                
-                return 0
-                
-            except Exception as e:
-                if args.raw:
-                    # For raw mode, output error to stderr to not interfere with JSON output
-                    original_print(f"Error generating SWML: {e}", file=sys.stderr)
-                    if args.verbose:
-                        import traceback
-                        traceback.print_exc(file=sys.stderr)
-                else:
-                    print(f"Error generating SWML: {e}")
-                    if args.verbose:
-                        import traceback
-                        traceback.print_exc()
-                return 1
+            return handle_dump_swml(agent, args)
         
         # Parse function arguments
         if function_args_list:
