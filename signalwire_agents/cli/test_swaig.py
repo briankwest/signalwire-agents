@@ -58,9 +58,18 @@ import re
 import requests
 import warnings
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
+
+try:
+    # Try to import the AgentBase class
+    from signalwire_agents.core.agent_base import AgentBase
+    from signalwire_agents.core.function_result import SwaigFunctionResult
+except ImportError:
+    # If import fails, we'll handle it gracefully
+    AgentBase = None
+    SwaigFunctionResult = None
 
 # Early warning suppression for module execution warnings
 if "--raw" in sys.argv:
@@ -965,326 +974,231 @@ def simple_template_expand(template: str, data: Dict[str, Any]) -> str:
 def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any], 
                            verbose: bool = False) -> Dict[str, Any]:
     """
-    Execute a DataMap function following the actual DataMap processing pipeline:
-    1. Expressions (pattern matching)
-    2. Webhooks (try each sequentially until one succeeds)
-    3. Foreach (within successful webhook)
-    4. Output (from successful webhook)
-    5. Fallback output (if all webhooks fail)
+    Execute a DataMap function by processing its configuration and making HTTP requests
     
     Args:
-        datamap_config: DataMap configuration dictionary
+        datamap_config: The complete DataMap function configuration
         args: Function arguments
-        verbose: Enable verbose output
+        verbose: Whether to show verbose output
         
     Returns:
-        Function result (should be string or dict with 'response' key)
+        Final function result
     """
-    if verbose:
-        print("=== DataMap Function Execution ===")
-        print(f"Config: {json.dumps(datamap_config, indent=2)}")
-        print(f"Args: {json.dumps(args, indent=2)}")
+    # Extract data_map configuration
+    data_map = datamap_config.get('data_map', {})
     
-    # Extract the actual data_map configuration
-    # DataMap configs have the structure: {"function": "...", "data_map": {...}}
-    actual_datamap = datamap_config.get("data_map", datamap_config)
+    # Process expressions (pattern matching)
+    expressions = data_map.get('expressions', [])
+    matched_expression = None
     
     if verbose:
-        print(f"Extracted data_map: {json.dumps(actual_datamap, indent=2)}")
+        print(f"Processing {len(expressions)} expression(s)...")
     
-    # Initialize context with function arguments
-    context = {"args": args}
-    context.update(args)  # Also make args available at top level for backward compatibility
-    
-    if verbose:
-        print(f"Initial context: {json.dumps(context, indent=2)}")
-    
-    # Step 1: Process expressions first (pattern matching)
-    if "expressions" in actual_datamap:
-        if verbose:
-            print("\n--- Processing Expressions ---")
-        for expr in actual_datamap["expressions"]:
-            # Simple expression evaluation - in real implementation this would be more sophisticated
-            if "pattern" in expr and "output" in expr:
-                # For testing, we'll just match simple strings
-                pattern = expr["pattern"]
-                if pattern in str(args):
-                    if verbose:
-                        print(f"Expression matched: {pattern}")
-                    result = simple_template_expand(str(expr["output"]), context)
-                    if verbose:
-                        print(f"Expression result: {result}")
-                    return result
-    
-    # Step 2: Process webhooks sequentially
-    if "webhooks" in actual_datamap:
-        if verbose:
-            print("\n--- Processing Webhooks ---")
+    for expr in expressions:
+        pattern = expr.get('pattern', '.*')  # Default to match everything
+        string_value = expr.get('string', '')
         
-        for i, webhook in enumerate(actual_datamap["webhooks"]):
+        # Create a test string from the arguments
+        test_string = json.dumps(args)
+        
+        if verbose:
+            print(f"  Testing pattern '{pattern}' against '{test_string}'")
+        
+        # Use regex to match
+        try:
+            if re.search(pattern, test_string):
+                matched_expression = expr
+                if verbose:
+                    print(f"  ✓ Pattern matched!")
+                break
+            elif re.search(pattern, string_value):
+                matched_expression = expr
+                if verbose:
+                    print(f"  ✓ Pattern matched against string value!")
+                break
+        except re.error as e:
             if verbose:
-                print(f"\n=== Webhook {i+1}/{len(actual_datamap['webhooks'])} ===")
-            
-            url = webhook.get("url", "")
-            method = webhook.get("method", "POST").upper()
-            headers = webhook.get("headers", {})
-            
-            # Expand template variables in URL and headers
-            url = simple_template_expand(url, context)
-            expanded_headers = {}
-            for key, value in headers.items():
-                expanded_headers[key] = simple_template_expand(str(value), context)
-            
-            if verbose:
-                print(f"Making {method} request to: {url}")
-                print(f"Headers: {json.dumps(expanded_headers, indent=2)}")
-            
-            # Prepare request data
-            request_data = None
-            if method in ["POST", "PUT", "PATCH"]:
-                # Check for 'params' (SignalWire style) or 'data' (generic style) or 'body'
-                if "params" in webhook:
-                    # Expand template variables in params
-                    expanded_params = {}
-                    for key, value in webhook["params"].items():
-                        expanded_params[key] = simple_template_expand(str(value), context)
-                    request_data = json.dumps(expanded_params)
-                elif "body" in webhook:
-                    # Expand template variables in body
-                    if isinstance(webhook["body"], str):
-                        request_data = simple_template_expand(webhook["body"], context)
-                    else:
-                        expanded_body = {}
-                        for key, value in webhook["body"].items():
-                            expanded_body[key] = simple_template_expand(str(value), context)
-                        request_data = json.dumps(expanded_body)
-                elif "data" in webhook:
-                    # Expand template variables in data
-                    if isinstance(webhook["data"], str):
-                        request_data = simple_template_expand(webhook["data"], context)
-                    else:
-                        request_data = json.dumps(webhook["data"])
-                
-                if verbose and request_data:
-                    print(f"Request data: {request_data}")
-            
-            webhook_failed = False
-            response_data = None
-            
-            try:
-                # Make the HTTP request
-                if method == "GET":
-                    response = requests.get(url, headers=expanded_headers, timeout=30)
-                elif method == "POST":
-                    response = requests.post(url, data=request_data, headers=expanded_headers, timeout=30)
-                elif method == "PUT":
-                    response = requests.put(url, data=request_data, headers=expanded_headers, timeout=30)
-                elif method == "PATCH":
-                    response = requests.patch(url, data=request_data, headers=expanded_headers, timeout=30)
-                elif method == "DELETE":
-                    response = requests.delete(url, headers=expanded_headers, timeout=30)
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
-                
-                if verbose:
-                    print(f"Response status: {response.status_code}")
-                    print(f"Response headers: {dict(response.headers)}")
-                
-                # Parse response
-                try:
-                    response_data = response.json()
-                except json.JSONDecodeError:
-                    response_data = {"text": response.text, "status_code": response.status_code}
-                    # Add parse_error like server does
-                    response_data["parse_error"] = True
-                    response_data["raw_response"] = response.text
-                
-                if verbose:
-                    print(f"Response data: {json.dumps(response_data, indent=2)}")
-                
-                # Check for webhook failure following server logic
-                
-                # 1. Check HTTP status code (fix the server bug - should be OR not AND)
-                if response.status_code < 200 or response.status_code > 299:
-                    webhook_failed = True
-                    if verbose:
-                        print(f"Webhook failed: HTTP status {response.status_code} outside 200-299 range")
-                
-                # 2. Check for explicit error keys (parse_error, protocol_error)
-                if not webhook_failed:
-                    explicit_error_keys = ["parse_error", "protocol_error"]
-                    for error_key in explicit_error_keys:
-                        if error_key in response_data and response_data[error_key]:
-                            webhook_failed = True
-                            if verbose:
-                                print(f"Webhook failed: Found explicit error key '{error_key}' = {response_data[error_key]}")
-                            break
-                
-                # 3. Check for custom error_keys from webhook config
-                if not webhook_failed and "error_keys" in webhook:
-                    error_keys = webhook["error_keys"]
-                    if isinstance(error_keys, str):
-                        error_keys = [error_keys]  # Convert single string to list
-                    elif not isinstance(error_keys, list):
-                        error_keys = []
-                    
-                    for error_key in error_keys:
-                        if error_key in response_data and response_data[error_key]:
-                            webhook_failed = True
-                            if verbose:
-                                print(f"Webhook failed: Found custom error key '{error_key}' = {response_data[error_key]}")
-                            break
-                
-            except Exception as e:
-                webhook_failed = True
-                if verbose:
-                    print(f"Webhook failed: HTTP request exception: {e}")
-                # Create error response like server does
-                response_data = {
-                    "protocol_error": True,
-                    "error": str(e)
-                }
-            
-            # If webhook succeeded, process its output
-            if not webhook_failed:
-                if verbose:
-                    print(f"Webhook {i+1} succeeded!")
-                
-                # Add response data to context
-                webhook_context = context.copy()
-                
-                # Handle different response types
-                if isinstance(response_data, list):
-                    # For array responses, use ${array[0].field} syntax
-                    webhook_context["array"] = response_data
-                    if verbose:
-                        print(f"Array response: {len(response_data)} items")
-                else:
-                    # For object responses, use ${response.field} syntax
-                    webhook_context["response"] = response_data
-                    if verbose:
-                        print("Object response")
-                
-                # Step 3: Process webhook-level foreach (if present)
-                if "foreach" in webhook:
-                    foreach_config = webhook["foreach"]
-                    if verbose:
-                        print(f"\n--- Processing Webhook Foreach ---")
-                        print(f"Foreach config: {json.dumps(foreach_config, indent=2)}")
-                    
-                    input_key = foreach_config.get("input_key", "data")
-                    output_key = foreach_config.get("output_key", "result")
-                    max_items = foreach_config.get("max", 100)
-                    append_template = foreach_config.get("append", "${this.value}")
-                    
-                    # Look for the input data in the response
-                    input_data = None
-                    if input_key in response_data and isinstance(response_data[input_key], list):
-                        input_data = response_data[input_key]
-                        if verbose:
-                            print(f"Found array data in response.{input_key}: {len(input_data)} items")
-                    
-                    if input_data:
-                        result_parts = []
-                        items_to_process = input_data[:max_items]
-                        
-                        for item in items_to_process:
-                            if isinstance(item, dict):
-                                # For objects, make properties available as ${this.property}
-                                item_context = {"this": item}
-                                expanded = simple_template_expand(append_template, item_context)
-                            else:
-                                # For non-dict items, make them available as ${this.value}
-                                item_context = {"this": {"value": item}}
-                                expanded = simple_template_expand(append_template, item_context)
-                            result_parts.append(expanded)
-                        
-                        # Store the concatenated result
-                        foreach_result = "".join(result_parts)
-                        webhook_context[output_key] = foreach_result
-                        
-                        if verbose:
-                            print(f"Processed {len(items_to_process)} items")
-                            print(f"Foreach result ({output_key}): {foreach_result[:200]}{'...' if len(foreach_result) > 200 else ''}")
-                    else:
-                        if verbose:
-                            print(f"No array data found for foreach input_key: {input_key}")
-                
-                # Step 4: Process webhook-level output (this is the final result)
-                if "output" in webhook:
-                    webhook_output = webhook["output"]
-                    if verbose:
-                        print(f"\n--- Processing Webhook Output ---")
-                        print(f"Output template: {json.dumps(webhook_output, indent=2)}")
-                    
-                    if isinstance(webhook_output, dict):
-                        # Process each key-value pair in the output
-                        final_result = {}
-                        for key, template in webhook_output.items():
-                            expanded_value = simple_template_expand(str(template), webhook_context)
-                            final_result[key] = expanded_value
-                            if verbose:
-                                print(f"Set {key} = {expanded_value}")
-                    else:
-                        # Single output value (string template)
-                        final_result = simple_template_expand(str(webhook_output), webhook_context)
-                        if verbose:
-                            print(f"Final result = {final_result}")
-                    
-                    if verbose:
-                        print(f"\n--- Webhook {i+1} Final Result ---")
-                        print(f"Result: {json.dumps(final_result, indent=2) if isinstance(final_result, dict) else final_result}")
-                    
-                    return final_result
-                
-                else:
-                    # No output template defined, return the response data
-                    if verbose:
-                        print("No output template defined, returning response data")
-                    return response_data
-            
+                print(f"  ✗ Invalid regex pattern: {e}")
+    
+    if not matched_expression:
+        if verbose:
+            print("  No expressions matched, using first expression if available")
+        matched_expression = expressions[0] if expressions else {}
+    
+    # Process webhooks
+    webhooks = matched_expression.get('webhooks', [])
+    webhook_result = None
+    
+    if verbose:
+        print(f"Processing {len(webhooks)} webhook(s)...")
+    
+    for i, webhook in enumerate(webhooks):
+        url = webhook.get('url', '')
+        method = webhook.get('method', 'POST').upper()
+        headers = webhook.get('headers', {})
+        
+        if verbose:
+            print(f"  Webhook {i+1}: {method} {url}")
+        
+        # Prepare request data
+        request_data = args.copy()
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, params=request_data, headers=headers, timeout=10)
             else:
-                # This webhook failed, try next webhook
+                response = requests.post(url, json=request_data, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                try:
+                    webhook_result = response.json()
+                    if verbose:
+                        print(f"  ✓ Webhook succeeded: {response.status_code}")
+                        print(f"    Response: {json.dumps(webhook_result, indent=4)}")
+                    break
+                except json.JSONDecodeError:
+                    webhook_result = {"response": response.text}
+                    if verbose:
+                        print(f"  ✓ Webhook succeeded (text): {response.status_code}")
+                    break
+            else:
                 if verbose:
-                    print(f"Webhook {i+1} failed, trying next webhook...")
-                continue
-    
-    # Step 5: All webhooks failed, use fallback output if available
-    if "output" in actual_datamap:
-        if verbose:
-            print(f"\n--- Using DataMap Fallback Output ---")
-        datamap_output = actual_datamap["output"]
-        if verbose:
-            print(f"Fallback output template: {json.dumps(datamap_output, indent=2)}")
-        
-        if isinstance(datamap_output, dict):
-            # Process each key-value pair in the fallback output
-            final_result = {}
-            for key, template in datamap_output.items():
-                expanded_value = simple_template_expand(str(template), context)
-                final_result[key] = expanded_value
-                if verbose:
-                    print(f"Fallback: Set {key} = {expanded_value}")
-            result = final_result
-        else:
-            # Single fallback output value
-            result = simple_template_expand(str(datamap_output), context)
+                    print(f"  ✗ Webhook failed: {response.status_code}")
+        except requests.RequestException as e:
             if verbose:
-                print(f"Fallback result = {result}")
+                print(f"  ✗ Webhook request failed: {e}")
+    
+    # If no webhook succeeded, use fallback
+    if webhook_result is None:
+        if verbose:
+            print("All webhooks failed, using fallback output...")
+        
+        # Look for fallback output
+        output_template = matched_expression.get('output', 'Function completed')
+        
+        # Simple template expansion
+        webhook_result = {"response": simple_template_expand(output_template, args)}
         
         if verbose:
-            print(f"\n--- DataMap Fallback Final Result ---")
-            print(f"Result: {json.dumps(result, indent=2) if isinstance(result, dict) else result}")
+            print(f"Fallback result = {webhook_result['response']}")
+    
+    # Process foreach (not implemented in this simple version)
+    # This would iterate over array results and apply templates
+    
+    return webhook_result
+
+
+def execute_external_webhook_function(func: 'SWAIGFunction', function_name: str, function_args: Dict[str, Any], 
+                                    post_data: Dict[str, Any], verbose: bool = False) -> Dict[str, Any]:
+    """
+    Execute an external webhook SWAIG function by making an HTTP request to the external service.
+    This simulates what SignalWire would do when calling an external webhook function.
+    
+    Args:
+        func: The SWAIGFunction object with webhook_url
+        function_name: Name of the function being called
+        function_args: Parsed function arguments
+        post_data: Complete post data to send to the webhook
+        verbose: Whether to show verbose output
         
-        return result
+    Returns:
+        Response from the external webhook service
+    """
+    webhook_url = func.webhook_url
     
-    # No fallback defined, return generic error
-    error_result = {"error": "All webhooks failed and no fallback output defined", "status": "failed"}
     if verbose:
-        print(f"\n--- DataMap Error Result ---")
-        print(f"Result: {json.dumps(error_result, indent=2)}")
+        print(f"\nCalling EXTERNAL webhook: {function_name}")
+        print(f"URL: {webhook_url}")
+        print(f"Arguments: {json.dumps(function_args, indent=2)}")
+        print("-" * 60)
     
-    return error_result
+    # Prepare the SWAIG function call payload that SignalWire would send
+    swaig_payload = {
+        "function": function_name,
+        "argument": {
+            "parsed": [function_args] if function_args else [{}],
+            "raw": json.dumps(function_args) if function_args else "{}"
+        }
+    }
+    
+    # Add call_id and other data from post_data if available
+    if "call_id" in post_data:
+        swaig_payload["call_id"] = post_data["call_id"]
+    
+    # Add any other relevant fields from post_data
+    for key in ["call", "device", "vars"]:
+        if key in post_data:
+            swaig_payload[key] = post_data[key]
+    
+    if verbose:
+        print(f"Sending payload: {json.dumps(swaig_payload, indent=2)}")
+        print(f"Making POST request to: {webhook_url}")
+    
+    try:
+        # Make the HTTP request to the external webhook
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "SignalWire-SWAIG-Test/1.0"
+        }
+        
+        response = requests.post(
+            webhook_url,
+            json=swaig_payload,
+            headers=headers,
+            timeout=30  # 30 second timeout
+        )
+        
+        if verbose:
+            print(f"Response status: {response.status_code}")
+            print(f"Response headers: {dict(response.headers)}")
+        
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                if verbose:
+                    print(f"✓ External webhook succeeded")
+                    print(f"Response: {json.dumps(result, indent=2)}")
+                return result
+            except json.JSONDecodeError:
+                # If response is not JSON, wrap it in a response field
+                result = {"response": response.text}
+                if verbose:
+                    print(f"✓ External webhook succeeded (text response)")
+                    print(f"Response: {response.text}")
+                return result
+        else:
+            error_msg = f"External webhook returned HTTP {response.status_code}"
+            if verbose:
+                print(f"✗ External webhook failed: {error_msg}")
+                try:
+                    error_detail = response.json()
+                    print(f"Error details: {json.dumps(error_detail, indent=2)}")
+                except:
+                    print(f"Error response: {response.text}")
+            
+            return {
+                "error": error_msg,
+                "status_code": response.status_code,
+                "response": response.text
+            }
+    
+    except requests.Timeout:
+        error_msg = f"External webhook timed out after 30 seconds"
+        if verbose:
+            print(f"✗ {error_msg}")
+        return {"error": error_msg}
+    
+    except requests.ConnectionError as e:
+        error_msg = f"Could not connect to external webhook: {e}"
+        if verbose:
+            print(f"✗ {error_msg}")
+        return {"error": error_msg}
+    
+    except requests.RequestException as e:
+        error_msg = f"Request to external webhook failed: {e}"
+        if verbose:
+            print(f"✗ {error_msg}")
+        return {"error": error_msg}
 
 
 def load_agent_from_file(agent_path: str) -> 'AgentBase':
@@ -1444,6 +1358,8 @@ def parse_function_arguments(function_args_list: List[str], func_schema: Dict[st
                 required_params = params.get('required', [])
             else:
                 parameters = params
+        else:
+            parameters = func_schema
     else:
         # Regular SWAIG function
         if hasattr(func_schema, 'parameters') and func_schema.parameters:
@@ -1782,7 +1698,19 @@ Examples:
                             print(f"    Config: {json.dumps(func, indent=6)}")
                     else:
                         # Regular SWAIG function
-                        print(f"  {name} - {func.description}")
+                        func_type = ""
+                        if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
+                            func_type = " (EXTERNAL webhook)"
+                        elif hasattr(func, 'webhook_url') and func.webhook_url:
+                            func_type = " (webhook)"
+                        else:
+                            func_type = " (LOCAL webhook)"
+                        
+                        print(f"  {name} - {func.description}{func_type}")
+                        
+                        # Show external URL if applicable
+                        if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
+                            print(f"    External URL: {func.webhook_url}")
                         
                         # Show parameters
                         if hasattr(func, 'parameters') and func.parameters:
@@ -1896,6 +1824,15 @@ Examples:
                 print(f"Arguments: {json.dumps(function_args, indent=2)}")
                 print(f"Function description: {func.description}")
             
+            # Check if this is an external webhook function
+            is_external_webhook = hasattr(func, 'webhook_url') and func.webhook_url and func.is_external
+            
+            if args.verbose and is_external_webhook:
+                print(f"Function type: EXTERNAL webhook")
+                print(f"External URL: {func.webhook_url}")
+            elif args.verbose:
+                print(f"Function type: LOCAL webhook")
+            
             # Generate post_data based on options
             if args.minimal:
                 post_data = generate_minimal_post_data(args.tool_name, function_args)
@@ -1913,7 +1850,12 @@ Examples:
             
             # Call the function
             try:
-                result = agent.on_function_call(args.tool_name, function_args, post_data)
+                if is_external_webhook:
+                    # For external webhook functions, make HTTP request to external service
+                    result = execute_external_webhook_function(func, args.tool_name, function_args, post_data, args.verbose)
+                else:
+                    # For local webhook functions, call the agent's handler
+                    result = agent.on_function_call(args.tool_name, function_args, post_data)
                 
                 print("RESULT:")
                 print(format_result(result))

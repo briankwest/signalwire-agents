@@ -27,7 +27,8 @@ class SWAIGFunction:
         description: str,
         parameters: Dict[str, Dict] = None,
         secure: bool = False,
-        fillers: Optional[Dict[str, List[str]]] = None
+        fillers: Optional[Dict[str, List[str]]] = None,
+        webhook_url: Optional[str] = None
     ):
         """
         Initialize a new SWAIG function
@@ -39,6 +40,7 @@ class SWAIGFunction:
             parameters: Dictionary of parameters, keys are parameter names, values are param definitions
             secure: Whether this function requires token validation
             fillers: Optional dictionary of filler phrases by language code
+            webhook_url: Optional external webhook URL to use instead of local handling
         """
         self.name = name
         self.handler = handler
@@ -46,6 +48,10 @@ class SWAIGFunction:
         self.parameters = parameters or {}
         self.secure = secure
         self.fillers = fillers
+        self.webhook_url = webhook_url
+        
+        # Mark as external if webhook_url is provided
+        self.is_external = webhook_url is not None
         
     def _ensure_parameter_structure(self) -> Dict:
         """

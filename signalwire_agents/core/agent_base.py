@@ -742,7 +742,8 @@ class AgentBase(SWMLService):
         parameters: Dict[str, Any], 
         handler: Callable,
         secure: bool = True,
-        fillers: Optional[Dict[str, List[str]]] = None
+        fillers: Optional[Dict[str, List[str]]] = None,
+        webhook_url: Optional[str] = None
     ) -> 'AgentBase':
         """
         Define a SWAIG function that the AI can call
@@ -754,6 +755,7 @@ class AgentBase(SWMLService):
             handler: Function to call when invoked
             secure: Whether to require token validation
             fillers: Optional dict mapping language codes to arrays of filler phrases
+            webhook_url: Optional external webhook URL to use instead of local handling
             
         Returns:
             Self for method chaining
@@ -767,7 +769,8 @@ class AgentBase(SWMLService):
             parameters=parameters,
             handler=handler,
             secure=secure,
-            fillers=fillers
+            fillers=fillers,
+            webhook_url=webhook_url
         )
         return self
     
@@ -812,6 +815,7 @@ class AgentBase(SWMLService):
             description = kwargs.get("description", func.__doc__ or f"Function {name}")
             secure = kwargs.get("secure", True)
             fillers = kwargs.get("fillers", None)
+            webhook_url = kwargs.get("webhook_url", None)
             
             self.define_tool(
                 name=name,
@@ -819,7 +823,8 @@ class AgentBase(SWMLService):
                 parameters=parameters,
                 handler=func,
                 secure=secure,
-                fillers=fillers
+                fillers=fillers,
+                webhook_url=webhook_url
             )
             return func
         return decorator
@@ -851,6 +856,7 @@ class AgentBase(SWMLService):
                     parameters = tool_params.get("parameters", {})
                     secure = tool_params.get("secure", True)
                     fillers = tool_params.get("fillers", None)
+                    webhook_url = tool_params.get("webhook_url", None)
                     
                     # Register the tool
                     self.define_tool(
@@ -859,7 +865,8 @@ class AgentBase(SWMLService):
                         parameters=parameters,
                         handler=attr.__get__(self, cls),  # Bind the method to this instance
                         secure=secure,
-                        fillers=fillers
+                        fillers=fillers,
+                        webhook_url=webhook_url
                     )
     
     @classmethod
@@ -1089,6 +1096,11 @@ class AgentBase(SWMLService):
             # Data_map functions execute on SignalWire's server, not here
             # This should never be called, but if it is, return an error
             return {"response": f"Data map function '{name}' should be executed by SignalWire server, not locally"}
+        
+        # Check if this is an external webhook function
+        if hasattr(func, 'webhook_url') and func.webhook_url:
+            # External webhook functions should be called directly by SignalWire, not locally
+            return {"response": f"External webhook function '{name}' should be executed by SignalWire at {func.webhook_url}, not locally"}
         
         # Call the handler for regular SWAIG functions
         try:
@@ -1468,13 +1480,16 @@ class AgentBase(SWMLService):
                 # Add fillers if present
                 if func.fillers:
                     function_entry["fillers"] = func.fillers
-                    
-                # Add token to URL if we have one
-                if token:
-                    # Create token params without call_id
+                
+                # Handle webhook URL
+                if hasattr(func, 'webhook_url') and func.webhook_url:
+                    # External webhook function - use the provided URL directly
+                    function_entry["web_hook_url"] = func.webhook_url
+                elif token:
+                    # Local function with token - build local webhook URL
                     token_params = {"token": token}
                     function_entry["web_hook_url"] = self._build_webhook_url("swaig", token_params)
-                    
+            
             functions.append(function_entry)
         
         # Add functions array to SWAIG object if we have any
