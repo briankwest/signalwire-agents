@@ -21,9 +21,10 @@ from signalwire_agents.core.function_result import SwaigFunctionResult
 class GoogleSearchScraper:
     """Google Search and Web Scraping functionality"""
     
-    def __init__(self, api_key: str, search_engine_id: str):
+    def __init__(self, api_key: str, search_engine_id: str, max_content_length: int = 2000):
         self.api_key = api_key
         self.search_engine_id = search_engine_id
+        self.max_content_length = max_content_length
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -81,8 +82,8 @@ class GoogleSearchScraper:
             text = ' '.join(chunk for chunk in chunks if chunk)
             
             # Limit text length
-            if len(text) > 2000:
-                text = text[:2000] + "... [Content truncated]"
+            if len(text) > self.max_content_length:
+                text = text[:self.max_content_length] + "... [Content truncated]"
             
             return text
             
@@ -162,6 +163,7 @@ class WebSearchSkill(SkillBase):
         # Set default parameters
         self.default_num_results = self.params.get('num_results', 1)
         self.default_delay = self.params.get('delay', 0)
+        self.max_content_length = self.params.get('max_content_length', 2000)
         self.no_results_message = self.params.get('no_results_message', 
             "I couldn't find any results for '{query}'. "
             "This might be due to a very specific query or temporary issues. "
@@ -174,7 +176,8 @@ class WebSearchSkill(SkillBase):
         # Initialize the search scraper
         self.search_scraper = GoogleSearchScraper(
             api_key=self.api_key,
-            search_engine_id=self.search_engine_id
+            search_engine_id=self.search_engine_id,
+            max_content_length=self.max_content_length
         )
         
         return True

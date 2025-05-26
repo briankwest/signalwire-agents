@@ -83,6 +83,7 @@ def main():
             "search_engine_id": google_search_engine_id,
             "num_results": 1,  # Get 1 result for faster responses
             "delay": 0,        # No delay between requests
+            "max_content_length": 3000,  # Extract up to 3000 characters from each page (default: 2000)
             "no_results_message": "I apologize, but I wasn't able to find any information about '{query}' in my web search. Could you try rephrasing your question or asking about something else?",
             "swaig_fields": {  # Custom fillers for better user experience
                 "fillers": {
