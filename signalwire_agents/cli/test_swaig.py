@@ -956,11 +956,39 @@ Examples:
                         print(f"  {name} - DataMap function (serverless)")
                         if args.verbose:
                             print(f"    Config: {json.dumps(func, indent=6)}")
+                        else:
+                            # Show basic DataMap info
+                            print(f"    Type: DataMap (configuration-based function)")
                     else:
                         # Regular SWAIG function
                         print(f"  {name} - {func.description}")
+                        
+                        # Show parameters
+                        if hasattr(func, 'parameters') and func.parameters:
+                            params = func.parameters
+                            # Handle both formats: direct properties dict or full schema
+                            if 'properties' in params:
+                                properties = params['properties']
+                                required_fields = params.get('required', [])
+                            else:
+                                properties = params
+                                required_fields = []
+                            
+                            if properties:
+                                print(f"    Parameters:")
+                                for param_name, param_def in properties.items():
+                                    param_type = param_def.get('type', 'unknown')
+                                    param_desc = param_def.get('description', 'No description')
+                                    is_required = param_name in required_fields
+                                    required_marker = " (required)" if is_required else ""
+                                    print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
+                            else:
+                                print(f"    Parameters: None")
+                        else:
+                            print(f"    Parameters: None")
+                            
                         if args.verbose:
-                            print(f"    Function: {func}")
+                            print(f"    Function object: {func}")
             else:
                 print("  No SWAIG functions registered")
             return 0
