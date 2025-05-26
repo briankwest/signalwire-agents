@@ -56,13 +56,31 @@ import time
 import hashlib
 import re
 import requests
+import warnings
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import logging
 
-# Check for --raw flag early to suppress logging before any signalwire imports
+# Early warning suppression for module execution warnings
 if "--raw" in sys.argv:
+    warnings.filterwarnings("ignore")
+
+# Store original print function before any potential suppression
+original_print = print
+
+# Add the parent directory to the path so we can import signalwire_agents
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from signalwire_agents import AgentBase
+from signalwire_agents.core.function_result import SwaigFunctionResult
+
+
+def setup_raw_mode_suppression():
+    """Set up comprehensive output suppression for raw mode"""
+    # Suppress all warnings including RuntimeWarnings
+    warnings.filterwarnings("ignore")
+    
     # More aggressive logging suppression for raw mode
     logging.getLogger().setLevel(logging.CRITICAL + 1)  # Suppress everything
     logging.getLogger().addHandler(logging.NullHandler())
@@ -70,6 +88,14 @@ if "--raw" in sys.argv:
     # Monkey-patch specific loggers to completely silence them
     def silent_log(*args, **kwargs):
         pass
+    
+    # Capture and suppress print statements in raw mode
+    def suppressed_print(*args, **kwargs):
+        pass
+    
+    # Replace print function globally
+    import builtins
+    builtins.print = suppressed_print
     
     # Also suppress specific loggers
     loggers_to_suppress = [
@@ -91,12 +117,6 @@ if "--raw" in sys.argv:
         logger.warning = silent_log
         logger.error = silent_log
         logger.critical = silent_log
-
-# Add the parent directory to the path so we can import signalwire_agents
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from signalwire_agents import AgentBase
-from signalwire_agents.core.function_result import SwaigFunctionResult
 
 
 def generate_comprehensive_post_data(function_name: str, args: Dict[str, Any], 
@@ -822,6 +842,10 @@ def format_result(result: Any) -> str:
 
 def main():
     """Main entry point for the CLI tool"""
+    # Check for --raw flag and set up suppression early
+    if "--raw" in sys.argv:
+        setup_raw_mode_suppression()
+    
     parser = argparse.ArgumentParser(
         description="Test SWAIG functions from agent applications with comprehensive simulation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -965,6 +989,11 @@ Examples:
                 swml_doc = agent._render_swml()
                 
                 if args.raw:
+                    # Temporarily restore print for JSON output
+                    if '--raw' in sys.argv and 'original_print' in globals():
+                        import builtins
+                        builtins.print = original_print
+                    
                     # Output only the raw JSON for piping to jq/yq
                     print(swml_doc)
                 else:
@@ -988,8 +1017,7 @@ Examples:
             except Exception as e:
                 if args.raw:
                     # For raw mode, output error to stderr to not interfere with JSON output
-                    import sys
-                    print(f"Error generating SWML: {e}", file=sys.stderr)
+                    original_print(f"Error generating SWML: {e}", file=sys.stderr)
                     if args.verbose:
                         import traceback
                         traceback.print_exc(file=sys.stderr)
