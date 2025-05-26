@@ -743,7 +743,8 @@ class AgentBase(SWMLService):
         handler: Callable,
         secure: bool = True,
         fillers: Optional[Dict[str, List[str]]] = None,
-        webhook_url: Optional[str] = None
+        webhook_url: Optional[str] = None,
+        **swaig_fields
     ) -> 'AgentBase':
         """
         Define a SWAIG function that the AI can call
@@ -756,6 +757,7 @@ class AgentBase(SWMLService):
             secure: Whether to require token validation
             fillers: Optional dict mapping language codes to arrays of filler phrases
             webhook_url: Optional external webhook URL to use instead of local handling
+            **swaig_fields: Additional SWAIG fields to include in function definition
             
         Returns:
             Self for method chaining
@@ -770,7 +772,8 @@ class AgentBase(SWMLService):
             handler=handler,
             secure=secure,
             fillers=fillers,
-            webhook_url=webhook_url
+            webhook_url=webhook_url,
+            **swaig_fields
         )
         return self
     
@@ -811,11 +814,11 @@ class AgentBase(SWMLService):
             if name is None:
                 name = func.__name__
                 
-            parameters = kwargs.get("parameters", {})
-            description = kwargs.get("description", func.__doc__ or f"Function {name}")
-            secure = kwargs.get("secure", True)
-            fillers = kwargs.get("fillers", None)
-            webhook_url = kwargs.get("webhook_url", None)
+            parameters = kwargs.pop("parameters", {})
+            description = kwargs.pop("description", func.__doc__ or f"Function {name}")
+            secure = kwargs.pop("secure", True)
+            fillers = kwargs.pop("fillers", None)
+            webhook_url = kwargs.pop("webhook_url", None)
             
             self.define_tool(
                 name=name,
@@ -824,7 +827,8 @@ class AgentBase(SWMLService):
                 handler=func,
                 secure=secure,
                 fillers=fillers,
-                webhook_url=webhook_url
+                webhook_url=webhook_url,
+                **kwargs  # Pass through any additional swaig_fields
             )
             return func
         return decorator
@@ -851,14 +855,15 @@ class AgentBase(SWMLService):
                     tool_name = getattr(attr, "_tool_name", name)
                     tool_params = getattr(attr, "_tool_params", {})
                     
-                    # Get description and parameters
-                    description = tool_params.get("description", attr.__doc__ or f"Function {tool_name}")
-                    parameters = tool_params.get("parameters", {})
-                    secure = tool_params.get("secure", True)
-                    fillers = tool_params.get("fillers", None)
-                    webhook_url = tool_params.get("webhook_url", None)
+                    # Extract known parameters and pass through the rest as swaig_fields
+                    tool_params_copy = tool_params.copy()
+                    description = tool_params_copy.pop("description", attr.__doc__ or f"Function {tool_name}")
+                    parameters = tool_params_copy.pop("parameters", {})
+                    secure = tool_params_copy.pop("secure", True)
+                    fillers = tool_params_copy.pop("fillers", None)
+                    webhook_url = tool_params_copy.pop("webhook_url", None)
                     
-                    # Register the tool
+                    # Register the tool with any remaining params as swaig_fields
                     self.define_tool(
                         name=tool_name,
                         description=description,
@@ -866,7 +871,8 @@ class AgentBase(SWMLService):
                         handler=attr.__get__(self, cls),  # Bind the method to this instance
                         secure=secure,
                         fillers=fillers,
-                        webhook_url=webhook_url
+                        webhook_url=webhook_url,
+                        **tool_params_copy  # Pass through any additional swaig_fields
                     )
     
     @classmethod

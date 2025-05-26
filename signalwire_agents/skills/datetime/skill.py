@@ -30,7 +30,7 @@ class DateTimeSkill(SkillBase):
     def register_tools(self) -> None:
         """Register datetime tools with the agent"""
         
-        self.define_tool_with_swaig_fields(
+        self.agent.define_tool(
             name="get_current_time",
             description="Get the current time, optionally in a specific timezone",
             parameters={
@@ -39,10 +39,11 @@ class DateTimeSkill(SkillBase):
                     "description": "Timezone name (e.g., 'America/New_York', 'Europe/London'). Defaults to UTC."
                 }
             },
-            handler=self._get_time_handler
+            handler=self._get_time_handler,
+            **self.swaig_fields
         )
         
-        self.define_tool_with_swaig_fields(
+        self.agent.define_tool(
             name="get_current_date",
             description="Get the current date",
             parameters={
@@ -51,7 +52,8 @@ class DateTimeSkill(SkillBase):
                     "description": "Timezone name for the date. Defaults to UTC."
                 }
             },
-            handler=self._get_date_handler
+            handler=self._get_date_handler,
+            **self.swaig_fields
         )
         
     def _get_time_handler(self, args, raw_data):

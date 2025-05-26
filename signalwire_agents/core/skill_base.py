@@ -53,42 +53,7 @@ class SkillBase(ABC):
         """Register SWAIG tools with the agent"""
         pass
         
-    def define_tool_with_swaig_fields(
-        self, 
-        name: str, 
-        description: str, 
-        parameters: Dict[str, Any], 
-        handler,
-        **additional_kwargs
-    ):
-        """
-        Helper method to define a tool with swaig_fields merged in
-        
-        Args:
-            name: Function name
-            description: Function description
-            parameters: Function parameters schema
-            handler: Function handler
-            **additional_kwargs: Additional keyword arguments for define_tool
-            
-        This method automatically merges the swaig_fields from skill params
-        into the tool definition, allowing the skill loader to customize
-        SWAIG function properties.
-        """
-        # Start with the additional kwargs passed to this method
-        tool_kwargs = additional_kwargs.copy()
-        
-        # Merge in the swaig_fields from params (swaig_fields take precedence)
-        tool_kwargs.update(self.swaig_fields)
-        
-        # Call the agent's define_tool with all parameters
-        self.agent.define_tool(
-            name=name,
-            description=description,
-            parameters=parameters,
-            handler=handler,
-            **tool_kwargs
-        )
+
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints for this skill"""

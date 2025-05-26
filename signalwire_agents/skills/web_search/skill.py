@@ -184,7 +184,7 @@ class WebSearchSkill(SkillBase):
         
     def register_tools(self) -> None:
         """Register web search tool with the agent"""
-        self.define_tool_with_swaig_fields(
+        self.agent.define_tool(
             name=self.tool_name,
             description="Search the web for information on any topic and return detailed results with content from multiple sources",
             parameters={
@@ -193,7 +193,8 @@ class WebSearchSkill(SkillBase):
                     "description": "The search query - what you want to find information about"
                 }
             },
-            handler=self._web_search_handler
+            handler=self._web_search_handler,
+            **self.swaig_fields
         )
         
     def _web_search_handler(self, args, raw_data):

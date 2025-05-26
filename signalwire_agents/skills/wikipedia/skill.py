@@ -53,21 +53,29 @@ class WikipediaSearchSkill(SkillBase):
         """
         Register the SWAIG tool for Wikipedia search.
         """
-        self.define_tool_with_swaig_fields(
+        self.agent.define_tool(
             name="search_wiki",
             description="Search Wikipedia for information about a topic and get article summaries",
             parameters={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search term or topic to look up on Wikipedia"
-                    }
-                },
-                "required": ["query"]
+                "query": {
+                    "type": "string",
+                    "description": "The search term or topic to look up on Wikipedia"
+                }
             },
-            handler=self.search_wiki
+            handler=self._search_wiki_handler,
+            **self.swaig_fields
         )
+    
+    def _search_wiki_handler(self, args, raw_data):
+        """Handler for search_wiki tool"""
+        from signalwire_agents.core.function_result import SwaigFunctionResult
+        
+        query = args.get("query", "").strip()
+        if not query:
+            return SwaigFunctionResult("Please provide a search query for Wikipedia.")
+        
+        result = self.search_wiki(query)
+        return SwaigFunctionResult(result)
     
     def search_wiki(self, query: str) -> str:
         """

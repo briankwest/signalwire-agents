@@ -28,7 +28,8 @@ class SWAIGFunction:
         parameters: Dict[str, Dict] = None,
         secure: bool = False,
         fillers: Optional[Dict[str, List[str]]] = None,
-        webhook_url: Optional[str] = None
+        webhook_url: Optional[str] = None,
+        **extra_swaig_fields
     ):
         """
         Initialize a new SWAIG function
@@ -41,6 +42,7 @@ class SWAIGFunction:
             secure: Whether this function requires token validation
             fillers: Optional dictionary of filler phrases by language code
             webhook_url: Optional external webhook URL to use instead of local handling
+            **extra_swaig_fields: Additional SWAIG fields to include in function definition
         """
         self.name = name
         self.handler = handler
@@ -49,6 +51,7 @@ class SWAIGFunction:
         self.secure = secure
         self.fillers = fillers
         self.webhook_url = webhook_url
+        self.extra_swaig_fields = extra_swaig_fields
         
         # Mark as external if webhook_url is provided
         self.is_external = webhook_url is not None
@@ -171,6 +174,9 @@ class SWAIGFunction:
         # Add fillers if provided
         if self.fillers and len(self.fillers) > 0:
             function_def["fillers"] = self.fillers
+        
+        # Add any extra SWAIG fields
+        function_def.update(self.extra_swaig_fields)
             
         return function_def
 

@@ -29,7 +29,7 @@ class MathSkill(SkillBase):
     def register_tools(self) -> None:
         """Register math tools with the agent"""
         
-        self.define_tool_with_swaig_fields(
+        self.agent.define_tool(
             name="calculate",
             description="Perform a mathematical calculation with basic operations (+, -, *, /, %, **)",
             parameters={
@@ -38,7 +38,8 @@ class MathSkill(SkillBase):
                     "description": "Mathematical expression to evaluate (e.g., '2 + 3 * 4', '(10 + 5) / 3')"
                 }
             },
-            handler=self._calculate_handler
+            handler=self._calculate_handler,
+            **self.swaig_fields
         )
         
     def _calculate_handler(self, args, raw_data):

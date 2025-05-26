@@ -118,8 +118,14 @@ class DataSphereServerlessSkill(SkillBase):
             .fallback_output(SwaigFunctionResult(self.no_results_message.replace('{query}', '${args.query}')))
         )
         
-        # Register the DataMap tool with the agent
-        self.agent.register_swaig_function(datasphere_tool.to_swaig_function())
+        # Convert DataMap to SWAIG function and apply swaig_fields
+        swaig_function = datasphere_tool.to_swaig_function()
+        
+        # Merge swaig_fields from skill params into the function definition
+        swaig_function.update(self.swaig_fields)
+        
+        # Register the enhanced DataMap tool with the agent
+        self.agent.register_swaig_function(swaig_function)
         
     def get_hints(self) -> List[str]:
         """Return speech recognition hints"""
