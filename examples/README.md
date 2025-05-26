@@ -104,6 +104,37 @@ To run:
 python declarative_agent.py
 ```
 
+### external_webhook_weather_agent.py
+
+Demonstrates how to create SWAIG functions that use external webhook URLs instead of local handlers:
+- Defining external webhook functions with `webhook_url` parameter
+- Mixing local and external webhook functions in the same agent
+- How SignalWire calls external services directly for function execution
+- Testing external webhook functions with the CLI tool
+
+To run:
+
+```bash
+python external_webhook_weather_agent.py
+```
+
+**Key Features:**
+- `getWeather` function uses an external webhook URL (never processed locally)
+- `getHelp` function uses traditional local processing
+- `testBrokenWebhook` function demonstrates error handling for unreachable external services
+
+**Testing with CLI:**
+```bash
+# Test external webhook function
+swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"New York"}' --verbose
+
+# Test local function
+swaig-test examples/external_webhook_weather_agent.py getHelp '{}'
+
+# List all functions with their types
+swaig-test examples/external_webhook_weather_agent.py --list-tools
+```
+
 ### multi_agent_server.py
 
 Shows how to use the `AgentServer` to host multiple agents in a single server, including:

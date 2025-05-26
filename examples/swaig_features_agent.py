@@ -20,7 +20,7 @@ The resulting SWAIG array in SWML will have the following structure:
 [
   {
     "defaults": {
-      "web_hook_url": "https://developer:seekret@tatooine.cantina.cloud/ai/swaig.cgi"
+              "web_hook_url": "https://api.example-external-service.com/swaig"
     }
   },
   {
@@ -90,7 +90,7 @@ class SwaigFeaturesAgent(AgentBase):
             port=3000,
             # Set a default webhook URL for all functions
             # This will create a defaults object in the SWAIG array
-            default_webhook_url="https://developer:seekret@tatooine.cantina.cloud/ai/swaig.cgi"
+            default_webhook_url="https://api.example-external-service.com/swaig"
         )
         
         # Add a post-prompt for summary

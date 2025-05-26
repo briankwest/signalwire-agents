@@ -160,7 +160,11 @@ Analyze the conversation and extract:
 
 ## SWAIG Functions
 
-SWAIG functions allow the AI agent to perform actions and access external systems. You define these functions using the `@AgentBase.tool` decorator:
+SWAIG functions allow the AI agent to perform actions and access external systems. There are two types of SWAIG functions you can define:
+
+### 1. Local Webhook Functions (Standard)
+
+These are the traditional SWAIG functions that are handled locally by your agent:
 
 ```python
 from signalwire_agents.core.function_result import SwaigFunctionResult
@@ -187,6 +191,119 @@ def get_weather(self, args, raw_data):
     # Return a SwaigFunctionResult
     return SwaigFunctionResult(weather_data)
 ```
+
+### 2. External Webhook Functions
+
+External webhook functions allow you to delegate function execution to external services instead of handling them locally. This is useful when you want to:
+- Use existing web services or APIs directly
+- Distribute function processing across multiple servers
+- Integrate with third-party systems that provide their own endpoints
+
+To create an external webhook function, add a `webhook_url` parameter to the decorator:
+
+```python
+@AgentBase.tool(
+    name="get_weather_external",
+    description="Get weather from external service",
+    parameters={
+        "location": {
+            "type": "string",
+            "description": "The city or location to get weather for"
+        }
+    },
+    webhook_url="https://your-service.com/weather-endpoint"
+)
+def get_weather_external(self, args, raw_data):
+    # This function will never be called locally when webhook_url is provided
+    # The external service at webhook_url will receive the function call instead
+    return SwaigFunctionResult("This should not be reached for external webhooks")
+```
+
+#### How External Webhooks Work
+
+When you specify a `webhook_url`:
+
+1. **Function Registration**: The function is registered with your agent as usual
+2. **SWML Generation**: The generated SWML includes the external webhook URL instead of your local endpoint
+3. **SignalWire Processing**: When the AI calls the function, SignalWire makes an HTTP POST request directly to your external URL
+4. **Payload Format**: The external service receives a JSON payload with the function call data:
+
+```json
+{
+    "function": "get_weather_external",
+    "argument": {
+        "parsed": [{"location": "New York"}],
+        "raw": "{\"location\": \"New York\"}"
+    },
+    "call_id": "abc123-def456-ghi789",
+    "call": { /* call information */ },
+    "vars": { /* call variables */ }
+}
+```
+
+5. **Response Handling**: Your external service should return a JSON response that SignalWire will process.
+
+#### Mixing Local and External Functions
+
+You can mix both types of functions in the same agent:
+
+```python
+class HybridAgent(AgentBase):
+    def __init__(self):
+        super().__init__(name="hybrid-agent", route="/hybrid")
+    
+    # Local function - handled by this agent
+    @AgentBase.tool(
+        name="get_help",
+        description="Get help information",
+        parameters={}
+    )
+    def get_help(self, args, raw_data):
+        return SwaigFunctionResult("I can help you with weather and news!")
+    
+    # External function - handled by external service
+    @AgentBase.tool(
+        name="get_weather",
+        description="Get current weather",
+        parameters={
+            "location": {"type": "string", "description": "City name"}
+        },
+        webhook_url="https://weather-service.com/api/weather"
+    )
+    def get_weather_external(self, args, raw_data):
+        # This won't be called for external webhooks
+        pass
+    
+    # Another external function - different service
+    @AgentBase.tool(
+        name="get_news",
+        description="Get latest news",
+        parameters={
+            "topic": {"type": "string", "description": "News topic"}
+        },
+        webhook_url="https://news-service.com/api/news"
+    )
+    def get_news_external(self, args, raw_data):
+        # This won't be called for external webhooks
+        pass
+```
+
+#### Testing External Webhooks
+
+You can test external webhook functions using the CLI tool:
+
+```bash
+# Test local function
+swaig-test examples/my_agent.py get_help '{}'
+
+# Test external webhook function
+swaig-test examples/my_agent.py get_weather '{"location":"New York"}' --verbose
+
+# List all functions with their types
+swaig-test examples/my_agent.py --list-tools
+```
+
+The CLI tool will automatically detect external webhook functions and make HTTP requests to the external services, simulating what SignalWire does in production.
 
 ### Function Parameters
 

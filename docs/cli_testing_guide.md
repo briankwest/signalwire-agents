@@ -86,17 +86,91 @@ swaig-test examples/agent.py calculate --args --expression "25 * 47" --verbose
 
 ### Test Functions (Auto-Detection)
 
-The tool automatically detects whether a function is a webhook or DataMap function:
+The tool automatically detects whether a function is a local webhook, external webhook, or DataMap function:
 
 ```bash
-# Test webhook function - auto-detected
+# Test local webhook function - auto-detected
 swaig-test examples/datasphere_webhook_env_demo.py search_knowledge '{"query":"SignalWire"}'
 
 # Test DataMap function - auto-detected  
 swaig-test examples/datasphere_serverless_env_demo.py search_knowledge '{"query":"SignalWire"}'
 
+# Test external webhook function - auto-detected
+swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"New York"}' --verbose
+
 # Test math skill function - auto-detected
 swaig-test examples/datasphere_serverless_env_demo.py calculate '{"expression":"25 * 47"}'
+```
+
+#### External Webhook Function Testing
+
+External webhook functions are automatically detected and tested by making HTTP requests to the external service URL:
+
+```bash
+# Test external webhook with verbose output
+swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"San Francisco"}' --verbose
+
+# List functions with their types (local vs external)
+swaig-test examples/external_webhook_weather_agent.py --list-tools
+```
+
+**Example Output for External Webhook:**
+```
+Available SWAIG functions:
+  getHelp - Get help information about using the weather service (LOCAL webhook)
+  getWeather - Get current weather information for a specific location (EXTERNAL webhook)
+    External URL: https://api.example-weather-service.com/webhook
+
+Calling EXTERNAL webhook: getWeather
+URL: https://api.example-weather-service.com/webhook
+Arguments: {"location": "San Francisco"}
+
+Sending payload: {
+  "function": "getWeather",
+  "argument": {
+    "parsed": [{"location": "San Francisco"}],
+    "raw": "{\"location\": \"San Francisco\"}"
+  },
+  "call_id": "test-call-123"
+}
+Making POST request to: https://api.example-weather-service.com/webhook
+Response status: 200
+✓ External webhook succeeded
+```
+
+**How External Webhook Testing Works:**
+
+1. **Detection**: The CLI tool detects functions with `webhook_url` parameters as external webhooks
+2. **HTTP Request**: Instead of calling the local function, it makes an HTTP POST to the external URL
+3. **Payload Format**: Sends the same JSON payload that SignalWire would send:
+   ```json
+   {
+     "function": "function_name",
+     "argument": {
+       "parsed": [{"param": "value"}],
+       "raw": "{\"param\": \"value\"}"
+     },
+     "call_id": "generated-call-id",
+     "call": { /* call information */ },
+     "vars": { /* call variables */ }
+   }
+   ```
+4. **Response Handling**: Processes the HTTP response and displays the result
+5. **Error Handling**: Shows connection errors, timeouts, and HTTP error responses
+
+**Testing Mixed Function Types:**
+
+You can test agents that have both local and external webhook functions:
+
+```bash
+# Test local function
+swaig-test examples/external_webhook_weather_agent.py getHelp '{}'
+
+# Test external function  
+swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"Tokyo"}'
+
+# Show all function types
+swaig-test examples/external_webhook_weather_agent.py --list-tools
 ```
 
 ## SWML Generation and Testing
@@ -393,6 +467,78 @@ DataMap foreach loops concatenate strings from array elements:
 This processes each item in `response.chunks` and builds a single concatenated string in `formatted_results`.
 
 ## Webhook Function Testing
+
+The CLI tool supports testing three types of webhook functions:
+
+1. **Local Webhook Functions**: Traditional SWAIG functions handled by your local agent
+2. **External Webhook Functions**: Functions that delegate to external HTTP services  
+3. **DataMap Functions**: Server-side functions that don't require local webhook infrastructure
+
+### External Webhook Functions
+
+External webhook functions are automatically detected when a function has a `webhook_url` parameter and are tested by making HTTP requests to the external service:
+
+```python
+@AgentBase.tool(
+    name="get_weather",
+    description="Get weather from external service",
+    parameters={"location": {"type": "string"}},
+    webhook_url="https://weather-api.example.com/current"
+)
+def get_weather_external(self, args, raw_data):
+    # This function body is never called for external webhooks
+    pass
+```
+
+**Testing External Webhooks:**
+
+```bash
+# Test external webhook function
+swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"Paris"}' --verbose
+
+# Compare with local function  
+swaig-test examples/external_webhook_weather_agent.py getHelp '{}' --verbose
+```
+
+**External Webhook Request Format:**
+
+The CLI tool sends the same payload format that SignalWire uses:
+
+```json
+{
+  "function": "getWeather",
+  "argument": {
+    "parsed": [{"location": "Paris"}],
+    "raw": "{\"location\": \"Paris\"}"
+  },
+  "call_id": "test-call-uuid",
+  "call": {
+    "call_id": "test-call-uuid",
+    "project_id": "project-uuid",
+    "space_id": "space-uuid"
+  },
+  "vars": {
+    "userVariables": {}
+  }
+}
+```
+
+**External Webhook Error Handling:**
+
+```bash
+# Test with unreachable external service
+swaig-test examples/external_webhook_weather_agent.py testBrokenWebhook '{"message":"test"}' --verbose
+```
+
+Output shows connection errors and HTTP status codes:
+```
+✗ Could not connect to external webhook: HTTPSConnectionPool(host='nonexistent.example.com', port=443)
+RESULT:
+Dict: {
+  "error": "Could not connect to external webhook: ...",
+  "status_code": null
+}
+```
 
 ### Post Data Simulation Modes
 
