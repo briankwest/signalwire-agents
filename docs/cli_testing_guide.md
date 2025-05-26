@@ -1597,7 +1597,7 @@ Response: Tell the user that the joke service is not working right now and just 
 
 This demonstrates both:
 - **Successful webhook processing** with array response handling
-- **Failure detection and fallback** when APIs return errors
+- **Failure detection and fallback** when APIs return errors 
 
 ## Best Practices
 
