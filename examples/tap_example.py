@@ -286,7 +286,7 @@ if __name__ == "__main__":
     training_and_coaching()
     multi_tap_management()
     
-    print("🔊 All tap examples completed")
+    print("COMPLETE: All tap examples completed")
     print("\nKey Features Demonstrated:")
     print("- WebSocket and RTP tap streaming")
     print("- Compliance and security monitoring")

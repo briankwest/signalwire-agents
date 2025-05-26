@@ -36,7 +36,7 @@ from signalwire_agents import AgentBase
 try:
     from mangum import Mangum
 except ImportError:
-    print("❌ Mangum not installed. Run: pip install mangum")
+    print("ERROR: Mangum not installed. Run: pip install mangum")
     sys.exit(1)
 
 
@@ -125,9 +125,8 @@ def lambda_handler(event, context):
 
 # For local testing (optional)
 if __name__ == "__main__":
-    print("🧪 Testing Lambda agent locally...")
-    print("⚠️  Note: This runs FastAPI directly, not via Lambda")
-    print("   For true Lambda testing, use SAM local or deploy to AWS")
+    print("TESTING: Testing Lambda agent locally...")
+    print("NOTE: This runs FastAPI directly, not via Lambda")
     print()
     
     # Run locally for testing (same as agent.serve())

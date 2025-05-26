@@ -93,13 +93,13 @@ if __name__ == "__main__":
                    port=agent.port,
                    health_endpoints=["/health", "/ready"])
     
-    print(f"🚀 Kubernetes-ready agent starting on port {agent.port}")
-    print(f"📊 Health check: http://localhost:{agent.port}/health")
-    print(f"✅ Readiness check: http://localhost:{agent.port}/ready")
-    print(f"🔍 Log level: {log_level}")
+    print(f"READY: Kubernetes-ready agent starting on port {agent.port}")
+    print(f"HEALTH: Health check: http://localhost:{agent.port}/health")
+    print(f"STATUS: Readiness check: http://localhost:{agent.port}/ready")
+    print(f"LOG: Log level: {log_level}")
     
     try:
         agent.serve()
     except KeyboardInterrupt:
         agent.log.info("agent_shutdown_requested")
-        print("\n🛑 Agent shutdown complete") 
+        print("\nSTOPPED: Agent shutdown complete") 

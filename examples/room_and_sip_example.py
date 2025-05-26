@@ -248,7 +248,7 @@ if __name__ == "__main__":
     sales_team_handoff_example()
     join_conference_examples()
     
-    print("🏢 All room and SIP examples completed")
+    print("COMPLETE: All room and SIP examples completed")
     print("\nKey Features Demonstrated:")
     print("- RELAY room joining for multi-party communication")
     print("- SIP REFER for call transfers in SIP environments")

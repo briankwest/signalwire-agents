@@ -145,7 +145,7 @@ if __name__ == "__main__":
     customer_service_workflow()
     compliance_recording_example()
     
-    print("🎙️ All recording examples completed")
+    print("COMPLETE: All recording examples completed")
     print("\nKey Features Demonstrated:")
     print("- Basic and advanced recording configurations")
     print("- Background recording that doesn't block script execution")

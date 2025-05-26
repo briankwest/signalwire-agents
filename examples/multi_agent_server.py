@@ -493,7 +493,7 @@ def create_multi_agent_app():
 if __name__ == "__main__":
     import uvicorn
     
-    print("🤖 Starting Multi-Agent AI Server")
+    print("Starting Multi-Agent AI Server")
     print("\nAvailable agents:")
     print("- http://localhost:3000/healthcare - Healthcare AI (HIPAA compliant)")
     print("- http://localhost:3000/finance - Financial Services AI")

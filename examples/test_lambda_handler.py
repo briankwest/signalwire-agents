@@ -30,7 +30,7 @@ def create_basic_auth_header():
     credentials = f"{username}:{password}"
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
     
-    print(f"🔐 Using credentials: {username}:{password}")
+    print(f"CREDENTIALS: Using credentials: {username}:{password}")
     return f"Basic {encoded_credentials}"
 
 def create_mock_api_gateway_event(method="GET", path="/health", body=None, query_params=None):
@@ -99,7 +99,7 @@ def create_mock_context():
 
 def test_endpoint(method, path, body=None, query_params=None):
     """Test a specific endpoint"""
-    print(f"\n🧪 Testing {method} {path}")
+    print(f"\nTESTING: Testing {method} {path}")
     print("=" * 50)
     
     # Create mock event and context
@@ -111,34 +111,34 @@ def test_endpoint(method, path, body=None, query_params=None):
         response = lambda_handler(event, context)
         
         # Display results
-        print(f"✅ Status Code: {response.get('statusCode', 'N/A')}")
+        print(f"SUCCESS: Status Code: {response.get('statusCode', 'N/A')}")
         
         headers = response.get('headers', {})
         if headers:
-            print(f"📋 Headers: {json.dumps(headers, indent=2)}")
+            print(f"HEADERS: Headers: {json.dumps(headers, indent=2)}")
         
         body_content = response.get('body', '')
         if body_content:
             try:
                 # Try to parse as JSON for pretty printing
                 parsed_body = json.loads(body_content)
-                print(f"📄 Response Body:")
+                print(f"RESPONSE: Response Body:")
                 print(json.dumps(parsed_body, indent=2))
             except:
                 # If not JSON, print as-is
-                print(f"📄 Response Body: {body_content}")
+                print(f"RESPONSE: Response Body: {body_content}")
         
         return response
         
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"ERROR: Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return None
 
 def main():
     """Run Lambda handler tests"""
-    print("🚀 Testing Lambda Handler with Mock API Gateway Events")
+    print("TESTING: Testing Lambda Handler with Mock API Gateway Events")
     print("=" * 60)
     
     # Test 1: Health check
@@ -185,7 +185,7 @@ def main():
     # Test 9: Debug endpoint
     test_endpoint("GET", "/debug")
     
-    print("\n🎉 Lambda handler testing complete!")
+    print("\nCOMPLETE: Lambda handler testing complete")
 
 if __name__ == "__main__":
     main() 

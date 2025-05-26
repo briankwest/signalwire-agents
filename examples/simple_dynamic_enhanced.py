@@ -245,7 +245,7 @@ class SimpleDynamicEnhanced(AgentBase):
 if __name__ == "__main__":
     agent = SimpleDynamicEnhanced()
     
-    print("🤖 Starting Enhanced Dynamic Agent")
+    print("Starting Enhanced Dynamic Agent")
     print("\nConfiguration: ENHANCED DYNAMIC (adapts to request parameters)")
     print("\nSupported parameters:")
     print("- vip=true/false (premium voice, faster response)")
@@ -253,13 +253,13 @@ if __name__ == "__main__":
     print("- customer_id=<string> (personalized experience)")
     print("- language=en/es (language and voice selection)")
     print("\nAgent available at: http://localhost:3000/")
-    print("\n🔥 Try these requests to see the differences:")
+    print("\nFEATURES: Try these requests to see the differences:")
     print("curl 'http://localhost:3000'  # Basic")
     print("curl 'http://localhost:3000?vip=true&customer_id=CUST123'  # VIP")
     print("curl 'http://localhost:3000?department=sales&language=es'  # Spanish Sales")
     print("curl 'http://localhost:3000?department=billing&vip=true'  # VIP Billing")
     print("curl 'http://localhost:3000/debug?vip=true&department=sales'  # Debug mode")
-    print("\n💡 Compare the SWML output - each request creates different configuration!")
+    print("\nCOMPARE: Compare the SWML output - each request creates different configuration!")
     print()
     
     agent.serve() 

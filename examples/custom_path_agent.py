@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # Create the agent with custom path
     agent = ChatAgent("/chat")
     
-    print("🤖 Starting Chat Agent")
+    print("Starting Chat Agent")
     print(f"\nAgent available at: http://localhost:3000/chat")
     print("\nTry these example requests:")
     print("curl 'http://localhost:3000/chat'")

@@ -369,7 +369,7 @@ result.set_speech_event_timeout(3000)  # Finalize after 3 seconds since last spe
 
 **Proposed Python Method**:
 ```python
-result.update_global_data(data_dict)  # ✅ Already implemented
+result.update_global_data(data_dict)  # Already implemented
 ```
 
 **Usage Examples**:

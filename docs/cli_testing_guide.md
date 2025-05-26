@@ -8,13 +8,13 @@ The `swaig-test` CLI tool provides a complete testing environment for both webho
 
 ## Key Features
 
-- **🚀 Auto-Detection**: Automatically detects webhook vs DataMap functions - no manual flags needed
-- **🌐 Real HTTP Execution**: DataMap functions make actual HTTP requests to real APIs
-- **📊 Complete DataMap Pipeline**: Full processing including expressions, webhooks, foreach, and output handling
-- **🔧 Comprehensive Simulation**: Generate realistic post_data with all SignalWire metadata
-- **🔍 Advanced Template Engine**: Supports all DataMap variable syntax (`${args.param}`, `${response.field}`, `${this.property}`)
-- **📝 Verbose Debugging**: Detailed execution tracing for both function types
-- **⚙️ Flexible Data Modes**: Choose between minimal, comprehensive, or custom post_data
+- **Auto-Detection**: Automatically detects webhook vs DataMap functions - no manual flags needed
+- **Real HTTP Execution**: DataMap functions make actual HTTP requests to real APIs
+- **Complete DataMap Pipeline**: Full processing including expressions, webhooks, foreach, and output handling
+- **Comprehensive Simulation**: Generate realistic post_data with all SignalWire metadata
+- **Advanced Template Engine**: Supports all DataMap variable syntax (`${args.param}`, `${response.field}`, `${this.property}`)
+- **Verbose Debugging**: Detailed execution tracing for both function types
+- **Flexible Data Modes**: Choose between minimal, comprehensive, or custom post_data
 
 ## Installation
 

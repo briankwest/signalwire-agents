@@ -58,9 +58,9 @@ if __name__ == "__main__":
     print(f"Source: {source}")
     
     if source == "environment":
-        print("✅ SUCCESS: Environment variables are being used correctly.")
+        print("SUCCESS: SUCCESS: Environment variables are being used correctly.")
     else:
-        print(f"❌ FAILURE: Credentials are coming from '{source}' instead of environment variables.")
+        print(f"ERROR: FAILURE: Credentials are coming from '{source}' instead of environment variables.")
     
     print("\nStarting server to verify printed credentials...")
     try:

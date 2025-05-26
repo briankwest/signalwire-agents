@@ -348,7 +348,7 @@ class ComprehensiveDynamicAgent(AgentBase):
 if __name__ == "__main__":
     agent = ComprehensiveDynamicAgent()
     
-    print("🤖 Starting Comprehensive Dynamic Agent")
+    print("Starting Comprehensive Dynamic Agent")
     print("\nTry these example requests:")
     print("curl 'http://localhost:3000/dynamic?tier=premium&industry=healthcare&voice=spore&test_group=A'")
     print("curl 'http://localhost:3000/dynamic?tier=enterprise&industry=finance&voice=flower&language=es&locale=mx'")

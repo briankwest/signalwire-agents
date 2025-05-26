@@ -100,7 +100,7 @@ class SimpleStaticAgent(AgentBase):
 if __name__ == "__main__":
     agent = SimpleStaticAgent()
     
-    print("🤖 Starting Simple Static Agent")
+    print("Starting Simple Static Agent")
     print("\nConfiguration: STATIC (set once at startup)")
     print("- Voice: rime.spore (professional)")
     print("- Service Level: standard") 

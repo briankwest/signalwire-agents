@@ -138,7 +138,7 @@ class SimpleDynamicAgent(AgentBase):
 if __name__ == "__main__":
     agent = SimpleDynamicAgent()
     
-    print("🤖 Starting Simple Dynamic Agent")
+    print("Starting Simple Dynamic Agent")
     print("\nConfiguration: DYNAMIC (configured fresh for each request)")
     print("- Voice: rime.spore (professional)")
     print("- Service Level: standard")
@@ -149,8 +149,8 @@ if __name__ == "__main__":
     print("curl 'http://localhost:3000'")
     print("curl 'http://localhost:3000/debug'")
     print("\nNote: Configuration happens fresh each request!")
-    print("💡 LEARNING: Compare SWML output with simple_static_agent.py - it's identical!")
-    print("💡 POWER: Easy to extend with query parameter customization")
+    print("LEARNING: Compare SWML output with simple_static_agent.py - it's identical!")
+    print("POWER: Easy to extend with query parameter customization")
     print()
     
     agent.serve() 

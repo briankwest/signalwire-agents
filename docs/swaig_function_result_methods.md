@@ -53,8 +53,7 @@ swml_doc.add_application("main", "say", {"text": "Connecting now"})
 result.execute_swml(swml_doc)
 ```
 
-#### `connect(destination, final=True, from_addr=None)`
-**✅ Already Implemented** - Transfer/connect call to another destination using SWML.
+#### **[IMPLEMENTED]** - Transfer/connect call to another destination using SWML.
 
 ```python
 result.connect("+15551234567", final=True)  # Permanent transfer
@@ -62,7 +61,7 @@ result.connect("support@company.com", final=False, from_addr="+15559876543")  # 
 ```
 
 #### `send_sms(to_number, from_number, body=None, media=None, tags=None, region=None)`
-**🎯 Virtual Helper** - Send SMS message to PSTN phone number using SWML.
+**[HELPER METHOD]** - Send SMS message to PSTN phone number using SWML.
 
 ```python
 # Simple text message
@@ -102,7 +101,7 @@ result.send_sms(
 - `send_sms_result`: "success" or "failed"
 
 #### `pay(payment_connector_url, **options)`
-**🎯 Virtual Helper** - Process payments using SWML pay action with extensive customization.
+**[HELPER METHOD]** - Process payments using SWML pay action with extensive customization.
 
 ```python
 # Simple payment setup
@@ -204,7 +203,7 @@ param = SwaigFunctionResult.create_payment_parameter("customer_id", "12345")
 - `pay_payment_results`: JSON with payment details including tokens and card info
 
 #### `record_call(control_id=None, stereo=False, format="wav", direction="both", **options)`
-**🎯 Virtual Helper** - Start background call recording using SWML.
+**[HELPER METHOD]** - Start background call recording using SWML.
 
 Unlike foreground recording, the script continues executing while recording happens in the background.
 
@@ -258,7 +257,7 @@ result.record_call(
 - `record_call_url`: URL of recorded file (when recording completes)
 
 #### `stop_record_call(control_id=None)`
-**🎯 Virtual Helper** - Stop an active background call recording using SWML.
+**[HELPER METHOD]** - Stop an active background call recording using SWML.
 
 ```python
 # Stop the most recent recording
@@ -279,7 +278,7 @@ result.stop_record_call("customer_voicemail") \
 - `stop_record_call_result`: "success" or "failed"
 
 #### `join_room(name)`
-**🎯 Virtual Helper** - Join a RELAY room using SWML.
+**[HELPER METHOD]** - Join a RELAY room using SWML.
 
 RELAY rooms enable multi-party communication and collaboration features.
 
@@ -303,7 +302,7 @@ result.join_room("sales_conference") \
 - `join_room_result`: "success" or "failed"
 
 #### `sip_refer(to_uri)`
-**🎯 Virtual Helper** - Send SIP REFER for call transfer using SWML.
+**[HELPER METHOD]** - Send SIP REFER for call transfer using SWML.
 
 SIP REFER is used for call transfer in SIP environments, allowing one endpoint to request another to initiate a new connection.
 
@@ -326,7 +325,7 @@ result.say("Transferring your call to our specialist") \
 - `sip_refer_result`: "success" or "failed"
 
 #### `join_conference(name, **options)`
-**🎯 Virtual Helper** - Join an ad-hoc audio conference with RELAY and CXML calls using SWML.
+**[HELPER METHOD]** - Join an ad-hoc audio conference with RELAY and CXML calls using SWML.
 
 Provides extensive configuration options for conference call management and recording.
 
@@ -396,7 +395,7 @@ result.say("Joining you to the team conference") \
 - `return_value`: Same as `join_conference_result`
 
 #### `tap(uri, **options)`
-**🎯 Virtual Helper** - Start background call tap using SWML.
+**[HELPER METHOD]** - Start background call tap using SWML.
 
 Media is streamed over Websocket or RTP to customer controlled URI for real-time monitoring and analysis.
 
@@ -451,7 +450,7 @@ result.tap(
 - `tap_rate`: Sample rate in the tap stream
 
 #### `stop_tap(control_id=None)`
-**🎯 Virtual Helper** - Stop an active tap stream using SWML.
+**[HELPER METHOD]** - Stop an active tap stream using SWML.
 
 ```python
 # Stop the most recent tap
@@ -557,7 +556,7 @@ result.set_speech_event_timeout(3000)  # 3 seconds since last speech event
 ### Data Management
 
 #### `update_global_data(data)`
-**✅ Already Implemented** - Update global agent data variables.
+**[IMPLEMENTED]** - Update global agent data variables.
 
 ```python
 result.update_global_data({"user_name": "John", "step": 2})
@@ -725,10 +724,10 @@ result = SwaigFunctionResult("Let me transfer you to billing") \
 
 ## Implementation Status
 
-- ✅ **Implemented**: `connect()`, `update_global_data()`, and all methods listed above
-- 🎯 **Virtual helpers**: `send_sms()`, `pay()`, `record_call()`, `stop_record_call()`, `join_room()`, `sip_refer()`, `join_conference()`, `tap()`, `stop_tap()` - Additional convenience methods that generate SWML
-- 🎯 **Helper methods**: `create_payment_prompt()`, `create_payment_action()`, `create_payment_parameter()`
-- 🎯 **Ready for more virtual helpers**: Additional convenience methods for common SWML patterns
+- **[IMPLEMENTED]**: `connect()`, `update_global_data()`, and all methods listed above
+- **[HELPER METHODS]**: `send_sms()`, `pay()`, `record_call()`, `stop_record_call()`, `join_room()`, `sip_refer()`, `join_conference()`, `tap()`, `stop_tap()` - Additional convenience methods that generate SWML
+- **[UTILITY METHODS]**: `create_payment_prompt()`, `create_payment_action()`, `create_payment_parameter()`
+- **[EXTENSIBLE]**: Additional convenience methods for common SWML patterns
 
 ## Best Practices
 

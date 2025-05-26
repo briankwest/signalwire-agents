@@ -17,13 +17,13 @@ Example agents you can use:
 - Any custom agent you've created
 
 Features preserved in Lambda:
-✅ All SWAIG functions work
-✅ Basic authentication works
-✅ Health endpoints work (/health, /ready)
-✅ Debug endpoints work (/debug)
-✅ All routing works (/swaig, /post_prompt, etc.)
-✅ Session management works (stateless tokens)
-✅ Structured logging works (CloudWatch compatible)
+SUCCESS: All SWAIG functions work
+SUCCESS: Basic authentication works
+SUCCESS: Health endpoints work (/health, /ready)
+SUCCESS: Debug endpoints work (/debug)
+SUCCESS: All routing works (/swaig, /post_prompt, etc.)
+SUCCESS: Session management works (stateless tokens)
+SUCCESS: Structured logging works (CloudWatch compatible)
 """
 
 import os
@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 try:
     from mangum import Mangum
 except ImportError:
-    print("❌ Mangum not installed. Run: pip install mangum")
+    print("ERROR: Mangum not installed. Run: pip install mangum")
     sys.exit(1)
 
 # ============================================================================
@@ -90,17 +90,17 @@ def lambda_handler(event, context):
 # ============================================================================
 
 if __name__ == "__main__":
-    print("🧪 Testing agent locally...")
-    print(f"📋 Agent: {agent.get_name()}")
-    print(f"🔧 Functions: {len(agent._swaig_functions)}")
+    print("TESTING: Testing agent locally...")
+    print(f"AGENT: Agent: {agent.get_name()}")
+    print(f"FUNCTIONS: Functions: {len(agent._swaig_functions)}")
     print()
-    print("⚠️  Note: This runs FastAPI directly, not via Lambda")
+    print("NOTE: Note: This runs FastAPI directly, not via Lambda")
     print("   For true Lambda testing, use 'sam local start-api'")
     print()
     
     # List available functions
     if agent._swaig_functions:
-        print("📚 Available SWAIG functions:")
+        print("AVAILABLE: Available SWAIG functions:")
         for func_name in agent._swaig_functions.keys():
             print(f"   - {func_name}")
         print()

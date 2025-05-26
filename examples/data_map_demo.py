@@ -208,10 +208,10 @@ if __name__ == "__main__":
     
     print("\n" + "=" * 80)
     print("All examples above show the pattern:")
-    print("✅ Uses DataMap class with SwaigFunctionResult for outputs")
-    print("✅ Generates SWAIG JSON with 'data_map' instead of 'url'")
-    print("✅ SignalWire server handles REST API calls automatically")
-    print("✅ Supports expressions, foreach, webhooks, error handling")
+    print("SUCCESS: Uses DataMap class with SwaigFunctionResult for outputs")
+    print("SUCCESS: Generates SWAIG JSON with 'data_map' instead of 'url'")
+    print("SUCCESS: SignalWire server handles REST API calls automatically")
+    print("SUCCESS: Supports expressions, foreach, webhooks, error handling")
     print("=" * 80)
     
     print("\nKey benefits of this approach:")

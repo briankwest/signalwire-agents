@@ -149,11 +149,11 @@ def main():
         return
     
     # Show agent capabilities
-    print(f"\n🚀 Agent ready at: {agent.get_full_url()}")
+    print(f"\nREADY: Agent ready at: {agent.get_full_url()}")
     print("\nAgent Capabilities:")
-    print("📅 Date and time information")
-    print("🧮 Mathematical calculations")
-    print("🔍 Knowledge base search (webhook execution)")
+    print("DATE: Date and time information")
+    print("MATH: Mathematical calculations")
+    print("SEARCH: Knowledge base search (webhook execution)")
     
     print("\nDataSphere Webhook Features:")
     print("• Executes via traditional webhook endpoints")
@@ -210,7 +210,7 @@ def main():
         agent.serve()
     except KeyboardInterrupt:
         print("\n\nShutting down agent...")
-        print("Goodbye! 👋")
+        print("Goodbye! Goodbye!")
 
 if __name__ == "__main__":
     main() 

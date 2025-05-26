@@ -17,11 +17,11 @@ print(f"SWML_BASIC_AUTH_USER: {user if user else 'NOT SET'}")
 print(f"SWML_BASIC_AUTH_PASSWORD: {password if password else 'NOT SET'}")
 
 if user and password:
-    print("\n✅ Environment variables are set and accessible to Python.")
+    print("\nSUCCESS: Environment variables are set and accessible to Python.")
     print(f"User: {user}")
     print(f"Password: {password}")
 else:
-    print("\n❌ Environment variables are NOT set or accessible to Python.")
+    print("\nERROR: Environment variables are NOT set or accessible to Python.")
     print("Make sure you're setting them correctly before running the script.")
     print("Example:")
     print("  SWML_BASIC_AUTH_USER=admin SWML_BASIC_AUTH_PASSWORD=secret python examples/env_auth_simple.py") 

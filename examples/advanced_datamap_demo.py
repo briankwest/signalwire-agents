@@ -53,12 +53,12 @@ def create_advanced_webhook_demo():
             {
                 "string": "${response.status}",
                 "pattern": "^success$",
-                "output": {"response": "✅ Operation completed successfully!"}
+                "output": {"response": "Operation completed successfully"}
             },
             {
                 "string": "${response.error_code}",
                 "pattern": "^(404|500)$",
-                "output": {"response": "❌ API Error: ${response.error_message}"}
+                "output": {"response": "API Error: ${response.error_message}"}
             }
         ])
         
@@ -114,7 +114,7 @@ def create_array_processing_demo():
             "input_key": "results",
             "output_key": "formatted_results",
             "max": 5,
-            "append": "📄 **${this.title}**\n${this.summary}\n🔗 ${this.url}\n\n"
+            "append": "Title: ${this.title}\n${this.summary}\nURL: ${this.url}\n\n"
         })
         .output(SwaigFunctionResult('Found @{expr ${response.total}} results for "${args.query}":\n\n${formatted_results}'))
         .error_keys(['error'])
