@@ -44,27 +44,43 @@ except ImportError:
 # ============================================================================
 
 # Option 1: Import an existing example agent
-from basic_agent_with_functions import BasicAgentWithFunctions as MyAgent
+# from basic_agent_with_functions import BasicAgentWithFunctions as MyAgent
 
 # Option 2: Import your custom agent (uncomment and modify)
 # from my_custom_agent import MyCustomAgent as MyAgent
 
-# Option 3: Import a skill-based agent (uncomment and modify)  
-# from datasphere_agent import DataSphereAgent as MyAgent
+# Option 3: Import a skill-based agent (TESTING WEB SEARCH AGENT)
+import os
+from signalwire_agents import AgentBase
+
+def create_web_search_agent():
+    """Create web search agent for Lambda testing"""
+    agent = AgentBase("Web Search Lambda Agent", route="/")
+    agent.add_language("English", "en-US", "rime.spore")
+    
+    # Get API credentials
+    google_api_key = os.getenv('GOOGLE_SEARCH_API_KEY', 'test_key')
+    google_search_engine_id = os.getenv('GOOGLE_SEARCH_ENGINE_ID', 'test_engine')
+    
+    # Add web search with the NEW max_content_length parameter
+    agent.add_skill("web_search", {
+        "api_key": google_api_key,
+        "search_engine_id": google_search_engine_id,
+        "num_results": 1,
+        "delay": 0,
+        "max_content_length": 3000,  # NEW configurable parameter!
+        "no_results_message": "No results from Lambda for '{query}'.",
+    })
+    return agent
+
+MyAgent = create_web_search_agent
 
 # ============================================================================
 # STEP 2: Create your agent instance (same as local development)
 # ============================================================================
 
 # Create the agent exactly as you would locally
-agent = MyAgent(
-    name="lambda-wrapped-agent",
-    route="/",  # Lambda typically serves from root
-    # Add any other parameters your agent needs:
-    # basic_auth=("username", "password"),
-    # enable_state_tracking=False,  # Already stateless, so this doesn't matter
-    # etc.
-)
+agent = MyAgent()  # Web search agent function call
 
 # ============================================================================ 
 # STEP 3: Lambda setup (no changes needed)

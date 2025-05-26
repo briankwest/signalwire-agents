@@ -19,7 +19,7 @@ import base64
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import the lambda handler from our example
-from lambda_agent import lambda_handler
+from lambda_wrapper_any_agent import lambda_handler
 
 def create_basic_auth_header():
     """Create Basic Auth header from environment variables"""
@@ -185,7 +185,19 @@ def main():
     # Test 9: Debug endpoint
     test_endpoint("GET", "/debug")
     
+    # Test 10: Web search function with max_content_length=3000
+    print(f"\n🔍 Testing web_search function with max_content_length=3000...")
+    web_search_body = {
+        "function": "web_search",
+        "argument": {
+            "query": "SignalWire AI agents"
+        },
+        "call_id": "web-search-test-123"
+    }
+    test_endpoint("POST", "/swaig", body=web_search_body)
+    
     print("\nCOMPLETE: Lambda handler testing complete")
+    print("💡 Web search agent with max_content_length=3000 tested in Lambda mode!")
 
 if __name__ == "__main__":
     main() 
