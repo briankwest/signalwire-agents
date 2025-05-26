@@ -840,26 +840,133 @@ def format_result(result: Any) -> str:
         return f"Other ({type(result).__name__}): {result}"
 
 
+def parse_function_arguments(function_args_list: List[str], func_schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parse function arguments from command line with type coercion based on schema
+    
+    Args:
+        function_args_list: List of command line arguments after --args
+        func_schema: Function schema with parameter definitions
+        
+    Returns:
+        Dictionary of parsed function arguments
+    """
+    parsed_args = {}
+    i = 0
+    
+    # Get parameter schema
+    parameters = {}
+    required_params = []
+    
+    if isinstance(func_schema, dict):
+        # DataMap function
+        if 'parameters' in func_schema:
+            params = func_schema['parameters']
+            if 'properties' in params:
+                parameters = params['properties']
+                required_params = params.get('required', [])
+            else:
+                parameters = params
+    else:
+        # Regular SWAIG function
+        if hasattr(func_schema, 'parameters') and func_schema.parameters:
+            params = func_schema.parameters
+            if 'properties' in params:
+                parameters = params['properties']
+                required_params = params.get('required', [])
+            else:
+                parameters = params
+    
+    # Parse arguments
+    while i < len(function_args_list):
+        arg = function_args_list[i]
+        
+        if arg.startswith('--'):
+            param_name = arg[2:]  # Remove --
+            
+            # Convert kebab-case to snake_case for parameter lookup
+            param_key = param_name.replace('-', '_')
+            
+            # Check if this parameter exists in schema
+            param_schema = parameters.get(param_key, {})
+            param_type = param_schema.get('type', 'string')
+            
+            if param_type == 'boolean':
+                # Check if next arg is a boolean value or if this is a flag
+                if i + 1 < len(function_args_list) and function_args_list[i + 1].lower() in ['true', 'false']:
+                    parsed_args[param_key] = function_args_list[i + 1].lower() == 'true'
+                    i += 2
+                else:
+                    # Treat as flag (present = true)
+                    parsed_args[param_key] = True
+                    i += 1
+            else:
+                # Need a value
+                if i + 1 >= len(function_args_list):
+                    raise ValueError(f"Parameter --{param_name} requires a value")
+                
+                value = function_args_list[i + 1]
+                
+                # Type coercion
+                if param_type == 'integer':
+                    try:
+                        parsed_args[param_key] = int(value)
+                    except ValueError:
+                        raise ValueError(f"Parameter --{param_name} must be an integer, got: {value}")
+                elif param_type == 'number':
+                    try:
+                        parsed_args[param_key] = float(value)
+                    except ValueError:
+                        raise ValueError(f"Parameter --{param_name} must be a number, got: {value}")
+                elif param_type == 'array':
+                    # Handle comma-separated arrays
+                    parsed_args[param_key] = [item.strip() for item in value.split(',')]
+                else:
+                    # String (default)
+                    parsed_args[param_key] = value
+                
+                i += 2
+        else:
+            raise ValueError(f"Expected parameter name starting with --, got: {arg}")
+    
+    return parsed_args
+
+
 def main():
     """Main entry point for the CLI tool"""
     # Check for --raw flag and set up suppression early
     if "--raw" in sys.argv:
         setup_raw_mode_suppression()
     
+    # Check for --args separator and split arguments
+    cli_args = sys.argv[1:]
+    function_args_list = []
+    
+    if '--args' in sys.argv:
+        args_index = sys.argv.index('--args')
+        cli_args = sys.argv[1:args_index]
+        function_args_list = sys.argv[args_index + 1:]
+    
+    # Temporarily modify sys.argv for argparse
+    original_argv = sys.argv[:]
+    sys.argv = [sys.argv[0]] + cli_args
+    
     parser = argparse.ArgumentParser(
         description="Test SWAIG functions from agent applications with comprehensive simulation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s examples/datasphere_webhook_env_demo.py search_knowledge '{"query":"test"}'
-  %(prog)s examples/simple_agent.py calculate '{"expression":"2+2"}' --fake-full-data
-  %(prog)s examples/my_agent.py my_datamap_func '{"input":"value"}' --datamap
+  # JSON syntax (original)
+  %(prog)s examples/web_search_agent.py web_search '{"query":"test"}'
+  
+  # New --args syntax  
+  %(prog)s examples/web_search_agent.py web_search --args --query "who is the president"
+  %(prog)s examples/agent.py search --args --query "AI" --limit 5 --verbose
+  
+  # Other commands
   %(prog)s examples/my_agent.py --list-tools
   %(prog)s examples/my_agent.py --dump-swml
-  %(prog)s examples/my_agent.py --dump-swml --verbose
-  %(prog)s examples/my_agent.py --dump-swml --raw
   %(prog)s examples/my_agent.py --dump-swml --raw | jq '.'
-  %(prog)s examples/my_agent.py --dump-swml --raw | jq '.sections.main[1].ai.SWAIG.functions'
         """
     )
     
@@ -877,7 +984,7 @@ Examples:
     parser.add_argument(
         "args_json",
         nargs="?",
-        help="JSON string containing the arguments to pass to the function"
+        help="JSON string containing the arguments to pass to the function (or use --args for CLI syntax)"
     )
     
     parser.add_argument(
@@ -924,9 +1031,17 @@ Examples:
     
     args = parser.parse_args()
     
+    # Restore original sys.argv
+    sys.argv = original_argv
+    
     # Validate arguments
-    if not args.list_tools and not args.dump_swml and (not args.tool_name or not args.args_json):
-        parser.error("tool_name and args_json are required unless --list-tools or --dump-swml is used")
+    if not args.list_tools and not args.dump_swml:
+        if not args.tool_name:
+            parser.error("tool_name is required unless --list-tools or --dump-swml is used")
+        
+        # Either args_json OR function_args_list is required
+        if not args.args_json and not function_args_list:
+            parser.error("Either args_json or --args with parameters is required when calling a function")
     
     try:
         # Load the agent
@@ -1079,12 +1194,30 @@ Examples:
                         traceback.print_exc()
                 return 1
         
-        # Parse arguments
-        try:
-            function_args = json.loads(args.args_json)
-        except json.JSONDecodeError as e:
-            print(f"Error: Invalid JSON in args: {e}")
-            return 1
+        # Parse function arguments
+        if function_args_list:
+            # Using --args syntax, need to get the function to parse arguments with schema
+            if not hasattr(agent, '_swaig_functions') or args.tool_name not in agent._swaig_functions:
+                print(f"Error: Function '{args.tool_name}' not found in agent")
+                print(f"Available functions: {list(agent._swaig_functions.keys()) if hasattr(agent, '_swaig_functions') else 'None'}")
+                return 1
+            
+            func = agent._swaig_functions[args.tool_name]
+            
+            try:
+                function_args = parse_function_arguments(function_args_list, func)
+                if args.verbose and not args.raw:
+                    print(f"Parsed arguments: {json.dumps(function_args, indent=2)}")
+            except ValueError as e:
+                print(f"Error: {e}")
+                return 1
+        else:
+            # Using JSON syntax
+            try:
+                function_args = json.loads(args.args_json)
+            except json.JSONDecodeError as e:
+                print(f"Error: Invalid JSON in args: {e}")
+                return 1
         
         try:
             custom_data = json.loads(args.custom_data)
@@ -1092,13 +1225,17 @@ Examples:
             print(f"Error: Invalid JSON in custom-data: {e}")
             return 1
         
-        # Check if the function exists
-        if not hasattr(agent, '_swaig_functions') or args.tool_name not in agent._swaig_functions:
-            print(f"Error: Function '{args.tool_name}' not found in agent")
-            print(f"Available functions: {list(agent._swaig_functions.keys()) if hasattr(agent, '_swaig_functions') else 'None'}")
-            return 1
-        
-        func = agent._swaig_functions[args.tool_name]
+        # Check if the function exists (if not already checked)
+        if not function_args_list:
+            if not hasattr(agent, '_swaig_functions') or args.tool_name not in agent._swaig_functions:
+                print(f"Error: Function '{args.tool_name}' not found in agent")
+                print(f"Available functions: {list(agent._swaig_functions.keys()) if hasattr(agent, '_swaig_functions') else 'None'}")
+                return 1
+            
+            func = agent._swaig_functions[args.tool_name]
+        else:
+            # Function already retrieved during argument parsing
+            func = agent._swaig_functions[args.tool_name]
         
         # Determine function type automatically - no --datamap flag needed
         # DataMap functions are stored as dicts, webhook functions as SWAIGFunction objects
