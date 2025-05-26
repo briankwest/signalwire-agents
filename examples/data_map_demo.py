@@ -26,6 +26,23 @@ class DataMapDemoAgent(AgentBase):
     def setup(self):
         """Set up the agent with data_map tools"""
         
+        # Add a regular SWAIG function for comparison
+        self.define_tool(
+            name="echo_test",
+            description="A simple echo function for testing",
+            parameters={
+                "message": {
+                    "type": "string",
+                    "description": "Message to echo back"
+                },
+                "repeat": {
+                    "type": "integer", 
+                    "description": "Number of times to repeat"
+                }
+            },
+            handler=self.echo_handler
+        )
+        
         # 1. Simple weather API - basic pattern
         weather_tool = create_simple_api_tool(
             name='get_weather',
@@ -42,20 +59,18 @@ class DataMapDemoAgent(AgentBase):
         )
         
         # 2. Expression-based file control - no API calls
-        file_control_patterns = {
-            r'start.*': SwaigFunctionResult("Starting playback").add_action('start_playback', {'file': '${args.filename}'}),
-            r'stop.*': SwaigFunctionResult("Stopping playback").add_action('stop_playback', True),
-            r'pause.*': SwaigFunctionResult("Pausing playback").add_action('pause_playback', True),
-            r'resume.*': SwaigFunctionResult("Resuming playback").add_action('resume_playback', True),
-        }
-        
-        file_control_tool = create_expression_tool(
-            name='file_control',
-            patterns=file_control_patterns,
-            parameters={
-                'command': {'type': 'string', 'description': 'Playback command', 'required': True},
-                'filename': {'type': 'string', 'description': 'File to control', 'required': False}
-            }
+        file_control_tool = (DataMap('file_control')
+            .purpose('Control audio/video playback')
+            .parameter('command', 'string', 'Playback command', required=True)
+            .parameter('filename', 'string', 'File to control', required=False)
+            .expression('${args.command}', r'start.*', 
+                       SwaigFunctionResult("Starting playback").add_action('start_playback', {'file': '${args.filename}'}))
+            .expression('${args.command}', r'stop.*',
+                       SwaigFunctionResult("Stopping playback").add_action('stop_playback', True))
+            .expression('${args.command}', r'pause.*',
+                       SwaigFunctionResult("Pausing playback").add_action('pause_playback', True))
+            .expression('${args.command}', r'resume.*',
+                       SwaigFunctionResult("Resuming playback").add_action('resume_playback', True))
         )
         
         # 3. Knowledge search with foreach - processes arrays
@@ -124,28 +139,15 @@ class DataMapDemoAgent(AgentBase):
         # Convert DataMap to SWAIG function definition
         function_def = data_map.to_swaig_function()
         
-        # For now, we'll add this as a manual SWAIG function
-        # In the real implementation, this would be integrated into the agent's 
-        # SWAIG generation to include data_map instead of webhook URLs
-        
-        # Create a dummy handler since data_map tools don't need Python handlers
-        def data_map_handler(args, raw_data):
-            return SwaigFunctionResult(
-                f"Data map tool '{data_map.function_name}' would execute on SignalWire server"
-            )
-        
-        # Register with the agent (this would be modified in real implementation)
-        self.add_swaig_function(
-            name=function_def['function'],
-            handler=data_map_handler,
-            description=function_def['purpose'],
-            parameters=function_def['argument']['properties']
-        )
-        
-        # Store the data_map definition for SWAIG generation
-        if not hasattr(self, '_data_map_functions'):
-            self._data_map_functions = {}
-        self._data_map_functions[function_def['function']] = function_def
+        # Register the raw function dictionary directly
+        self.register_swaig_function(function_def)
+
+    def echo_handler(self, args, raw_data):
+        """Handle echo function calls"""
+        message = args.get("message", "")
+        repeat = args.get("repeat", 1)
+        result = (message + " ") * repeat
+        return {"response": f"Echo: {result.strip()}"}
 
 
 def print_data_map_examples():
@@ -201,6 +203,13 @@ def print_data_map_examples():
     print("array processing, and response formatting automatically.")
     print("=" * 80)
 
+
+# Create the agent instance for testing
+agent = DataMapDemoAgent(
+    name="DataMap Demo Agent",
+    route="/datamap-demo"
+)
+agent.setup()
 
 if __name__ == "__main__":
     # Print examples first

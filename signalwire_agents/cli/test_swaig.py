@@ -953,12 +953,35 @@ Examples:
                 for name, func in agent._swaig_functions.items():
                     if isinstance(func, dict):
                         # DataMap function
-                        print(f"  {name} - DataMap function (serverless)")
+                        description = func.get('description', 'DataMap function (serverless)')
+                        print(f"  {name} - {description}")
+                        
+                        # Show parameters for DataMap functions
+                        if 'parameters' in func and func['parameters']:
+                            params = func['parameters']
+                            # Handle both formats: direct properties dict or full schema
+                            if 'properties' in params:
+                                properties = params['properties']
+                                required_fields = params.get('required', [])
+                            else:
+                                properties = params
+                                required_fields = []
+                            
+                            if properties:
+                                print(f"    Parameters:")
+                                for param_name, param_def in properties.items():
+                                    param_type = param_def.get('type', 'unknown')
+                                    param_desc = param_def.get('description', 'No description')
+                                    is_required = param_name in required_fields
+                                    required_marker = " (required)" if is_required else ""
+                                    print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
+                            else:
+                                print(f"    Parameters: None")
+                        else:
+                            print(f"    Parameters: None")
+                            
                         if args.verbose:
                             print(f"    Config: {json.dumps(func, indent=6)}")
-                        else:
-                            # Show basic DataMap info
-                            print(f"    Type: DataMap (configuration-based function)")
                     else:
                         # Regular SWAIG function
                         print(f"  {name} - {func.description}")
