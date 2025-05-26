@@ -66,7 +66,8 @@ class AgentServer:
         self.app = FastAPI(
             title="SignalWire AI Agents",
             description="Hosted SignalWire AI Agents",
-            version="0.1.2"
+            version="0.1.2",
+            redirect_slashes=False
         )
         
         # Keep track of registered agents
@@ -105,7 +106,8 @@ class AgentServer:
         # Store the agent
         self.agents[route] = agent
         
-        # Get the router and register it
+        # Get the router and register it using the standard approach
+        # The agent's router already handles both trailing slash versions properly
         router = agent.as_router()
         self.app.include_router(router, prefix=route)
         
@@ -321,6 +323,48 @@ class AgentServer:
                 "agents": len(self.agents),
                 "routes": list(self.agents.keys())
             }
+            
+        # Add catch-all route handler to handle both trailing slash and non-trailing slash versions
+        @self.app.get("/{full_path:path}")
+        @self.app.post("/{full_path:path}")
+        async def handle_all_routes(request: Request, full_path: str):
+            """Handle requests that don't match registered routes (e.g. /matti instead of /matti/)"""
+            # Check if this path maps to one of our registered agents
+            for route, agent in self.agents.items():
+                # Check for exact match with registered route
+                if full_path == route.lstrip("/"):
+                    # This is a request to an agent's root without trailing slash
+                    return await agent._handle_root_request(request)
+                elif full_path.startswith(route.lstrip("/") + "/"):
+                    # This is a request to an agent's sub-path
+                    relative_path = full_path[len(route.lstrip("/")):]
+                    relative_path = relative_path.lstrip("/")
+                    
+                    # Route to appropriate handler based on path
+                    if not relative_path or relative_path == "/":
+                        return await agent._handle_root_request(request)
+                    
+                    clean_path = relative_path.rstrip("/")
+                    if clean_path == "debug":
+                        return await agent._handle_debug_request(request)
+                    elif clean_path == "swaig":
+                        from fastapi import Response
+                        return await agent._handle_swaig_request(request, Response())
+                    elif clean_path == "post_prompt":
+                        return await agent._handle_post_prompt_request(request)
+                    elif clean_path == "check_for_input":
+                        return await agent._handle_check_for_input_request(request)
+                    
+                    # Check for custom routing callbacks
+                    if hasattr(agent, '_routing_callbacks'):
+                        for callback_path, callback_fn in agent._routing_callbacks.items():
+                            cb_path_clean = callback_path.strip("/")
+                            if clean_path == cb_path_clean:
+                                request.state.callback_path = callback_path
+                                return await agent._handle_root_request(request)
+            
+            # No matching agent found
+            return {"error": "Not Found"}
             
         # Print server info
         host = host or self.host
