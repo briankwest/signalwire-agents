@@ -987,46 +987,55 @@ def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any
     # Extract data_map configuration
     data_map = datamap_config.get('data_map', {})
     
-    # Process expressions (pattern matching)
-    expressions = data_map.get('expressions', [])
-    matched_expression = None
-    
-    if verbose:
-        print(f"Processing {len(expressions)} expression(s)...")
-    
-    for expr in expressions:
-        pattern = expr.get('pattern', '.*')  # Default to match everything
-        string_value = expr.get('string', '')
-        
-        # Create a test string from the arguments
-        test_string = json.dumps(args)
+    # Check if this is a simple DataMap (webhooks directly) or complex (with expressions)
+    if 'webhooks' in data_map and 'expressions' not in data_map:
+        # Simple DataMap structure - webhooks directly under data_map
+        webhooks = data_map.get('webhooks', [])
+        fallback_output = data_map.get('output', 'Function completed')
+        if verbose:
+            print(f"Simple DataMap structure with {len(webhooks)} webhook(s)")
+    else:
+        # Complex DataMap structure - with expressions containing webhooks
+        expressions = data_map.get('expressions', [])
+        matched_expression = None
         
         if verbose:
-            print(f"  Testing pattern '{pattern}' against '{test_string}'")
+            print(f"Complex DataMap structure with {len(expressions)} expression(s)...")
         
-        # Use regex to match
-        try:
-            if re.search(pattern, test_string):
-                matched_expression = expr
-                if verbose:
-                    print(f"  ✓ Pattern matched!")
-                break
-            elif re.search(pattern, string_value):
-                matched_expression = expr
-                if verbose:
-                    print(f"  ✓ Pattern matched against string value!")
-                break
-        except re.error as e:
+        for expr in expressions:
+            pattern = expr.get('pattern', '.*')  # Default to match everything
+            string_value = expr.get('string', '')
+            
+            # Create a test string from the arguments
+            test_string = json.dumps(args)
+            
             if verbose:
-                print(f"  ✗ Invalid regex pattern: {e}")
-    
-    if not matched_expression:
-        if verbose:
-            print("  No expressions matched, using first expression if available")
-        matched_expression = expressions[0] if expressions else {}
-    
-    # Process webhooks
-    webhooks = matched_expression.get('webhooks', [])
+                print(f"  Testing pattern '{pattern}' against '{test_string}'")
+            
+            # Use regex to match
+            try:
+                if re.search(pattern, test_string):
+                    matched_expression = expr
+                    if verbose:
+                        print(f"  ✓ Pattern matched!")
+                    break
+                elif re.search(pattern, string_value):
+                    matched_expression = expr
+                    if verbose:
+                        print(f"  ✓ Pattern matched against string value!")
+                    break
+            except re.error as e:
+                if verbose:
+                    print(f"  ✗ Invalid regex pattern: {e}")
+        
+        if not matched_expression:
+            if verbose:
+                print("  No expressions matched, using first expression if available")
+            matched_expression = expressions[0] if expressions else {}
+        
+        # Get webhooks from matched expression
+        webhooks = matched_expression.get('webhooks', [])
+        fallback_output = matched_expression.get('output', 'Function completed')
     webhook_result = None
     
     if verbose:
@@ -1043,18 +1052,61 @@ def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any
         # Prepare request data
         request_data = args.copy()
         
+        # Expand URL template with arguments
+        template_context = {"args": args, "array": [], **args}
+        expanded_url = simple_template_expand(url, template_context)
+        
+        if verbose:
+            print(f"    Original URL: {url}")
+            print(f"    Template context: {template_context}")
+            print(f"    Expanded URL: {expanded_url}")
+        
         try:
             if method == 'GET':
-                response = requests.get(url, params=request_data, headers=headers, timeout=10)
+                response = requests.get(expanded_url, params=request_data, headers=headers, timeout=10)
             else:
-                response = requests.post(url, json=request_data, headers=headers, timeout=10)
+                response = requests.post(expanded_url, json=request_data, headers=headers, timeout=10)
             
             if response.status_code == 200:
                 try:
-                    webhook_result = response.json()
+                    webhook_data = response.json()
                     if verbose:
                         print(f"  ✓ Webhook succeeded: {response.status_code}")
-                        print(f"    Response: {json.dumps(webhook_result, indent=4)}")
+                        print(f"    Response: {json.dumps(webhook_data, indent=4)}")
+                    
+                    # Process output template if defined in this webhook
+                    webhook_output = webhook.get('output')
+                    if webhook_output:
+                        # Create context for template expansion
+                        template_context = {
+                            "args": args,
+                            "array": webhook_data if isinstance(webhook_data, list) else [webhook_data]
+                        }
+                        
+                        # Add webhook_data contents to context if it's a dict
+                        if isinstance(webhook_data, dict):
+                            template_context.update(webhook_data)
+                        
+                        if isinstance(webhook_output, dict):
+                            # Process dict output template (e.g., {"response": "template", "action": [...]} )
+                            webhook_result = {}
+                            for key, template in webhook_output.items():
+                                if isinstance(template, str):
+                                    webhook_result[key] = simple_template_expand(template, template_context)
+                                else:
+                                    webhook_result[key] = template
+                        elif isinstance(webhook_output, str):
+                            # Simple string template
+                            webhook_result = {"response": simple_template_expand(webhook_output, template_context)}
+                        else:
+                            # Other types
+                            webhook_result = {"response": str(webhook_output)}
+                        
+                        if verbose:
+                            print(f"    Processed output: {webhook_result}")
+                    else:
+                        webhook_result = webhook_data if isinstance(webhook_data, dict) else {"response": str(webhook_data)}
+                    
                     break
                 except json.JSONDecodeError:
                     webhook_result = {"response": response.text}
@@ -1073,14 +1125,27 @@ def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any
         if verbose:
             print("All webhooks failed, using fallback output...")
         
-        # Look for fallback output
-        output_template = matched_expression.get('output', 'Function completed')
+        # Use the fallback output determined earlier
+        output_template = fallback_output
         
-        # Simple template expansion
-        webhook_result = {"response": simple_template_expand(output_template, args)}
+        # Handle both string and dict output templates
+        if isinstance(output_template, dict):
+            # Process dict output template (e.g., {"response": "template"})
+            webhook_result = {}
+            for key, template in output_template.items():
+                if isinstance(template, str):
+                    webhook_result[key] = simple_template_expand(template, {"args": args})
+                else:
+                    webhook_result[key] = template
+        elif isinstance(output_template, str):
+            # Simple string template
+            webhook_result = {"response": simple_template_expand(output_template, {"args": args})}
+        else:
+            # Other types (shouldn't happen but be safe)
+            webhook_result = {"response": str(output_template)}
         
         if verbose:
-            print(f"Fallback result = {webhook_result['response']}")
+            print(f"Fallback result = {webhook_result}")
     
     # Process foreach (not implemented in this simple version)
     # This would iterate over array results and apply templates
@@ -1201,12 +1266,96 @@ def execute_external_webhook_function(func: 'SWAIGFunction', function_name: str,
         return {"error": error_msg}
 
 
-def load_agent_from_file(agent_path: str) -> 'AgentBase':
+def discover_agents_in_file(agent_path: str) -> List[Dict[str, Any]]:
+    """
+    Discover all available agents in a Python file without instantiating them
+    
+    Args:
+        agent_path: Path to the Python file containing agents
+        
+    Returns:
+        List of dictionaries with agent information
+        
+    Raises:
+        ImportError: If the file cannot be imported
+        FileNotFoundError: If the file doesn't exist
+    """
+    agent_path = Path(agent_path).resolve()
+    
+    if not agent_path.exists():
+        raise FileNotFoundError(f"Agent file not found: {agent_path}")
+    
+    if not agent_path.suffix == '.py':
+        raise ValueError(f"Agent file must be a Python file (.py): {agent_path}")
+    
+    # Load the module, but prevent main() execution by setting __name__ to something other than "__main__"
+    spec = importlib.util.spec_from_file_location("agent_module", agent_path)
+    module = importlib.util.module_from_spec(spec)
+    
+    try:
+        # Set __name__ to prevent if __name__ == "__main__": blocks from running
+        module.__name__ = "agent_module"
+        spec.loader.exec_module(module)
+    except Exception as e:
+        raise ImportError(f"Failed to load agent module: {e}")
+    
+    agents_found = []
+    
+    # Look for AgentBase instances
+    for name, obj in vars(module).items():
+        if isinstance(obj, AgentBase):
+            agents_found.append({
+                'name': name,
+                'class_name': obj.__class__.__name__,
+                'type': 'instance',
+                'agent_name': getattr(obj, 'name', 'Unknown'),
+                'route': getattr(obj, 'route', 'Unknown'),
+                'description': obj.__class__.__doc__,
+                'object': obj
+            })
+    
+    # Look for AgentBase subclasses (that could be instantiated)
+    for name, obj in vars(module).items():
+        if (isinstance(obj, type) and 
+            issubclass(obj, AgentBase) and 
+            obj != AgentBase):
+            # Check if we already found an instance of this class
+            instance_found = any(agent['class_name'] == name for agent in agents_found)
+            if not instance_found:
+                try:
+                    # Try to get class information without instantiating
+                    agent_info = {
+                        'name': name,
+                        'class_name': name,
+                        'type': 'class',
+                        'agent_name': 'Unknown (not instantiated)',
+                        'route': 'Unknown (not instantiated)',
+                        'description': obj.__doc__,
+                        'object': obj
+                    }
+                    agents_found.append(agent_info)
+                except Exception:
+                    # If we can't get info, still record that the class exists
+                    agents_found.append({
+                        'name': name,
+                        'class_name': name,
+                        'type': 'class',
+                        'agent_name': 'Unknown (not instantiated)',
+                        'route': 'Unknown (not instantiated)',
+                        'description': obj.__doc__ or 'No description available',
+                        'object': obj
+                    })
+    
+    return agents_found
+
+
+def load_agent_from_file(agent_path: str, agent_class_name: Optional[str] = None) -> 'AgentBase':
     """
     Load an agent from a Python file
     
     Args:
         agent_path: Path to the Python file containing the agent
+        agent_class_name: Optional name of the agent class to instantiate
         
     Returns:
         AgentBase instance
@@ -1237,8 +1386,26 @@ def load_agent_from_file(agent_path: str) -> 'AgentBase':
     # Find the agent instance
     agent = None
     
+    # If agent_class_name is specified, try to instantiate that specific class first
+    if agent_class_name:
+        if hasattr(module, agent_class_name):
+            obj = getattr(module, agent_class_name)
+            if isinstance(obj, type) and issubclass(obj, AgentBase) and obj != AgentBase:
+                try:
+                    agent = obj()
+                    if agent and not agent.route.endswith('dummy'):  # Avoid test agents with dummy routes
+                        pass  # Successfully created specific agent
+                    else:
+                        agent = obj()  # Create anyway if requested specifically
+                except Exception as e:
+                    raise ValueError(f"Failed to instantiate agent class '{agent_class_name}': {e}")
+            else:
+                raise ValueError(f"'{agent_class_name}' is not a valid AgentBase subclass")
+        else:
+            raise ValueError(f"Agent class '{agent_class_name}' not found in {agent_path}")
+    
     # Strategy 1: Look for 'agent' variable (most common pattern)
-    if hasattr(module, 'agent') and isinstance(module.agent, AgentBase):
+    if agent is None and hasattr(module, 'agent') and isinstance(module.agent, AgentBase):
         agent = module.agent
     
     # Strategy 2: Look for any AgentBase instance in module globals
@@ -1260,18 +1427,39 @@ def load_agent_from_file(agent_path: str) -> 'AgentBase':
             if agent is None:
                 agent = agents_found[0][1]
                 print(f"Warning: Multiple agents found, using '{agents_found[0][0]}'")
+                print(f"Hint: Use --agent-class parameter to choose specific agent")
     
     # Strategy 3: Look for AgentBase subclass and try to instantiate it
     if agent is None:
+        agent_classes_found = []
         for name, obj in vars(module).items():
             if (isinstance(obj, type) and 
                 issubclass(obj, AgentBase) and 
                 obj != AgentBase):
-                try:
-                    agent = obj()
-                    break
-                except Exception as e:
-                    print(f"Warning: Failed to instantiate {name}: {e}")
+                agent_classes_found.append((name, obj))
+        
+        if len(agent_classes_found) == 1:
+            try:
+                agent = agent_classes_found[0][1]()
+            except Exception as e:
+                print(f"Warning: Failed to instantiate {agent_classes_found[0][0]}: {e}")
+        elif len(agent_classes_found) > 1:
+            # Multiple agent classes found
+            class_names = [name for name, _ in agent_classes_found]
+            raise ValueError(f"Multiple agent classes found: {', '.join(class_names)}. "
+                           f"Please specify which agent class to use with --agent-class parameter. "
+                           f"Usage: swaig-test {agent_path} [tool_name] [args] --agent-class <AgentClassName>")
+        else:
+            # Try instantiating any AgentBase class we can find
+            for name, obj in vars(module).items():
+                if (isinstance(obj, type) and 
+                    issubclass(obj, AgentBase) and 
+                    obj != AgentBase):
+                    try:
+                        agent = obj()
+                        break
+                    except Exception as e:
+                        print(f"Warning: Failed to instantiate {name}: {e}")
     
     # Strategy 4: Try calling a modified main() function that doesn't start the server
     if agent is None and hasattr(module, 'main'):
@@ -1431,16 +1619,24 @@ def main():
     if "--raw" in sys.argv:
         setup_raw_mode_suppression()
     
-    # Check for --args separator and split arguments
+    # Check for --exec and split arguments  
     cli_args = sys.argv[1:]
     function_args_list = []
+    exec_function_name = None
     
-    if '--args' in sys.argv:
-        args_index = sys.argv.index('--args')
-        cli_args = sys.argv[1:args_index]
-        function_args_list = sys.argv[args_index + 1:]
+    if '--exec' in sys.argv:
+        exec_index = sys.argv.index('--exec')
+        if exec_index + 1 < len(sys.argv):
+            exec_function_name = sys.argv[exec_index + 1]
+            # CLI args: everything before --exec
+            cli_args = sys.argv[1:exec_index]
+            # Function args: everything after the function name
+            function_args_list = sys.argv[exec_index + 2:]
+        else:
+            print("Error: --exec requires a function name")
+            return 1
     
-    # Temporarily modify sys.argv for argparse
+    # Temporarily modify sys.argv for argparse (exclude --exec and its args)
     original_argv = sys.argv[:]
     sys.argv = [sys.argv[0]] + cli_args
     
@@ -1449,14 +1645,24 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Function testing (existing functionality)
+  # Function testing with --exec syntax  
+  %(prog)s examples/agent.py --verbose --exec search --query "AI" --limit 5
+  %(prog)s examples/web_search_agent.py --exec web_search --query "test"
+  
+  # Legacy JSON syntax (still supported)
   %(prog)s examples/web_search_agent.py web_search '{"query":"test"}'
-  %(prog)s examples/agent.py search --args --query "AI" --limit 5 --verbose
+  
+  # Multiple agents - auto-select when only one, or specify with --agent-class  
+  %(prog)s matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --exec transfer --name sigmond
+  %(prog)s matti_and_sigmond/dual_agent_app.py --verbose --agent-class SigmondAgent --exec get_weather --location "New York"
   
   # SWML testing (enhanced with fake post_data)
   %(prog)s examples/my_agent.py --dump-swml
   %(prog)s examples/my_agent.py --dump-swml --raw | jq '.'
   %(prog)s examples/my_agent.py --dump-swml --verbose
+  
+  # SWML testing with specific agent class
+  %(prog)s matti_and_sigmond/dual_agent_app.py --dump-swml --agent-class MattiAgent
   
   # SWML testing with call customization
   %(prog)s examples/agent.py --dump-swml --call-type sip --call-direction outbound
@@ -1475,8 +1681,14 @@ Examples:
   # Combined testing scenarios
   %(prog)s examples/agent.py --dump-swml --call-type sip --user-vars '{"vip":"true"}' --header "X-Source=test" --verbose
   
-  # Other commands
+  # Discovery commands
+  %(prog)s examples/my_agent.py --list-agents
   %(prog)s examples/my_agent.py --list-tools
+  %(prog)s matti_and_sigmond/dual_agent_app.py --list-agents
+  %(prog)s matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --list-tools
+  
+  # Auto-discovery (lists agents when no other args provided)
+  %(prog)s matti_and_sigmond/dual_agent_app.py
         """
     )
     
@@ -1488,13 +1700,19 @@ Examples:
     parser.add_argument(
         "tool_name", 
         nargs="?",
-        help="Name of the SWAIG function/tool to call"
+        help="Name of the SWAIG function/tool to call (optional, can use --exec instead)"
     )
     
     parser.add_argument(
         "args_json",
         nargs="?",
-        help="JSON string containing the arguments to pass to the function (or use --args for CLI syntax)"
+        help="JSON string containing the arguments to pass to the function (when using positional tool_name)"
+    )
+    
+    parser.add_argument(
+        "--exec",
+        metavar="FUNCTION",
+        help="Execute a function with CLI-style arguments (replaces tool_name and --args)"
     )
     
     parser.add_argument(
@@ -1504,9 +1722,20 @@ Examples:
     )
     
     parser.add_argument(
+        "--agent-class",
+        help="Name of the agent class to use (required only if multiple agents in file)"
+    )
+    
+    parser.add_argument(
         "--list-tools",
         action="store_true",
         help="List all available tools in the agent and exit"
+    )
+    
+    parser.add_argument(
+        "--list-agents",
+        action="store_true",
+        help="List all available agents in the file and exit"
     )
     
     parser.add_argument(
@@ -1633,21 +1862,108 @@ Examples:
     # Restore original sys.argv
     sys.argv = original_argv
     
+    # Handle --exec vs positional tool_name
+    if exec_function_name:
+        # Using --exec syntax, override any positional tool_name
+        args.tool_name = exec_function_name
+        # function_args_list is already set from --exec parsing
+    
     # Validate arguments
-    if not args.list_tools and not args.dump_swml:
+    if not args.list_tools and not args.dump_swml and not args.list_agents:
         if not args.tool_name:
-            parser.error("tool_name is required unless --list-tools or --dump-swml is used")
-        
-        # Either args_json OR function_args_list is required
-        if not args.args_json and not function_args_list:
-            parser.error("Either args_json or --args with parameters is required when calling a function")
+            # If no tool_name and no special flags, default to listing agents
+            args.list_agents = True
+        else:
+            # When using positional syntax, args_json is required
+            # When using --exec syntax, function_args_list is automatically populated
+            if not args.args_json and not function_args_list:
+                if exec_function_name:
+                    # --exec syntax doesn't require additional arguments (can be empty)
+                    pass
+                else:
+                    parser.error("Positional tool_name requires args_json parameter. Use --exec for CLI-style arguments.")
     
     try:
-        # Load the agent
+        # Handle agent listing first (doesn't require loading a specific agent)
+        if args.list_agents:
+            if args.verbose and not args.raw:
+                print(f"Discovering agents in: {args.agent_path}")
+            
+            try:
+                agents = discover_agents_in_file(args.agent_path)
+                
+                if not agents:
+                    print("No agents found in the file.")
+                    return 1
+                
+                print(f"Available agents in {args.agent_path}:")
+                print()
+                
+                for agent_info in agents:
+                    print(f"  {agent_info['class_name']}")
+                    
+                    if agent_info['type'] == 'instance':
+                        print(f"    Type: Ready instance")
+                        print(f"    Name: {agent_info['agent_name']}")
+                        print(f"    Route: {agent_info['route']}")
+                    else:
+                        print(f"    Type: Available class (needs instantiation)")
+                    
+                    if agent_info['description']:
+                        # Clean up the description
+                        desc = agent_info['description'].strip()
+                        if desc:
+                            # Take first line or sentence
+                            first_line = desc.split('\n')[0].strip()
+                            print(f"    Description: {first_line}")
+                    
+                    print()
+                
+                if len(agents) > 1:
+                    print("To use a specific agent with this tool:")
+                    print(f"  swaig-test {args.agent_path} [tool_name] [args] --agent-class <AgentClassName>")
+                    print()
+                    print("Examples:")
+                    for agent_info in agents:
+                        print(f"  swaig-test {args.agent_path} --list-tools --agent-class {agent_info['class_name']}")
+                        print(f"  swaig-test {args.agent_path} --dump-swml --agent-class {agent_info['class_name']}")
+                    print()
+                else:
+                    print("This file contains a single agent, no --agent-class needed.")
+                
+                return 0
+                
+            except Exception as e:
+                print(f"Error discovering agents: {e}")
+                if args.verbose:
+                    import traceback
+                    traceback.print_exc()
+                return 1
+        
+        # Load the agent for other operations
         if args.verbose and not args.raw:
             print(f"Loading agent from: {args.agent_path}")
         
-        agent = load_agent_from_file(args.agent_path)
+        # Auto-select agent if only one exists and no --agent-class specified
+        agent_class_name = getattr(args, 'agent_class', None)
+        if not agent_class_name:
+            # Try to auto-discover if there's only one agent
+            try:
+                discovered_agents = discover_agents_in_file(args.agent_path)
+                if len(discovered_agents) == 1:
+                    agent_class_name = discovered_agents[0]['class_name']
+                    if args.verbose and not args.raw:
+                        print(f"Auto-selected agent: {agent_class_name}")
+                elif len(discovered_agents) > 1:
+                    if not args.raw:
+                        print(f"Multiple agents found: {[a['class_name'] for a in discovered_agents]}")
+                        print(f"Please specify --agent-class parameter")
+                    return 1
+            except Exception:
+                # If discovery fails, fall back to normal loading behavior
+                pass
+        
+        agent = load_agent_from_file(args.agent_path, agent_class_name)
         
         if args.verbose and not args.raw:
             print(f"Loaded agent: {agent.get_name()}")
@@ -1748,7 +2064,7 @@ Examples:
         
         # Parse function arguments
         if function_args_list:
-            # Using --args syntax, need to get the function to parse arguments with schema
+            # Using --exec syntax, need to get the function to parse arguments with schema
             if not hasattr(agent, '_swaig_functions') or args.tool_name not in agent._swaig_functions:
                 print(f"Error: Function '{args.tool_name}' not found in agent")
                 print(f"Available functions: {list(agent._swaig_functions.keys()) if hasattr(agent, '_swaig_functions') else 'None'}")
@@ -1763,13 +2079,16 @@ Examples:
             except ValueError as e:
                 print(f"Error: {e}")
                 return 1
-        else:
-            # Using JSON syntax
+        elif args.args_json:
+            # Using legacy JSON syntax
             try:
                 function_args = json.loads(args.args_json)
             except json.JSONDecodeError as e:
                 print(f"Error: Invalid JSON in args: {e}")
                 return 1
+        else:
+            # No arguments provided
+            function_args = {}
         
         try:
             custom_data = json.loads(args.custom_data)
@@ -1790,8 +2109,8 @@ Examples:
             func = agent._swaig_functions[args.tool_name]
         
         # Determine function type automatically - no --datamap flag needed
-        # DataMap functions are stored as dicts, webhook functions as SWAIGFunction objects
-        is_datamap = isinstance(func, dict)
+        # DataMap functions are stored as dicts with 'data_map' key, webhook functions as SWAIGFunction objects
+        is_datamap = isinstance(func, dict) and 'data_map' in func
         
         if is_datamap:
             # DataMap function execution

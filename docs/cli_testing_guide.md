@@ -13,14 +13,17 @@ The tool automatically detects function types, provides appropriate execution en
 
 ## Key Features
 
+- **`--exec` Syntax**: Modern CLI-style function arguments
+- **Agent Auto-Selection**: Automatically chooses agent when only one exists in file
+- **Agent Discovery**: Lists available agents when no arguments provided
 - **Auto-Detection**: Automatically detects webhook vs DataMap functions - no manual flags needed
+- **Complete DataMap Simulation**: Full processing including URL templates, responses, and fallbacks
 - **SWML Testing**: Generate and test SWML documents with realistic fake call data
 - **Dynamic Agent Support**: Test request-dependent SWML generation with mock request objects
 - **Real HTTP Execution**: DataMap functions make actual HTTP requests to real APIs
-- **Complete DataMap Pipeline**: Full processing including expressions, webhooks, foreach, and output handling
 - **Comprehensive Simulation**: Generate realistic post_data with all SignalWire metadata
-- **Advanced Template Engine**: Supports all DataMap variable syntax (`${args.param}`, `${response.field}`, `${this.property}`)
-- **Flexible CLI Syntax**: Support both JSON and CLI-style function arguments
+- **Advanced Template Engine**: Supports all DataMap variable syntax (`${args.param}`, `${response.field}`, `${array[0].property}`)
+- **Flexible CLI Syntax**: Support both `--exec` and JSON argument styles
 - **Override System**: Precise control over test data with dot notation paths
 - **Mock Request Objects**: Complete FastAPI Request simulation for dynamic agents
 - **Verbose Debugging**: Detailed execution tracing for both function types
@@ -37,22 +40,70 @@ swaig-test --help
 
 ## Quick Start
 
+### Agent Discovery
+
+The tool can automatically discover agents in Python files:
+
+```bash
+# Discover all agents in a file (auto-runs when no other args provided)
+swaig-test examples/joke_skill_demo.py
+
+# Explicitly list available agents
+swaig-test matti_and_sigmond/dual_agent_app.py --list-agents
+
+# List agents with details
+swaig-test matti_and_sigmond/dual_agent_app.py --list-agents --verbose
+```
+
+**Example Output:**
+```
+Available agents in matti_and_sigmond/dual_agent_app.py:
+
+  MattiAgent
+    Type: Ready instance
+    Name: Matti
+    Route: /matti-agent
+    Description: Advanced agent with custom tools and weather integration
+
+  SigmondAgent
+    Type: Ready instance  
+    Name: Sigmond
+    Route: /sigmond-agent
+    Description: Advanced conversational agent with data access
+
+To use a specific agent with this tool:
+  swaig-test matti_and_sigmond/dual_agent_app.py [tool_name] [args] --agent-class <AgentClassName>
+
+Examples:
+  swaig-test matti_and_sigmond/dual_agent_app.py --list-tools --agent-class MattiAgent
+  swaig-test matti_and_sigmond/dual_agent_app.py --dump-swml --agent-class SigmondAgent
+```
+
 ### List Available Functions
 
 ```bash
-# Basic function listing
-swaig-test examples/datasphere_serverless_env_demo.py --list-tools
+# List functions in single-agent file (auto-selected)
+swaig-test examples/joke_skill_demo.py --list-tools
 
-# Detailed listing with function types
-swaig-test examples/datasphere_serverless_env_demo.py --list-tools --verbose
+# List functions for specific agent in multi-agent file
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --list-tools
+
+# Detailed function listing with schemas
+swaig-test examples/joke_skill_demo.py --list-tools --verbose
 ```
 
 **Example Output:**
 ```
 Available SWAIG functions:
-  search_knowledge - DataMap function (serverless)
-  get_datetime - Get current date and time information
-  calculate - Perform mathematical calculations and return the result
+  get_joke - Get a random joke from API Ninjas (DataMap function - serverless)
+    Parameters:
+      type (string) (required): Type of joke to get
+    Config: {"data_map": {...}, "parameters": {...}}
+      
+  calculate - Perform mathematical calculations and return the result (LOCAL webhook)
+    Parameters:
+      expression (string) (required): Mathematical expression to evaluate
+      precision (integer): Number of decimal places (default: 2)
 ```
 
 ### Test SWML Generation
@@ -71,17 +122,180 @@ swaig-test examples/my_agent.py --dump-swml --verbose
 swaig-test examples/my_agent.py --dump-swml --call-type sip --call-direction outbound
 ```
 
-### Test Functions with Alternative Syntax
+### CLI Syntax with --exec
+
+The `--exec` syntax provides an intuitive way to test functions:
 
 ```bash
-# JSON syntax (traditional)
-swaig-test examples/agent.py search_knowledge '{"query":"test","limit":5}'
+# --exec syntax (recommended) - CLI flags BEFORE --exec
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type dadjokes
+swaig-test examples/web_search_agent.py --exec web_search --query "AI agents" --limit 5
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --exec get_weather --location "New York"
 
-# CLI syntax (alternative)
-swaig-test examples/agent.py search_knowledge --args --query "test" --limit 5
+# Multiple agents - specify which one to use
+swaig-test matti_and_sigmond/dual_agent_app.py --verbose --agent-class SigmondAgent --exec search_knowledge --query "SignalWire"
 
-# Mixed usage
-swaig-test examples/agent.py calculate --args --expression "25 * 47" --verbose
+# Auto-agent selection (when only one agent in file)
+swaig-test examples/joke_skill_demo.py --exec get_joke --type jokes
+
+# All CLI flags must come BEFORE --exec
+swaig-test examples/agent.py --verbose --custom-data '{"test":"data"}' --exec my_function --param value
+```
+
+### JSON Syntax (Alternative)
+
+```bash
+# JSON syntax (alternative approach)
+swaig-test examples/joke_skill_demo.py get_joke '{"type":"dadjokes"}'
+swaig-test examples/web_search_agent.py web_search '{"query":"AI agents","limit":5}'
+```
+
+## CLI Argument Syntax
+
+### Using --exec (Recommended)
+
+The `--exec` syntax separates CLI flags from function arguments:
+
+```bash
+# Basic usage
+swaig-test <file> [--cli-flags] --exec <function> [--function-args]
+
+# All CLI flags must come BEFORE --exec
+swaig-test examples/agent.py --verbose --agent-class MyAgent --exec search --query "test" --limit 10
+
+# Function arguments come AFTER --exec function-name
+swaig-test examples/joke_skill_demo.py --exec get_joke --type dadjokes
+#                                      ^^^^                            ^^^^^^^^
+#                                      Wrong place!                    Wrong place!
+
+# Correct usage - CLI flags before --exec
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type dadjokes
+#                                      ^^^^^^^^         ^^^^^^^^ ^^^^^^^^^^^^^^
+#                                      CLI flag         Function Function args
+```
+
+### Argument Type Handling
+
+The tool automatically converts arguments based on function schema:
+
+| Schema Type | CLI Input | Converted Value |
+|-------------|-----------|-----------------|
+| `string` | `--name "value"` | `"value"` |
+| `integer` | `--count 42` | `42` |
+| `number` | `--price 19.99` | `19.99` |
+| `boolean` | `--verbose` or `--verbose true` | `true` |
+| `array` | `--tags "tag1,tag2,tag3"` | `["tag1","tag2","tag3"]` |
+
+### CLI Syntax Examples
+
+```bash
+# String parameters
+swaig-test examples/agent.py --exec greet --name "Alice"
+
+# Multiple parameters with type conversion
+swaig-test examples/agent.py --exec search --query "AI" --limit 5 --include-metadata
+
+# Boolean flags
+swaig-test examples/agent.py --exec process --input "data" --verify --async false
+
+# Array parameters (comma-separated)
+swaig-test examples/agent.py --exec filter --categories "tech,science,health" --max-results 20
+
+# Complex example with multiple agent support
+swaig-test matti_and_sigmond/dual_agent_app.py --verbose --agent-class SigmondAgent --exec get_trivia --category science
+```
+
+## Multi-Agent Support
+
+### Agent Auto-Selection
+
+When a file contains only one agent, it's automatically selected:
+
+```bash
+# Auto-selects the single agent
+swaig-test examples/joke_skill_demo.py --exec get_joke --type jokes
+```
+
+### Multi-Agent Files
+
+For files with multiple agents, specify which one to use:
+
+```bash
+# Discover available agents
+swaig-test matti_and_sigmond/dual_agent_app.py
+
+# Use specific agent
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --exec get_weather --location "San Francisco"
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --exec search_knowledge --query "AI"
+
+# Different operations with different agents
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --list-tools
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --dump-swml
+```
+
+## DataMap Function Testing
+
+### Automatic DataMap Detection
+
+DataMap functions are automatically detected and properly simulated:
+
+```bash
+# DataMap function - automatically detected and simulated
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type dadjokes
+```
+
+**Complete DataMap Processing Pipeline:**
+1. **URL Template Expansion**: `${args.type}` → `dadjokes`
+2. **HTTP Request**: GET to `https://api.api-ninjas.com/v1/dadjokes`
+3. **Response Processing**: Extract joke from API response array
+4. **Output Template**: `${array[0].joke}` → actual joke text
+5. **Fallback Handling**: If API fails, use fallback message
+
+**Example Output:**
+```
+Executing DataMap function: get_joke
+Arguments: {"type": "dadjokes"}
+------------------------------------------------------------
+Simple DataMap structure with 1 webhook(s)
+Processing 1 webhook(s)...
+  Webhook 1: GET https://api.api-ninjas.com/v1/${args.type}
+    Original URL: https://api.api-ninjas.com/v1/${args.type}
+    Template context: {'args': {'type': 'dadjokes'}, 'array': [], 'type': 'dadjokes'}
+    Expanded URL: https://api.api-ninjas.com/v1/dadjokes
+  ✓ Webhook succeeded: 200
+    Response: [{"joke": "Why don't scientists trust atoms? Because they make up everything!"}]
+    Processed output: {'response': "Here's a joke: Why don't scientists trust atoms? Because they make up everything!"}
+
+RESULT:
+Response: Here's a joke: Why don't scientists trust atoms? Because they make up everything!
+```
+
+### DataMap Template Expansion
+
+The tool properly handles all DataMap template syntax:
+
+- **Function Arguments**: `${args.type}`, `${args.location}`
+- **Array Access**: `${array[0].joke}`, `${array[0].weather.temp}`
+- **Nested Objects**: `${response.data.results[0].title}`
+- **Fallback Values**: `${args.units || "metric"}`
+
+### DataMap Error Handling
+
+When APIs fail, DataMap functions gracefully fall back:
+
+```bash
+# Test with invalid parameters to see fallback
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type invalid
+```
+
+**Fallback Output:**
+```
+  ✗ Webhook failed: 404
+All webhooks failed, using fallback output...
+Fallback result = {'response': 'Sorry, there is a problem with the joke service right now. Please try again later.'}
+
+RESULT:
+Response: Sorry, there is a problem with the joke service right now. Please try again later.
 ```
 
 ### Test Functions (Auto-Detection)
@@ -703,6 +917,9 @@ Available SWAIG functions:
 
 | Option | Description |
 |--------|-------------|
+| `--exec FUNCTION` | Execute function with CLI-style arguments (recommended) |
+| `--agent-class CLASS` | Specify agent class for multi-agent files |
+| `--list-agents` | List all available agents in the file |
 | `--list-tools` | List all available SWAIG functions and their types |
 | `--verbose`, `-v` | Enable detailed execution tracing and debugging |
 | `--fake-full-data` | Generate comprehensive post_data with all SignalWire metadata |
@@ -748,6 +965,70 @@ Available SWAIG functions:
 | `--args` | Separator for CLI-style function arguments |
 
 ## Real-World Examples
+
+### Testing Joke Skill (DataMap)
+
+```bash
+# Test dad jokes with verbose output
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type dadjokes
+
+# Test regular jokes  
+swaig-test examples/joke_skill_demo.py --exec get_joke --type jokes
+
+# Test error handling with invalid type
+swaig-test examples/joke_skill_demo.py --verbose --exec get_joke --type invalid
+```
+
+### Testing Multi-Agent Applications
+
+```bash
+# Discover available agents
+swaig-test matti_and_sigmond/dual_agent_app.py
+
+# Test MattiAgent functions
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --list-tools
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --exec get_weather --location "Tokyo"
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --exec transfer --name "support"
+
+# Test SigmondAgent functions  
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --list-tools
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --exec search_knowledge --query "SignalWire"
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --exec get_joke --type dadjokes
+
+# Generate SWML for different agents
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --dump-swml
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class SigmondAgent --dump-swml --raw | jq '.'
+```
+
+### Testing External Webhook Functions
+
+```bash
+# Test external webhook with verbose output
+swaig-test examples/external_webhook_weather_agent.py --verbose --exec getWeather --location "San Francisco"
+
+# List functions with their types (local vs external)
+swaig-test examples/external_webhook_weather_agent.py --list-tools
+```
+
+### Advanced SWML Testing
+
+```bash
+# Test dynamic agent with custom headers and data
+swaig-test examples/dynamic_agent.py --dump-swml \
+  --header "Authorization=Bearer test-token" \
+  --header "X-User-ID=12345" \
+  --method POST \
+  --body '{"source":"api","environment":"test"}' \
+  --user-vars '{"customer_tier":"premium"}' \
+  --verbose
+
+# Test SIP vs WebRTC calls
+swaig-test examples/agent.py --dump-swml --call-type sip --from-number "+15551234567"
+swaig-test examples/agent.py --dump-swml --call-type webrtc --from-number "user@domain.com"
+
+# Test with multi-agent file
+swaig-test matti_and_sigmond/dual_agent_app.py --agent-class MattiAgent --dump-swml --call-type sip --verbose
+```
 
 ### SWML Generation Examples
 
@@ -1213,6 +1494,58 @@ When a webhook fails, the tool:
 - Uses fallback output if all webhooks fail
 - Provides detailed error information in verbose mode
 
+## Troubleshooting
+
+### Common Issues
+
+| Issue | Symptoms | Solution |
+|-------|----------|----------|
+| **Multiple Agents** | "Multiple agents found" | Use `--agent-class ClassName` to specify which agent |
+| **Agent Loading** | "No AgentBase instance found" | Ensure file has agent instance or AgentBase subclass |
+| **Function Missing** | "Function 'X' not found" | Use `--list-tools` to verify function registration |
+| **DataMap HTTP Error** | "Webhook request failed" | Check network connectivity and API credentials |
+| **Wrong Argument Order** | CLI flags not working | Put all CLI flags BEFORE `--exec` |
+| **Template Expansion** | "MISSING:variable" in output | Verify template variable names match data structure |
+| **JSON Parsing** | "Invalid JSON in args" | Check JSON syntax or use `--exec` syntax |
+
+### Debug Strategies
+
+1. **Use `--verbose`**: Shows complete execution flow including agent selection and fake data generation
+2. **Check agent discovery**: Use `--list-agents` to see available agents
+3. **Check function list**: Use `--list-tools --verbose` to see configurations
+4. **Test connectivity**: For DataMap functions, ensure API endpoints are reachable
+5. **Check argument order**: CLI flags before `--exec`, function args after function name
+6. **Validate syntax**: Use `--exec` syntax to avoid JSON parsing issues
+
+### Agent Discovery Debugging
+
+```bash
+# Debug agent discovery
+swaig-test my_file.py --list-agents --verbose
+
+# Check if agent is auto-selected
+swaig-test my_file.py --verbose --exec my_function --param value
+
+# Explicitly specify agent
+swaig-test my_file.py --agent-class MyAgent --verbose --exec my_function --param value
+```
+
+### DataMap Debugging
+
+```bash
+# Enable verbose to see complete DataMap processing
+swaig-test my_agent.py --verbose --exec my_datamap_func --input test
+
+# Check URL template expansion
+swaig-test my_agent.py --verbose --exec my_func --location "New York"
+```
+
+Look for:
+- URL template expansion details
+- HTTP request/response information
+- Fallback processing when APIs fail
+- Output template processing
+
 ### Joke Agent Examples
 
 #### Working Joke API (Success Case)
@@ -1266,6 +1599,45 @@ This demonstrates both:
 - **Successful webhook processing** with array response handling
 - **Failure detection and fallback** when APIs return errors
 
+## Best Practices
+
+### Development Workflow
+
+1. **Start with discovery**: `swaig-test my_agent.py` to see available agents
+2. **List functions**: `swaig-test my_agent.py --list-tools` to see available functions
+3. **Test functions**: Use `--exec` syntax for cleaner testing
+4. **Test SWML**: Use `--dump-swml` to verify agent configuration
+5. **Use verbose mode**: Enable `--verbose` when debugging issues
+
+### Multi-Agent Files
+
+1. **Always use `--list-agents` first** to see what's available
+2. **Use `--agent-class` consistently** for multi-agent files
+3. **Test each agent separately** to isolate issues
+4. **Use descriptive agent names** to make selection easier
+
+### DataMap Functions
+
+1. **Test with verbose mode** to see complete processing pipeline
+2. **Verify API credentials** before testing DataMap functions
+3. **Test error handling** with invalid parameters
+4. **Check network connectivity** for external APIs
+
+### CLI Syntax
+
+1. **Prefer `--exec` syntax** for development
+2. **Put CLI flags before `--exec`** for correct parsing
+3. **Use `--verbose`** to see argument parsing results
+4. **Use JSON syntax** when needed for complex argument structures
+
 ## Conclusion
 
-The `swaig-test` tool provides comprehensive local testing capabilities that closely mirror the SignalWire production environment, enabling confident development and debugging of both webhook and DataMap SWAIG functions, as well as SWML generation for static and dynamic agents.
+The `swaig-test` tool provides a comprehensive testing experience with:
+
+- **Automatic agent discovery** and selection
+- **Intuitive `--exec` CLI syntax** for easier function testing
+- **Complete DataMap simulation** with real API execution
+- **Multi-agent support** with simple selection
+- **Comprehensive SWML testing** with realistic fake data
+
+The tool provides flexible interfaces for development and testing of SignalWire AI Agents.

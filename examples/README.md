@@ -126,10 +126,10 @@ python external_webhook_weather_agent.py
 **Testing with CLI:**
 ```bash
 # Test external webhook function
-swaig-test examples/external_webhook_weather_agent.py getWeather '{"location":"New York"}' --verbose
+swaig-test examples/external_webhook_weather_agent.py --verbose --exec getWeather --location "New York"
 
 # Test local function
-swaig-test examples/external_webhook_weather_agent.py getHelp '{}'
+swaig-test examples/external_webhook_weather_agent.py --exec getHelp
 
 # List all functions with their types
 swaig-test examples/external_webhook_weather_agent.py --list-tools

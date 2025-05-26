@@ -294,10 +294,10 @@ You can test external webhook functions using the CLI tool:
 
 ```bash
 # Test local function
-swaig-test examples/my_agent.py get_help '{}'
+swaig-test examples/my_agent.py --exec get_help
 
 # Test external webhook function
-swaig-test examples/my_agent.py get_weather '{"location":"New York"}' --verbose
+swaig-test examples/my_agent.py --verbose --exec get_weather --location "New York"
 
 # List all functions with their types
 swaig-test examples/my_agent.py --list-tools
