@@ -28,11 +28,11 @@ try:
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
                 structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S"),
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer()
+                structlog.dev.ConsoleRenderer()
             ],
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -72,21 +72,65 @@ class SchemaUtils:
         if self.verbs:
             self.log.debug("first_verbs_extracted", verbs=list(self.verbs.keys())[:5])
         
-    def _get_default_schema_path(self) -> str:
+    def _get_default_schema_path(self) -> Optional[str]:
         """
-        Get the default path to the schema file
+        Get the default path to the schema file using the same robust logic as SWMLService
         
         Returns:
-            Path to the schema file
+            Path to the schema file or None if not found
         """
-        # Default path is the schema.json in the root directory
-        package_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        default_path = os.path.join(package_dir, "schema.json")
-        self.log.debug("default_schema_path_check", 
-                      path=default_path, 
-                      exists=os.path.exists(default_path))
+        # Try package resources first (most reliable after pip install)
+        try:
+            import importlib.resources
+            try:
+                # Python 3.9+
+                try:
+                    # Python 3.13+
+                    path = importlib.resources.files("signalwire_agents").joinpath("schema.json")
+                    return str(path)
+                except Exception:
+                    # Python 3.9-3.12
+                    with importlib.resources.files("signalwire_agents").joinpath("schema.json") as path:
+                        return str(path)
+            except AttributeError:
+                # Python 3.7-3.8
+                with importlib.resources.path("signalwire_agents", "schema.json") as path:
+                    return str(path)
+        except (ImportError, ModuleNotFoundError):
+            pass
+            
+        # Fall back to pkg_resources for older Python or alternative lookup
+        try:
+            import pkg_resources
+            return pkg_resources.resource_filename("signalwire_agents", "schema.json")
+        except (ImportError, ModuleNotFoundError, pkg_resources.DistributionNotFound):
+            pass
+
+        # Fall back to manual search in various locations
+        import sys
         
-        return default_path
+        # Get package directory relative to this file
+        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Potential locations for schema.json
+        potential_paths = [
+            os.path.join(os.getcwd(), "schema.json"),  # Current working directory
+            os.path.join(package_dir, "schema.json"),  # Package directory
+            os.path.join(os.path.dirname(package_dir), "schema.json"),  # Parent of package directory
+            os.path.join(sys.prefix, "schema.json"),  # Python installation directory
+            os.path.join(package_dir, "data", "schema.json"),  # Data subdirectory
+            os.path.join(os.path.dirname(package_dir), "data", "schema.json"),  # Parent's data subdirectory
+        ]
+        
+        # Try to find the schema file
+        for path in potential_paths:
+            self.log.debug("checking_schema_path", path=path, exists=os.path.exists(path))
+            if os.path.exists(path):
+                self.log.debug("schema_found_at", path=path)
+                return path
+        
+        self.log.warning("schema_not_found_in_any_location")
+        return None
         
     def load_schema(self) -> Dict[str, Any]:
         """
