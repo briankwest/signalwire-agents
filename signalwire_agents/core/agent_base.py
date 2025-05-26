@@ -425,8 +425,6 @@ class AgentBase(SWMLService):
         if self.schema_utils and self.schema_utils.schema:
             self.log.debug("schema_loaded", path=self.schema_utils.schema_path)
         
-        # Initialize our swaig functions
-        self._swaig_functions = {}
     
     def _process_prompt_sections(self):
         """
