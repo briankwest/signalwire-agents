@@ -170,18 +170,20 @@ class ApiNinjasTriviaSkill(SkillBase):
                 "required": ["category"]
             },
             "data_map": {
-                "webhook": {
-                    "url": "https://api.api-ninjas.com/v1/trivia?category=%{args.category}",
-                    "method": "GET",
-                    "headers": {
-                        "X-Api-Key": self.api_key
+                "webhooks": [
+                    {
+                        "url": "https://api.api-ninjas.com/v1/trivia?category=%{args.category}",
+                        "method": "GET",
+                        "headers": {
+                            "X-Api-Key": self.api_key
+                        },
+                        "output": SwaigFunctionResult(
+                            "Category %{array[0].category} question: %{array[0].question} Answer: %{array[0].answer}, be sure to give the user time to answer before saying the answer."
+                        ).to_dict()
                     }
-                },
-                "output": SwaigFunctionResult(
-                    "Category %{array[0].category} question: %{array[0].question} Answer: %{array[0].answer}, be sure to give the user time to answer before saying the answer."
-                ).to_dict(),
+                ],
                 "error_keys": ["error"],
-                "fallback_output": SwaigFunctionResult(
+                "output": SwaigFunctionResult(
                     "Sorry, I cannot get trivia questions right now. Please try again later."
                 ).to_dict()
             }
