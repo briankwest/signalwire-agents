@@ -7,3 +7,5 @@ Licensed under the MIT License.
 See LICENSE file in the project root for full license information.
 """
 
+from .serverless import get_execution_mode, is_serverless_mode
+

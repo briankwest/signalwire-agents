@@ -80,6 +80,7 @@ from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_handler import AIVerbHandler
 from signalwire_agents.core.skill_manager import SkillManager
 from signalwire_agents.utils.schema_utils import SchemaUtils
+from signalwire_agents.utils.serverless import get_execution_mode, is_serverless_mode
 
 # Create a logger
 logger = structlog.get_logger("agent_base")
@@ -1314,25 +1315,56 @@ class AgentBase(SWMLService):
         Returns:
             Full URL including host, port, and route (with auth if requested)
         """
-        # Start with the base URL (either proxy or local)
-        if self._proxy_url_base:
-            # Use the proxy URL base from environment, ensuring we don't duplicate the route
-            # Strip any trailing slashes from proxy base
-            proxy_base = self._proxy_url_base.rstrip('/')
-            # Make sure route starts with a slash for consistency
-            route = self.route if self.route.startswith('/') else f"/{self.route}"
-            base_url = f"{proxy_base}{route}"
-        else:
-            # Default local URL
-            if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
-                host = "localhost"
+        mode = get_execution_mode()
+        
+        if mode == 'cgi':
+            protocol = 'https' if os.getenv('HTTPS') == 'on' else 'http'
+            host = os.getenv('HTTP_HOST') or os.getenv('SERVER_NAME') or 'localhost'
+            script_name = os.getenv('SCRIPT_NAME', '')
+            base_url = f"{protocol}://{host}{script_name}"
+        elif mode == 'lambda':
+            function_url = os.getenv('AWS_LAMBDA_FUNCTION_URL')
+            if function_url and ('amazonaws.com' in function_url or 'on.aws' in function_url):
+                base_url = function_url.rstrip('/')
             else:
-                host = self.host
-                
-            base_url = f"http://{host}:{self.port}{self.route}"
+                api_id = os.getenv('AWS_API_GATEWAY_ID')
+                if api_id:
+                    region = os.getenv('AWS_REGION', 'us-east-1')
+                    stage = os.getenv('AWS_API_GATEWAY_STAGE', 'prod')
+                    base_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/{stage}"
+                else:
+                    import logging
+                    logging.warning("Lambda mode detected but no URL configuration found")
+                    base_url = "https://lambda-url-not-configured"
+        elif mode == 'cloud_function':
+            function_url = os.getenv('FUNCTION_URL')
+            if function_url:
+                base_url = function_url
+            else:
+                project = os.getenv('GOOGLE_CLOUD_PROJECT')
+                if project:
+                    region = os.getenv('GOOGLE_CLOUD_REGION', 'us-central1')
+                    service = os.getenv('K_SERVICE', 'function')
+                    base_url = f"https://{region}-{project}.cloudfunctions.net/{service}"
+                else:
+                    import logging
+                    logging.warning("Cloud Function mode detected but no URL configuration found")
+                    base_url = "https://cloud-function-url-not-configured"
+        else:
+            # Server mode - preserve existing logic
+            if self._proxy_url_base:
+                proxy_base = self._proxy_url_base.rstrip('/')
+                route = self.route if self.route.startswith('/') else f"/{self.route}"
+                base_url = f"{proxy_base}{route}"
+            else:
+                if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                    host = "localhost"
+                else:
+                    host = self.host
+                base_url = f"http://{host}:{self.port}{self.route}"
             
-        # Add auth if requested
-        if include_auth:
+        # Add auth if requested (only for server mode)
+        if include_auth and mode == 'server':
             username, password = self._basic_auth
             url = urlparse(base_url)
             return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
@@ -1806,6 +1838,248 @@ class AgentBase(SWMLService):
         print(f"Basic Auth: {username}:{password} (source: {source})")
         
         uvicorn.run(self._app, host=host, port=port)
+
+    def run(self, event=None, context=None, force_mode=None, host: Optional[str] = None, port: Optional[int] = None):
+        """
+        Smart run method that automatically detects environment and handles accordingly
+        
+        Args:
+            event: Serverless event object (Lambda, Cloud Functions)
+            context: Serverless context object (Lambda, Cloud Functions)
+            force_mode: Override automatic mode detection for testing
+            host: Host override for server mode
+            port: Port override for server mode
+            
+        Returns:
+            Response for serverless modes, None for server mode
+        """
+        mode = force_mode or get_execution_mode()
+        
+        try:
+            if mode in ['cgi', 'cloud_function', 'azure_function']:
+                response = self.handle_serverless_request(event, context, mode)
+                print(response)
+                return response
+            elif mode == 'lambda':
+                return self.handle_serverless_request(event, context, mode)
+            else:
+                # Server mode - use existing serve method
+                self.serve(host, port)
+        except Exception as e:
+            import logging
+            logging.error(f"Error in run method: {e}")
+            if mode == 'lambda':
+                return {
+                    "statusCode": 500,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": str(e)})
+                }
+            else:
+                raise
+
+    def handle_serverless_request(self, event=None, context=None, mode=None):
+        """
+        Handle serverless environment requests (CGI, Lambda, Cloud Functions)
+        
+        Args:
+            event: Serverless event object (Lambda, Cloud Functions)
+            context: Serverless context object (Lambda, Cloud Functions)
+            mode: Override execution mode (from force_mode in run())
+            
+        Returns:
+            Response appropriate for the serverless platform
+        """
+        if mode is None:
+            mode = get_execution_mode()
+        
+        try:
+            if mode == 'cgi':
+                path_info = os.getenv('PATH_INFO', '').strip('/')
+                if not path_info:
+                    return self._render_swml()
+                else:
+                    # Parse CGI request for SWAIG function call
+                    args = {}
+                    call_id = None
+                    raw_data = None
+                    
+                    # Try to parse POST data from stdin for CGI
+                    import sys
+                    content_length = os.getenv('CONTENT_LENGTH')
+                    if content_length and content_length.isdigit():
+                        try:
+                            post_data = sys.stdin.read(int(content_length))
+                            if post_data:
+                                raw_data = json.loads(post_data)
+                                call_id = raw_data.get("call_id")
+                                
+                                # Extract arguments like the FastAPI handler does
+                                if "argument" in raw_data and isinstance(raw_data["argument"], dict):
+                                    if "parsed" in raw_data["argument"] and isinstance(raw_data["argument"]["parsed"], list) and raw_data["argument"]["parsed"]:
+                                        args = raw_data["argument"]["parsed"][0]
+                                    elif "raw" in raw_data["argument"]:
+                                        try:
+                                            args = json.loads(raw_data["argument"]["raw"])
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            # If parsing fails, continue with empty args
+                            pass
+                    
+                    return self._execute_swaig_function(path_info, args, call_id, raw_data)
+            
+            elif mode == 'lambda':
+                if event:
+                    path = event.get('pathParameters', {}).get('proxy', '') if event.get('pathParameters') else ''
+                    if not path:
+                        swml_response = self._render_swml()
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": swml_response
+                        }
+                    else:
+                        # Parse Lambda event for SWAIG function call
+                        args = {}
+                        call_id = None
+                        raw_data = None
+                        
+                        # Parse request body if present
+                        body_content = event.get('body')
+                        if body_content:
+                            try:
+                                if isinstance(body_content, str):
+                                    raw_data = json.loads(body_content)
+                                else:
+                                    raw_data = body_content
+                                    
+                                call_id = raw_data.get("call_id")
+                                
+                                # Extract arguments like the FastAPI handler does
+                                if "argument" in raw_data and isinstance(raw_data["argument"], dict):
+                                    if "parsed" in raw_data["argument"] and isinstance(raw_data["argument"]["parsed"], list) and raw_data["argument"]["parsed"]:
+                                        args = raw_data["argument"]["parsed"][0]
+                                    elif "raw" in raw_data["argument"]:
+                                        try:
+                                            args = json.loads(raw_data["argument"]["raw"])
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                # If parsing fails, continue with empty args
+                                pass
+                        
+                        result = self._execute_swaig_function(path, args, call_id, raw_data)
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps(result) if isinstance(result, dict) else str(result)
+                        }
+                else:
+                    # Handle case when event is None (direct Lambda call with no event)
+                    swml_response = self._render_swml()
+                    return {
+                        "statusCode": 200,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": swml_response
+                    }
+            
+            elif mode in ['cloud_function', 'azure_function']:
+                return self._handle_cloud_function_request(event)
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error in serverless request handler: {e}")
+            if mode == 'lambda':
+                return {
+                    "statusCode": 500,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"error": str(e)})
+                }
+            else:
+                raise
+
+    def _handle_cloud_function_request(self, request):
+        """
+        Handle Cloud Function specific requests
+        
+        Args:
+            request: Cloud Function request object
+            
+        Returns:
+            Cloud Function response
+        """
+        # Platform-specific implementation would go here
+        # For now, return basic SWML response
+        return self._render_swml()
+
+    def _execute_swaig_function(self, function_name: str, args: Optional[Dict[str, Any]] = None, call_id: Optional[str] = None, raw_data: Optional[Dict[str, Any]] = None):
+        """
+        Execute a SWAIG function in serverless context
+        
+        Args:
+            function_name: Name of the function to execute
+            args: Function arguments dictionary
+            call_id: Optional call ID
+            raw_data: Optional raw request data
+            
+        Returns:
+            Function execution result
+        """
+        import structlog
+        
+        # Use the existing logger
+        req_log = self.log.bind(
+            endpoint="serverless_swaig",
+            function=function_name
+        )
+        
+        if call_id:
+            req_log = req_log.bind(call_id=call_id)
+            
+        req_log.debug("serverless_function_call_received")
+        
+        try:
+            # Validate function exists
+            if function_name not in self._swaig_functions:
+                req_log.warning("function_not_found", available_functions=list(self._swaig_functions.keys()))
+                return {"error": f"Function '{function_name}' not found"}
+            
+            # Use empty args if not provided
+            if args is None:
+                args = {}
+                
+            # Use empty raw_data if not provided, but include function call structure
+            if raw_data is None:
+                raw_data = {
+                    "function": function_name,
+                    "argument": {
+                        "parsed": [args] if args else [],
+                        "raw": json.dumps(args) if args else "{}"
+                    }
+                }
+                if call_id:
+                    raw_data["call_id"] = call_id
+            
+            req_log.debug("executing_function", args=json.dumps(args))
+            
+            # Call the function using the existing on_function_call method
+            result = self.on_function_call(function_name, args, raw_data)
+            
+            # Convert result to dict if needed (same logic as in _handle_swaig_request)
+            if isinstance(result, SwaigFunctionResult):
+                result_dict = result.to_dict()
+            elif isinstance(result, dict):
+                result_dict = result
+            else:
+                result_dict = {"response": str(result)}
+            
+            req_log.info("serverless_function_executed_successfully")
+            req_log.debug("function_result", result=json.dumps(result_dict))
+            return result_dict
+            
+        except Exception as e:
+            req_log.error("serverless_function_execution_error", error=str(e))
+            return {"error": str(e), "function": function_name}
 
     def setup_graceful_shutdown(self) -> None:
         """

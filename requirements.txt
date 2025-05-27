@@ -8,4 +8,3 @@ structlog==25.3.0
 uvicorn==0.34.2
 beautifulsoup4==4.12.3
 pytz==2023.3
-mangum==0.19.0
