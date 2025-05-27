@@ -1382,6 +1382,34 @@ class AgentBase(SWMLService):
         Returns:
             Fully constructed webhook URL
         """
+        # Check for serverless environment and use appropriate URL generation
+        mode = get_execution_mode()
+        
+        if mode != 'server':
+            # In serverless mode, use the serverless-appropriate URL
+            base_url = self.get_full_url()
+            
+            # For serverless, we don't need auth in webhook URLs since auth is handled differently
+            # and we want to return the actual platform URL
+            
+            # Ensure the endpoint has a trailing slash to prevent redirects
+            if endpoint in ["swaig", "post_prompt"]:
+                endpoint = f"{endpoint}/"
+                
+            # Build the full webhook URL
+            url = f"{base_url}/{endpoint}"
+            
+            # Add query parameters if any (only if they have values)
+            if query_params:
+                # Remove any call_id from query params
+                filtered_params = {k: v for k, v in query_params.items() if k != "call_id" and v}
+                if filtered_params:
+                    params = "&".join([f"{k}={v}" for k, v in filtered_params.items()])
+                    url = f"{url}?{params}"
+            
+            return url
+        
+        # Server mode - use existing logic with proxy/auth support
         # Use the parent class's implementation if available and has the same method
         if hasattr(super(), '_build_webhook_url'):
             # Ensure _proxy_url_base is synchronized
@@ -1391,7 +1419,7 @@ class AgentBase(SWMLService):
             # Call parent's implementation
             return super()._build_webhook_url(endpoint, query_params)
             
-        # Otherwise, fall back to our own implementation
+        # Otherwise, fall back to our own implementation for server mode
         # Base URL construction
         if hasattr(self, '_proxy_url_base') and self._proxy_url_base:
             # For proxy URLs
