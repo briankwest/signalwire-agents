@@ -359,32 +359,30 @@ class SwaigFunctionResult:
         action = {"say": text}
         return self.add_action("say", action)
 
-    def play_background_audio(self, filename: str, wait: bool = False) -> 'SwaigFunctionResult':
+    def play_background_file(self, filename: str, wait: bool = False) -> 'SwaigFunctionResult':
         """
-        Play audio file in background.
+        Play audio or video file in background.
         
         Args:
-            filename: Audio filename/path
+            filename: Audio/video filename/path
             wait: Whether to suppress attention-getting behavior during playback
             
         Returns:
             self for method chaining
         """
         if wait:
-            action = {"playback_bg": {"file": filename, "wait": True}}
+            return self.add_action("playback_bg", {"file": filename, "wait": True})
         else:
-            action = {"playback_bg": filename}
-        return self.add_action("playback_bg", action)
+            return self.add_action("playback_bg", filename)
 
-    def stop_background_audio(self) -> 'SwaigFunctionResult':
+    def stop_background_file(self) -> 'SwaigFunctionResult':
         """
-        Stop currently playing background audio.
+        Stop currently playing background file.
         
         Returns:
             self for method chaining
         """
-        action = {"stop_playback_bg": True}
-        return self.add_action("stop_playback_bg", action)
+        return self.add_action("stop_playback_bg", True)
 
     def set_end_of_speech_timeout(self, milliseconds: int) -> 'SwaigFunctionResult':
         """
