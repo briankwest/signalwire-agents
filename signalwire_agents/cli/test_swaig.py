@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
+import inspect
 
 try:
     # Try to import the AgentBase class
@@ -1748,9 +1749,71 @@ def main():
     original_argv = sys.argv[:]
     sys.argv = [sys.argv[0]] + cli_args
     
-    parser = argparse.ArgumentParser(
+    # Custom ArgumentParser class with better error handling
+    class CustomArgumentParser(argparse.ArgumentParser):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._suppress_usage = False
+        
+        def _print_message(self, message, file=None):
+            """Override to suppress usage output for specific errors"""
+            if self._suppress_usage:
+                return
+            super()._print_message(message, file)
+        
+        def error(self, message):
+            """Override error method to provide user-friendly error messages"""
+            if "required" in message.lower() and "agent_path" in message:
+                self._suppress_usage = True
+                print("Error: Missing required argument.")
+                print()
+                print(f"Usage: {self.prog} <agent_path> [options]")
+                print()
+                print("Examples:")
+                print(f"  {self.prog} examples/my_agent.py --list-tools")
+                print(f"  {self.prog} examples/my_agent.py --dump-swml")
+                print(f"  {self.prog} examples/my_agent.py --exec my_function --param value")
+                print()
+                print(f"For full help: {self.prog} --help")
+                sys.exit(2)
+            else:
+                # For other errors, use the default behavior
+                super().error(message)
+        
+        def print_usage(self, file=None):
+            """Override print_usage to suppress output when we want custom error handling"""
+            if self._suppress_usage:
+                return
+            super().print_usage(file)
+        
+        def parse_args(self, args=None, namespace=None):
+            """Override parse_args to provide custom error handling for missing arguments"""
+            # Check if no arguments provided (just the program name)
+            import sys
+            if args is None:
+                args = sys.argv[1:]
+            
+            # If no arguments provided, show custom error
+            if not args:
+                print("Error: Missing required argument.")
+                print()
+                print(f"Usage: {self.prog} <agent_path> [options]")
+                print()
+                print("Examples:")
+                print(f"  {self.prog} examples/my_agent.py --list-tools")
+                print(f"  {self.prog} examples/my_agent.py --dump-swml")
+                print(f"  {self.prog} examples/my_agent.py --exec my_function --param value")
+                print()
+                print(f"For full help: {self.prog} --help")
+                sys.exit(2)
+            
+            # Otherwise, use default parsing
+            return super().parse_args(args, namespace)
+    
+    parser = CustomArgumentParser(
         description="Test SWAIG functions from agent applications with comprehensive simulation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage="%(prog)s <agent_path> [options]",
         epilog="""
 Examples:
   # Function testing with --exec syntax  
@@ -1815,6 +1878,7 @@ Examples:
         """
     )
     
+    # Required positional arguments
     parser.add_argument(
         "agent_path",
         help="Path to the Python file containing the agent"
@@ -1832,258 +1896,277 @@ Examples:
         help="JSON string containing the arguments to pass to the function (when using positional tool_name)"
     )
     
-    parser.add_argument(
+    # Function Execution Options
+    func_group = parser.add_argument_group('Function Execution Options')
+    func_group.add_argument(
         "--exec",
         metavar="FUNCTION",
         help="Execute a function with CLI-style arguments (replaces tool_name and --args)"
     )
     
-    parser.add_argument(
+    func_group.add_argument(
         "--custom-data",
         help="Optional JSON string containing custom post_data overrides",
         default="{}"
     )
     
-    parser.add_argument(
+    # Agent Discovery and Selection
+    agent_group = parser.add_argument_group('Agent Discovery and Selection')
+    agent_group.add_argument(
         "--agent-class",
         help="Name of the agent class to use (required only if multiple agents in file)"
     )
     
-    parser.add_argument(
-        "--list-tools",
-        action="store_true",
-        help="List all available tools in the agent and exit"
-    )
-    
-    parser.add_argument(
+    agent_group.add_argument(
         "--list-agents",
         action="store_true",
         help="List all available agents in the file and exit"
     )
     
-    parser.add_argument(
+    agent_group.add_argument(
+        "--list-tools",
+        action="store_true",
+        help="List all available tools in the agent and exit"
+    )
+    
+    # Output and Debugging Options
+    output_group = parser.add_argument_group('Output and Debugging Options')
+    output_group.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose output"
     )
     
-    parser.add_argument(
-        "--fake-full-data",
-        action="store_true", 
-        help="Generate comprehensive fake post_data with all possible keys"
-    )
-    
-    parser.add_argument(
-        "--minimal",
-        action="store_true",
-        help="Use minimal post_data (only essential keys)"
-    )
-    
-    parser.add_argument(
-        "--dump-swml",
-        action="store_true",
-        help="Dump the SWML document from the agent and exit"
-    )
-    
-    parser.add_argument(
+    output_group.add_argument(
         "--raw",
         action="store_true",
         help="Output raw SWML JSON only (no headers, useful for piping to jq/yq)"
     )
     
-    # ===== NEW SWML TESTING ARGUMENTS =====
+    # SWML Generation and Testing
+    swml_group = parser.add_argument_group('SWML Generation and Testing')
+    swml_group.add_argument(
+        "--dump-swml",
+        action="store_true",
+        help="Dump the SWML document from the agent and exit"
+    )
     
-    parser.add_argument(
+    swml_group.add_argument(
+        "--fake-full-data",
+        action="store_true", 
+        help="Generate comprehensive fake post_data with all possible keys"
+    )
+    
+    swml_group.add_argument(
+        "--minimal",
+        action="store_true",
+        help="Use minimal post_data (only essential keys)"
+    )
+    
+    # Call Configuration Options
+    call_group = parser.add_argument_group('Call Configuration Options')
+    call_group.add_argument(
         "--call-type",
         choices=["sip", "webrtc"],
         default="webrtc",
         help="Type of call for SWML generation (default: webrtc)"
     )
     
-    parser.add_argument(
+    call_group.add_argument(
         "--call-direction",
         choices=["inbound", "outbound"],
         default="inbound",
         help="Direction of call for SWML generation (default: inbound)"
     )
     
-    parser.add_argument(
+    call_group.add_argument(
         "--call-state",
         default="created",
         help="State of call for SWML generation (default: created)"
     )
     
-    parser.add_argument(
+    call_group.add_argument(
         "--call-id",
         help="Override call_id in fake SWML post_data"
     )
     
-    parser.add_argument(
-        "--project-id",
-        help="Override project_id in fake SWML post_data"
-    )
-    
-    parser.add_argument(
-        "--space-id", 
-        help="Override space_id in fake SWML post_data"
-    )
-    
-    parser.add_argument(
+    call_group.add_argument(
         "--from-number",
         help="Override 'from' address in fake SWML post_data"
     )
     
-    parser.add_argument(
+    call_group.add_argument(
         "--to-extension",
         help="Override 'to' address in fake SWML post_data"
     )
     
-    parser.add_argument(
+    # SignalWire Platform Configuration
+    platform_group = parser.add_argument_group('SignalWire Platform Configuration')
+    platform_group.add_argument(
+        "--project-id",
+        help="Override project_id in fake SWML post_data"
+    )
+    
+    platform_group.add_argument(
+        "--space-id", 
+        help="Override space_id in fake SWML post_data"
+    )
+    
+    # User Variables and Query Parameters
+    vars_group = parser.add_argument_group('User Variables and Query Parameters')
+    vars_group.add_argument(
         "--user-vars",
         help="JSON string for vars.userVariables in fake SWML post_data"
     )
     
-    parser.add_argument(
+    vars_group.add_argument(
         "--query-params",
         help="JSON string for query parameters (merged into userVariables)"
     )
     
-    parser.add_argument(
+    # Data Override Options
+    override_group = parser.add_argument_group('Data Override Options')
+    override_group.add_argument(
         "--override",
         action="append",
         default=[],
         help="Override specific values using dot notation (e.g., --override call.state=answered)"
     )
     
-    parser.add_argument(
+    override_group.add_argument(
         "--override-json",
         action="append", 
         default=[],
         help="Override with JSON values using dot notation (e.g., --override-json vars.custom='{\"key\":\"value\"}')"
     )
     
-    parser.add_argument(
+    # HTTP Request Simulation
+    http_group = parser.add_argument_group('HTTP Request Simulation')
+    http_group.add_argument(
         "--header",
         action="append",
         default=[],
         help="Add HTTP headers for mock request (e.g., --header Authorization=Bearer token)"
     )
     
-    parser.add_argument(
+    http_group.add_argument(
         "--method",
         default="POST",
         help="HTTP method for mock request (default: POST)"
     )
     
-    parser.add_argument(
+    http_group.add_argument(
         "--body",
         help="JSON string for mock request body"
     )
     
-    # ===== SERVERLESS SIMULATION ARGUMENTS =====
-    
-    parser.add_argument(
+    # Serverless Environment Simulation
+    serverless_group = parser.add_argument_group('Serverless Environment Simulation')
+    serverless_group.add_argument(
         "--simulate-serverless",
         choices=["lambda", "cgi", "cloud_function", "azure_function"],
         help="Simulate serverless platform environment (lambda, cgi, cloud_function, azure_function)"
     )
     
-    parser.add_argument(
+    serverless_group.add_argument(
         "--env",
         action="append",
         default=[],
         help="Set environment variable (e.g., --env API_KEY=secret123)"
     )
     
-    parser.add_argument(
+    serverless_group.add_argument(
         "--env-file",
         help="Load environment variables from file"
     )
     
-    # AWS Lambda specific options
-    parser.add_argument(
+    serverless_group.add_argument(
+        "--serverless-mode",
+        help="Legacy option for serverless mode (use --simulate-serverless instead)"
+    )
+    
+    # AWS Lambda Configuration
+    aws_group = parser.add_argument_group('AWS Lambda Configuration')
+    aws_group.add_argument(
         "--aws-function-name",
         help="AWS Lambda function name (overrides default)"
     )
     
-    parser.add_argument(
+    aws_group.add_argument(
         "--aws-function-url",
         help="AWS Lambda function URL (overrides default)"
     )
     
-    parser.add_argument(
+    aws_group.add_argument(
         "--aws-region",
         help="AWS region (overrides default)"
     )
     
-    parser.add_argument(
+    aws_group.add_argument(
         "--aws-api-gateway-id",
         help="AWS API Gateway ID for API Gateway URLs"
     )
     
-    parser.add_argument(
+    aws_group.add_argument(
         "--aws-stage",
         help="AWS API Gateway stage (default: prod)"
     )
     
-    # CGI specific options
-    parser.add_argument(
+    # CGI Configuration
+    cgi_group = parser.add_argument_group('CGI Configuration')
+    cgi_group.add_argument(
         "--cgi-host",
         help="CGI server hostname (required for CGI simulation)"
     )
     
-    parser.add_argument(
+    cgi_group.add_argument(
         "--cgi-script-name",
         help="CGI script name/path (overrides default)"
     )
     
-    parser.add_argument(
+    cgi_group.add_argument(
         "--cgi-https",
         action="store_true",
         help="Use HTTPS for CGI URLs"
     )
     
-    parser.add_argument(
+    cgi_group.add_argument(
         "--cgi-path-info",
         help="CGI PATH_INFO value"
     )
     
-    # Google Cloud Functions specific options
-    parser.add_argument(
+    # Google Cloud Platform Configuration
+    gcp_group = parser.add_argument_group('Google Cloud Platform Configuration')
+    gcp_group.add_argument(
         "--gcp-project",
         help="Google Cloud project ID (overrides default)"
     )
     
-    parser.add_argument(
+    gcp_group.add_argument(
         "--gcp-function-url",
         help="Google Cloud Function URL (overrides default)"
     )
     
-    parser.add_argument(
+    gcp_group.add_argument(
         "--gcp-region",
         help="Google Cloud region (overrides default)"
     )
     
-    parser.add_argument(
+    gcp_group.add_argument(
         "--gcp-service",
         help="Google Cloud service name (overrides default)"
     )
     
-    # Azure Functions specific options
-    parser.add_argument(
+    # Azure Functions Configuration
+    azure_group = parser.add_argument_group('Azure Functions Configuration')
+    azure_group.add_argument(
         "--azure-env",
         help="Azure Functions environment (overrides default)"
     )
     
-    parser.add_argument(
+    azure_group.add_argument(
         "--azure-function-url",
         help="Azure Function URL (overrides default)"
-    )
-    
-    # Legacy compatibility
-    parser.add_argument(
-        "--serverless-mode",
-        help="Legacy option for serverless mode (use --simulate-serverless instead)"
     )
     
     args = parser.parse_args()
