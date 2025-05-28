@@ -196,6 +196,9 @@ class ComprehensiveDynamicAgent(AgentBase):
         if test_group == "B":
             params["end_of_speech_timeout"] = int(params["end_of_speech_timeout"] * 1.2)
             
+        # Add ai_model to all configurations
+        params["ai_model"] = "gpt-4.1-nano"
+            
         agent.set_params(params)
 
     def _configure_industry_prompts(self, agent, industry, tier):
@@ -345,15 +348,12 @@ class ComprehensiveDynamicAgent(AgentBase):
 
 
 # Example usage and testing
-if __name__ == "__main__":
+def main():
     agent = ComprehensiveDynamicAgent()
     
-    print("Starting Comprehensive Dynamic Agent")
-    print("\nTry these example requests:")
-    print("curl 'http://localhost:3000/dynamic?tier=premium&industry=healthcare&voice=spore&test_group=A'")
-    print("curl 'http://localhost:3000/dynamic?tier=enterprise&industry=finance&voice=flower&language=es&locale=mx'")
-    print("curl 'http://localhost:3000/dynamic?tier=standard&industry=retail&debug=true&customer_id=123'")
-    print("curl 'http://localhost:3000/dynamic/debug?tier=premium&industry=healthcare'")
-    print()
-    
-    agent.serve() 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+if __name__ == "__main__":
+    main() 

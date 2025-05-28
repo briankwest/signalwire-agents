@@ -103,11 +103,12 @@ def main():
     print("Just ask for a joke and specify either 'jokes' or 'dadjokes' type.")
     print("\nAvailable function:")
     print("  get_joke - Tell a joke (jokes or dadjokes)")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
     
     agent = JokeAgent()
     
     try:
-        agent.serve(host="0.0.0.0", port=3000)
+        agent.run()
     except KeyboardInterrupt:
         print("\nShutting down joke agent...")
 

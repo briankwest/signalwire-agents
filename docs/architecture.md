@@ -1027,7 +1027,7 @@ The SDK supports multiple deployment models:
 
 1. **Standalone Mode**
    - Single agent on dedicated port
-   - Direct invocation via `agent.serve()`
+   - Direct invocation via `agent.run()` (auto-detects deployment mode)
 
 2. **Multi-Agent Mode**
    - Multiple agents on same server with different routes

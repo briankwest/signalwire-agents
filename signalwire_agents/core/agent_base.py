@@ -80,7 +80,7 @@ from signalwire_agents.core.swml_service import SWMLService
 from signalwire_agents.core.swml_handler import AIVerbHandler
 from signalwire_agents.core.skill_manager import SkillManager
 from signalwire_agents.utils.schema_utils import SchemaUtils
-from signalwire_agents.utils.serverless import get_execution_mode, is_serverless_mode
+from signalwire_agents.core.logging_config import get_logger, get_execution_mode
 
 # Create a logger
 logger = structlog.get_logger("agent_base")

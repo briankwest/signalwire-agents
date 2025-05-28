@@ -1,0 +1,764 @@
+"""
+Copyright (c) 2025 SignalWire
+
+This file is part of the SignalWire AI Agents SDK.
+
+Licensed under the MIT License.
+See LICENSE file in the project root for full license information.
+"""
+
+import re
+import hashlib
+import json
+import logging
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+# Document processing imports
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
+try:
+    import markdown
+except ImportError:
+    markdown = None
+
+try:
+    from striprtf.striprtf import rtf_to_text
+except ImportError:
+    rtf_to_text = None
+
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
+try:
+    from nltk.tokenize import sent_tokenize
+    import nltk
+    # Ensure NLTK data is available
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        nltk.download('punkt', quiet=True)
+except ImportError:
+    sent_tokenize = None
+    nltk = None
+
+try:
+    import magic
+except ImportError:
+    magic = None
+
+from .query_processor import preprocess_document_content
+
+logger = logging.getLogger(__name__)
+
+class DocumentProcessor:
+    """Enhanced document processor with smart chunking capabilities"""
+    
+    def __init__(self, chunking_strategy: str = 'sentence', 
+                 max_sentences_per_chunk: int = 50,
+                 chunk_size: int = 50, 
+                 overlap_size: int = 10,
+                 split_newlines: Optional[int] = None):
+        """
+        Initialize document processor with chunking strategy
+        
+        Args:
+            chunking_strategy: 'sentence', 'sliding', 'paragraph', or 'page'
+            max_sentences_per_chunk: For sentence strategy (default: 50)
+            chunk_size: For sliding strategy - words per chunk (default: 50)
+            overlap_size: For sliding strategy - overlap in words (default: 10)
+            split_newlines: For sentence strategy - split on multiple newlines (optional)
+        """
+        self.chunking_strategy = chunking_strategy
+        self.max_sentences_per_chunk = max_sentences_per_chunk
+        self.chunk_size = chunk_size
+        self.overlap_size = overlap_size
+        self.split_newlines = split_newlines
+        
+        # Legacy support for old character-based chunking
+        self.chunk_overlap = overlap_size
+    
+    def create_chunks(self, content: str, filename: str, 
+                     file_type: str) -> List[Dict[str, Any]]:
+        """
+        Create chunks from document content using specified chunking strategy
+        
+        Args:
+            content: Document content (string) - should be the actual content, not a file path
+            filename: Name of the file (for metadata)
+            file_type: File extension/type
+            
+        Returns:
+            List of chunk dictionaries
+        """
+        
+        # Apply chunking strategy
+        if self.chunking_strategy == 'sentence':
+            return self._chunk_by_sentences(content, filename, file_type)
+        elif self.chunking_strategy == 'sliding':
+            return self._chunk_by_sliding_window(content, filename, file_type)
+        elif self.chunking_strategy == 'paragraph':
+            return self._chunk_by_paragraphs(content, filename, file_type)
+        elif self.chunking_strategy == 'page':
+            return self._chunk_by_pages(content, filename, file_type)
+        else:
+            # Fallback to sentence-based chunking
+            return self._chunk_by_sentences(content, filename, file_type)
+    
+    def _extract_text_from_file(self, file_path: str) -> Any:
+        """Extract text from various file formats"""
+        if not magic:
+            # Fallback to extension-based detection
+            file_path_obj = Path(file_path)
+            extension = file_path_obj.suffix.lower()
+            
+            if extension == '.pdf':
+                file_type = 'application/pdf'
+            elif extension == '.docx':
+                file_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            elif extension in ['.txt', '.md']:
+                file_type = 'text/plain'
+            elif extension == '.html':
+                file_type = 'text/html'
+            elif extension == '.rtf':
+                file_type = 'application/rtf'
+            elif extension == '.xlsx':
+                file_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            elif extension == '.pptx':
+                file_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            else:
+                file_type = 'text/plain'
+        else:
+            mime = magic.Magic(mime=True)
+            file_type = mime.from_file(file_path)
+
+        if 'pdf' in file_type:
+            return self._extract_pdf(file_path)
+        elif 'vnd.openxmlformats-officedocument.wordprocessingml.document' in file_type:
+            return self._extract_docx(file_path)
+        elif 'plain' in file_type or 'text' in file_type:
+            return self._extract_text(file_path)
+        elif 'html' in file_type:
+            return self._extract_html(file_path)
+        elif 'markdown' in file_type or file_path.endswith('.md'):
+            return self._extract_markdown(file_path)
+        elif 'rtf' in file_type:
+            return self._extract_rtf(file_path)
+        elif 'vnd.openxmlformats-officedocument.spreadsheetml.sheet' in file_type:
+            return self._extract_excel(file_path)
+        elif 'vnd.openxmlformats-officedocument.presentationml.presentation' in file_type:
+            return self._extract_powerpoint(file_path)
+        else:
+            return json.dumps({"error": f"Unsupported file type: {file_type}"})
+    
+    def _extract_pdf(self, file_path: str):
+        """Extract text from PDF files"""
+        if not pdfplumber:
+            return json.dumps({"error": "pdfplumber not available for PDF processing"})
+        
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                pages = []
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        # Remove page number from the beginning
+                        text = re.sub(r'^\d+\.\s*', '', text.strip())
+                        pages.append(text)
+                return pages
+        except Exception as e:
+            return json.dumps({"error": f"Error processing PDF: {e}"})
+    
+    def _extract_docx(self, file_path: str):
+        """Extract text from DOCX files"""
+        if not DocxDocument:
+            return json.dumps({"error": "python-docx not available for DOCX processing"})
+        
+        try:
+            doc = DocxDocument(file_path)
+            return [para.text for para in doc.paragraphs if para.text.strip()]
+        except Exception as e:
+            return json.dumps({"error": f"Error processing DOCX: {e}"})
+    
+    def _extract_text(self, file_path: str):
+        """Extract text from plain text files"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                return file.read()
+        except Exception as e:
+            return json.dumps({"error": f"Error processing TXT: {e}"})
+    
+    def _extract_html(self, file_path: str):
+        """Extract text from HTML files"""
+        if not BeautifulSoup:
+            return json.dumps({"error": "beautifulsoup4 not available for HTML processing"})
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                soup = BeautifulSoup(file, 'html.parser')
+                return soup.get_text(separator='\n')
+        except Exception as e:
+            return json.dumps({"error": f"Error processing HTML: {e}"})
+    
+    def _extract_markdown(self, file_path: str):
+        """Extract text from Markdown files"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+                if markdown and BeautifulSoup:
+                    html = markdown.markdown(content)
+                    soup = BeautifulSoup(html, 'html.parser')
+                    return soup.get_text(separator='\n')
+                else:
+                    # Fallback to raw markdown
+                    return content
+        except Exception as e:
+            return json.dumps({"error": f"Error processing Markdown: {e}"})
+    
+    def _extract_rtf(self, file_path: str):
+        """Extract text from RTF files"""
+        if not rtf_to_text:
+            return json.dumps({"error": "striprtf not available for RTF processing"})
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                return rtf_to_text(file.read())
+        except Exception as e:
+            return json.dumps({"error": f"Error processing RTF: {e}"})
+    
+    def _extract_excel(self, file_path: str):
+        """Extract text from Excel files"""
+        if not load_workbook:
+            return json.dumps({"error": "openpyxl not available for Excel processing"})
+        
+        try:
+            wb = load_workbook(file_path)
+            sheets_text = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = ' '.join([str(cell) for cell in row if cell is not None])
+                    sheets_text.append(row_text)
+            return "\n".join(sheets_text)
+        except Exception as e:
+            return json.dumps({"error": f"Error processing Excel: {e}"})
+    
+    def _extract_powerpoint(self, file_path: str):
+        """Extract text from PowerPoint files"""
+        if not Presentation:
+            return json.dumps({"error": "python-pptx not available for PowerPoint processing"})
+        
+        try:
+            prs = Presentation(file_path)
+            slides_text = []
+            for slide in prs.slides:
+                slide_text = []
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        slide_text.append(shape.text)
+                slides_text.append("\n".join(slide_text))
+            return slides_text
+        except Exception as e:
+            return json.dumps({"error": f"Error processing PowerPoint: {e}"})
+    
+    def _chunk_document_aware(self, content: Any, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Smart chunking for documents with natural structure"""
+        chunks = []
+        
+        if isinstance(content, list):
+            # Handle page-based or paragraph-based content (PDF, DOCX, PPTX)
+            for i, page_content in enumerate(content):
+                if not page_content or not page_content.strip():
+                    continue
+                
+                # For each page/slide, use sentence-based chunking if it's large
+                if len(page_content) > self.chunk_size:
+                    page_chunks = self._sentence_based_chunking(
+                        page_content, 
+                        max_sentences_per_chunk=self._calculate_sentences_per_chunk(page_content)
+                    )
+                    for j, chunk_content in enumerate(page_chunks):
+                        chunks.append(self._create_chunk(
+                            content=chunk_content,
+                            filename=filename,
+                            section=f"Page {i+1}" if file_type == 'pdf' else f"Slide {i+1}" if file_type == 'pptx' else f"Section {i+1}",
+                            metadata={'page_number': i+1, 'chunk_index': j}
+                        ))
+                else:
+                    # Small page/slide - keep as single chunk
+                    chunks.append(self._create_chunk(
+                        content=page_content,
+                        filename=filename,
+                        section=f"Page {i+1}" if file_type == 'pdf' else f"Slide {i+1}" if file_type == 'pptx' else f"Section {i+1}",
+                        metadata={'page_number': i+1}
+                    ))
+        else:
+            # Single text content - use paragraph-aware chunking
+            chunks = self._chunk_text_enhanced(content, filename)
+        
+        return chunks
+    
+    def _chunk_markdown_enhanced(self, content: str, filename: str) -> List[Dict[str, Any]]:
+        """Enhanced markdown chunking with better header handling"""
+        chunks = []
+        lines = content.split('\n')
+        
+        current_section = None
+        current_hierarchy = []  # Track header hierarchy
+        current_chunk = []
+        current_size = 0
+        line_start = 1
+        
+        for line_num, line in enumerate(lines, 1):
+            # Check for headers with hierarchy tracking
+            header_match = re.match(r'^(#{1,6})\s+(.+)', line)
+            if header_match:
+                header_level = len(header_match.group(1))
+                header_text = header_match.group(2).strip()
+                
+                # Save current chunk if it exists
+                if current_chunk:
+                    chunks.append(self._create_chunk(
+                        content='\n'.join(current_chunk),
+                        filename=filename,
+                        section=self._build_section_path(current_hierarchy),
+                        start_line=line_start,
+                        end_line=line_num - 1
+                    ))
+                
+                # Update hierarchy
+                current_hierarchy = current_hierarchy[:header_level-1] + [header_text]
+                current_section = header_text
+                current_chunk = [line]
+                current_size = len(line)
+                line_start = line_num
+            
+            else:
+                current_chunk.append(line)
+                current_size += len(line) + 1
+                
+                # Check if chunk is getting too large - use smart splitting
+                if current_size >= self.chunk_size:
+                    # Try to split at paragraph boundary first
+                    split_point = self._find_best_split_point(current_chunk)
+                    
+                    chunk_to_save = current_chunk[:split_point]
+                    chunks.append(self._create_chunk(
+                        content='\n'.join(chunk_to_save),
+                        filename=filename,
+                        section=self._build_section_path(current_hierarchy),
+                        start_line=line_start,
+                        end_line=line_start + split_point - 1
+                    ))
+                    
+                    # Start new chunk with overlap
+                    overlap_lines = self._get_overlap_lines(chunk_to_save)
+                    remaining_lines = current_chunk[split_point:]
+                    current_chunk = overlap_lines + remaining_lines
+                    current_size = sum(len(line) + 1 for line in current_chunk)
+                    line_start = line_start + split_point - len(overlap_lines)
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append(self._create_chunk(
+                content='\n'.join(current_chunk),
+                filename=filename,
+                section=self._build_section_path(current_hierarchy),
+                start_line=line_start,
+                end_line=len(lines)
+            ))
+        
+        return chunks
+    
+    def _chunk_python_enhanced(self, content: str, filename: str) -> List[Dict[str, Any]]:
+        """Enhanced Python code chunking with better function/class detection"""
+        chunks = []
+        lines = content.split('\n')
+        
+        current_function = None
+        current_class = None
+        current_chunk = []
+        current_size = 0
+        line_start = 1
+        indent_level = 0
+        
+        for line_num, line in enumerate(lines, 1):
+            # Detect class definitions
+            class_match = re.match(r'^(\s*)(class\s+([^(:\s]+))', line)
+            if class_match:
+                indent = len(class_match.group(1))
+                class_name = class_match.group(3)
+                
+                # Save current chunk if switching context
+                if current_chunk and (indent <= indent_level or current_class != class_name):
+                    chunks.append(self._create_chunk(
+                        content='\n'.join(current_chunk),
+                        filename=filename,
+                        section=self._build_python_section(current_class, current_function),
+                        start_line=line_start,
+                        end_line=line_num - 1
+                    ))
+                    current_chunk = []
+                    line_start = line_num
+                
+                current_class = class_name
+                current_function = None
+                indent_level = indent
+            
+            # Detect function definitions
+            func_match = re.match(r'^(\s*)(def\s+([^(:\s]+)|async\s+def\s+([^(:\s]+))', line)
+            if func_match:
+                indent = len(func_match.group(1))
+                func_name = func_match.group(3) or func_match.group(4)
+                
+                # Save current chunk if switching to new function at same or lower level
+                if current_chunk and indent <= indent_level:
+                    chunks.append(self._create_chunk(
+                        content='\n'.join(current_chunk),
+                        filename=filename,
+                        section=self._build_python_section(current_class, current_function),
+                        start_line=line_start,
+                        end_line=line_num - 1
+                    ))
+                    current_chunk = []
+                    line_start = line_num
+                
+                if indent >= indent_level:  # Method within class or nested function
+                    current_function = func_name
+                else:  # Top-level function
+                    current_function = func_name
+                    current_class = None
+                
+                indent_level = indent
+            
+            current_chunk.append(line)
+            current_size += len(line) + 1
+            
+            # Handle oversized chunks
+            if current_size >= self.chunk_size:
+                chunks.append(self._create_chunk(
+                    content='\n'.join(current_chunk),
+                    filename=filename,
+                    section=self._build_python_section(current_class, current_function),
+                    start_line=line_start,
+                    end_line=line_num
+                ))
+                
+                # Start new chunk with minimal overlap for code
+                overlap_lines = current_chunk[-2:] if len(current_chunk) > 2 else current_chunk
+                current_chunk = overlap_lines
+                current_size = sum(len(line) + 1 for line in overlap_lines)
+                line_start = line_num - len(overlap_lines) + 1
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append(self._create_chunk(
+                content='\n'.join(current_chunk),
+                filename=filename,
+                section=self._build_python_section(current_class, current_function),
+                start_line=line_start,
+                end_line=len(lines)
+            ))
+        
+        return chunks
+    
+    def _chunk_text_enhanced(self, content: str, filename: str) -> List[Dict[str, Any]]:
+        """Enhanced text chunking using sentence-based approach"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        # Use sentence-based chunking for better coherence
+        max_sentences = self._calculate_sentences_per_chunk(content)
+        sentences = self._sentence_based_chunking(content, max_sentences)
+        
+        chunks = []
+        for i, chunk_content in enumerate(sentences):
+            chunks.append(self._create_chunk(
+                content=chunk_content,
+                filename=filename,
+                section=f"Section {i+1}",
+                metadata={'chunk_method': 'sentence_based', 'chunk_index': i}
+            ))
+        
+        return chunks
+    
+    def _sentence_based_chunking(self, text: str, max_sentences_per_chunk: int, split_newlines: int = 2) -> List[str]:
+        """Sentence-based chunking with enhancements"""
+        if not sent_tokenize:
+            # Fallback to simple splitting
+            sentences = text.split('. ')
+            sentences = [s.strip() + '.' for s in sentences if s.strip()]
+        else:
+            sentences = []
+
+            if split_newlines > 0:
+                # Create regex pattern for specified number of newlines
+                newline_pattern = r'(\n{%d,})' % split_newlines
+                parts = re.split(newline_pattern, text)
+                
+                for part in parts:
+                    part = part.strip()
+                    if part and not re.match(newline_pattern, part):
+                        sentences.extend(sent_tokenize(part))
+                    elif re.match(newline_pattern, part):
+                        sentences.append(part)
+            else:
+                sentences = [sentence.strip() for sentence in sent_tokenize(text) if sentence.strip()]
+
+        # Create chunks of sentences with overlap
+        chunks = []
+        overlap_sentences = max(1, max_sentences_per_chunk // 4)  # 25% overlap
+        
+        for i in range(0, len(sentences), max_sentences_per_chunk - overlap_sentences):
+            chunk_sentences = sentences[i:i + max_sentences_per_chunk]
+            if chunk_sentences:
+                chunks.append(' '.join(chunk_sentences))
+        
+        return chunks
+    
+    def _calculate_sentences_per_chunk(self, text: str) -> int:
+        """Calculate optimal sentences per chunk based on average sentence length"""
+        if not sent_tokenize:
+            # Fallback calculation
+            sentences = text.split('. ')
+        else:
+            sentences = sent_tokenize(text)
+            
+        if not sentences:
+            return 1
+        
+        avg_sentence_length = sum(len(s) for s in sentences) / len(sentences)
+        # Target chunk size divided by average sentence length
+        optimal_sentences = max(1, int(self.chunk_size / avg_sentence_length))
+        return min(optimal_sentences, 10)  # Cap at 10 sentences for readability
+    
+    def _build_section_path(self, hierarchy: List[str]) -> str:
+        """Build hierarchical section path from header hierarchy"""
+        return ' > '.join(hierarchy) if hierarchy else None
+    
+    def _build_python_section(self, class_name: Optional[str], function_name: Optional[str]) -> str:
+        """Build section name for Python code"""
+        if class_name and function_name:
+            return f"{class_name}.{function_name}"
+        elif class_name:
+            return class_name
+        elif function_name:
+            return function_name
+        else:
+            return None
+    
+    def _find_best_split_point(self, lines: List[str]) -> int:
+        """Find the best point to split a chunk (prefer paragraph boundaries)"""
+        # Look for empty lines (paragraph boundaries) in the last 25% of the chunk
+        start_search = max(1, len(lines) * 3 // 4)
+        
+        for i in range(len(lines) - 1, start_search - 1, -1):
+            if not lines[i].strip():  # Empty line
+                return i
+        
+        # If no paragraph boundary found, split at 75% of chunk size
+        return max(1, len(lines) * 3 // 4)
+    
+    def _create_chunk(self, content: str, filename: str, 
+                     section: Optional[str] = None,
+                     start_line: Optional[int] = None,
+                     end_line: Optional[int] = None,
+                     metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Create chunk dictionary with enhanced metadata"""
+        base_metadata = {
+            'file_type': Path(filename).suffix.lstrip('.'),
+            'chunk_size': len(content),
+            'word_count': len(content.split()),
+        }
+        
+        # Handle sentence count with fallback
+        try:
+            if sent_tokenize and content.strip():
+                base_metadata['sentence_count'] = len(sent_tokenize(content))
+            else:
+                # Fallback: count sentences by periods
+                base_metadata['sentence_count'] = len([s for s in content.split('.') if s.strip()])
+        except Exception as e:
+            logger.warning(f"Error counting sentences: {e}")
+            # Simple fallback: count periods
+            base_metadata['sentence_count'] = len([s for s in content.split('.') if s.strip()])
+        
+        if metadata:
+            base_metadata.update(metadata)
+        
+        return {
+            'content': content.strip(),
+            'filename': filename,
+            'section': section,
+            'start_line': start_line,
+            'end_line': end_line,
+            'metadata': base_metadata
+        }
+    
+    def _get_overlap_lines(self, lines: List[str]) -> List[str]:
+        """Get overlap lines for chunk continuity"""
+        if not lines:
+            return []
+        
+        # Calculate overlap size in characters
+        overlap_chars = self.chunk_overlap
+        overlap_lines = []
+        char_count = 0
+        
+        # Take lines from the end until we reach overlap size
+        for line in reversed(lines):
+            if char_count + len(line) <= overlap_chars:
+                overlap_lines.insert(0, line)
+                char_count += len(line) + 1
+            else:
+                break
+        
+        return overlap_lines
+    
+    def _chunk_by_sentences(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk content by sentences with specified max sentences per chunk"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        # Use sentence-based chunking
+        split_newlines = self.split_newlines if self.split_newlines is not None else 2
+        sentences = self._sentence_based_chunking(content, self.max_sentences_per_chunk, split_newlines)
+        
+        chunks = []
+        for i, chunk_content in enumerate(sentences):
+            chunks.append(self._create_chunk(
+                content=chunk_content,
+                filename=filename,
+                section=f"Section {i+1}",
+                metadata={
+                    'chunk_method': 'sentence_based', 
+                    'chunk_index': i,
+                    'max_sentences_per_chunk': self.max_sentences_per_chunk,
+                    'split_newlines': split_newlines
+                }
+            ))
+        
+        return chunks
+    
+    def _chunk_by_sliding_window(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk content using sliding window approach with word-based chunks"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        # Split content into words
+        words = content.split()
+        
+        if not words:
+            return []
+        
+        chunks = []
+        chunk_index = 0
+        
+        # Create overlapping chunks
+        for i in range(0, len(words), self.chunk_size - self.overlap_size):
+            chunk_words = words[i:i + self.chunk_size]
+            if chunk_words:
+                chunk_content = ' '.join(chunk_words)
+                chunks.append(self._create_chunk(
+                    content=chunk_content,
+                    filename=filename,
+                    section=f"Chunk {chunk_index + 1}",
+                    metadata={
+                        'chunk_method': 'sliding_window',
+                        'chunk_index': chunk_index,
+                        'chunk_size_words': self.chunk_size,
+                        'overlap_size_words': self.overlap_size,
+                        'start_word': i,
+                        'end_word': i + len(chunk_words)
+                    }
+                ))
+                chunk_index += 1
+        
+        return chunks
+    
+    def _chunk_by_paragraphs(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk content by paragraphs (split on double newlines)"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        # Split on double newlines to get paragraphs
+        paragraphs = re.split(r'\n\s*\n', content)
+        paragraphs = [p.strip() for p in paragraphs if p.strip()]
+        
+        chunks = []
+        for i, paragraph in enumerate(paragraphs):
+            if paragraph:
+                chunks.append(self._create_chunk(
+                    content=paragraph,
+                    filename=filename,
+                    section=f"Paragraph {i+1}",
+                    metadata={
+                        'chunk_method': 'paragraph_based',
+                        'chunk_index': i,
+                        'paragraph_number': i + 1
+                    }
+                ))
+        
+        return chunks
+    
+    def _chunk_by_pages(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk content by pages (for documents that have page boundaries)"""
+        if isinstance(content, list):
+            # If content is already a list (e.g., from PDF extraction), treat each item as a page
+            pages = [str(page).strip() for page in content if str(page).strip()]
+        else:
+            # For text content, try to detect page boundaries
+            # Look for form feed characters or page break indicators
+            if '\f' in content:
+                pages = content.split('\f')
+            elif '---PAGE---' in content:
+                pages = content.split('---PAGE---')
+            elif re.search(r'\n\s*Page\s+\d+\s*\n', content):
+                # Split on "Page N" patterns
+                pages = re.split(r'\n\s*Page\s+\d+\s*\n', content)
+            else:
+                # Fallback: split into roughly equal chunks
+                words = content.split()
+                words_per_page = max(500, len(words) // 10)  # Aim for ~10 pages
+                pages = []
+                for i in range(0, len(words), words_per_page):
+                    page_words = words[i:i + words_per_page]
+                    if page_words:
+                        pages.append(' '.join(page_words))
+        
+        pages = [p.strip() for p in pages if p.strip()]
+        
+        chunks = []
+        for i, page_content in enumerate(pages):
+            if page_content:
+                chunks.append(self._create_chunk(
+                    content=page_content,
+                    filename=filename,
+                    section=f"Page {i+1}",
+                    metadata={
+                        'chunk_method': 'page_based',
+                        'chunk_index': i,
+                        'page_number': i + 1
+                    }
+                ))
+        
+        return chunks 

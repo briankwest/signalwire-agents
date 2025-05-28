@@ -98,10 +98,12 @@ def main():
     print()
     
     try:
-        agent.serve()
+        agent.run()
     except KeyboardInterrupt:
         print("\nShutting down agent...")
 
 
 if __name__ == "__main__":
-    main() 
+    agent = ContextsDemoAgent()
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run() 

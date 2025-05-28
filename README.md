@@ -15,6 +15,7 @@ A Python SDK for creating, hosting, and securing SignalWire AI agents as microse
 - **Prefab Archetypes**: Ready-to-use agent types for common scenarios
 - **Multi-Agent Support**: Host multiple agents on a single server
 - **Modular Skills System**: Add capabilities to agents with simple one-liner calls
+- **Local Search System**: Offline document search with vector similarity and keyword search
 
 ## Skills System
 
@@ -94,6 +95,7 @@ agent.serve()
 - **datetime**: Current date and time with timezone support
 - **math**: Safe mathematical expression evaluation
 - **datasphere**: SignalWire DataSphere knowledge search (supports multiple instances)
+- **native_vector_search**: Offline document search with vector similarity and keyword search
 
 ### Benefits
 
@@ -394,8 +396,71 @@ For detailed documentation and advanced examples, see [Contexts and Steps Guide]
 
 ## Installation
 
+### Basic Installation
+
 ```bash
 pip install signalwire-agents
+```
+
+### Optional Search Functionality
+
+The SDK includes optional local search capabilities that can be installed separately to avoid adding large dependencies to the base installation:
+
+#### Search Installation Options
+
+```bash
+# Basic search (vector search + keyword search)
+pip install signalwire-agents[search]
+
+# Full search with document processing (PDF, DOCX, etc.)
+pip install signalwire-agents[search-full]
+
+# Advanced NLP features (includes spaCy)
+pip install signalwire-agents[search-nlp]
+
+# All search features
+pip install signalwire-agents[search-all]
+```
+
+#### What Each Option Includes
+
+| Option | Size | Features |
+|--------|------|----------|
+| `search` | ~500MB | Vector embeddings, keyword search, basic text processing |
+| `search-full` | ~600MB | + PDF, DOCX, Excel, PowerPoint, HTML, Markdown processing |
+| `search-nlp` | ~600MB | + Advanced spaCy NLP features |
+| `search-all` | ~700MB | All search features combined |
+
+#### Search Features
+
+- **Local/Offline Search**: No external API dependencies
+- **Hybrid Search**: Vector similarity + keyword search
+- **Smart Document Processing**: Markdown, Python, PDF, DOCX, etc.
+- **Multiple Languages**: English, Spanish, with extensible framework
+- **CLI Tools**: Build search indexes from document directories
+- **HTTP API**: Standalone or embedded search service
+
+#### Usage Example
+
+```python
+# Only available with search extras installed
+from signalwire_agents.search import IndexBuilder, SearchEngine
+
+# Build search index
+builder = IndexBuilder()
+builder.build_index(
+    source_dir="./docs",
+    output_file="knowledge.swsearch",
+    file_types=['md', 'txt', 'pdf']
+)
+
+# Search documents
+engine = SearchEngine("knowledge.swsearch")
+results = engine.search(
+    query_vector=embeddings,
+    enhanced_text="search query",
+    count=5
+)
 ```
 
 ## Quick Start
@@ -602,6 +667,118 @@ When the auth environment variables are set, they will be used for all agents in
 
 To enable HTTPS directly (without a reverse proxy), set `SWML_SSL_ENABLED` to "true", provide valid paths to your certificate and key files, and specify your domain name.
 
+## Testing
+
+The SDK includes powerful CLI tools for development and testing:
+
+- **`swaig-test`**: Comprehensive local testing and serverless environment simulation
+- **`sw-search`**: Build local search indexes from document directories and search within them
+
+### Local Testing with swaig-test
+
+Test your agents locally without deployment:
+
+```bash
+# Install the SDK
+pip install -e .
+
+# Discover agents in a file
+swaig-test examples/my_agent.py
+
+# List available functions
+swaig-test examples/my_agent.py --list-tools
+
+# Test SWAIG functions with CLI syntax
+swaig-test examples/my_agent.py --exec get_weather --location "New York"
+
+# Generate and inspect SWML documents
+swaig-test examples/my_agent.py --dump-swml
+swaig-test examples/my_agent.py --dump-swml --format-json | jq '.'
+```
+
+### Serverless Environment Simulation
+
+Test your agents in simulated serverless environments without deployment:
+
+```bash
+# Test in AWS Lambda environment
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+
+# Test Lambda function execution with proper response format
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --exec get_weather --location "Miami" --full-request
+
+# Test with custom Lambda configuration
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-function-name my-production-function \
+  --aws-region us-west-2 \
+  --exec my_function --param value
+
+# Test CGI environment
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host my-server.com --cgi-https --dump-swml
+
+# Test Google Cloud Functions
+swaig-test examples/my_agent.py --simulate-serverless cloud_function \
+  --gcp-function-url https://my-function.cloudfunctions.net \
+  --exec my_function
+
+# Test Azure Functions
+swaig-test examples/my_agent.py --simulate-serverless azure_function \
+  --azure-function-url https://my-function.azurewebsites.net \
+  --exec my_function
+```
+
+### Environment Management
+
+Use environment files for consistent testing across platforms:
+
+```bash
+# Create environment file
+cat > production.env << EOF
+AWS_LAMBDA_FUNCTION_NAME=prod-my-agent
+AWS_REGION=us-east-1
+API_KEY=prod_api_key_123
+DEBUG=false
+EOF
+
+# Test with environment file
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file production.env --exec my_function
+
+# Override specific variables
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file production.env --env DEBUG=true --dump-swml
+```
+
+### Cross-Platform Testing
+
+Test the same agent across multiple serverless platforms:
+
+```bash
+# Test across all platforms
+for platform in lambda cgi cloud_function azure_function; do
+  echo "Testing $platform..."
+  swaig-test examples/my_agent.py --simulate-serverless $platform \
+    --exec my_function --param value
+done
+
+# Compare webhook URLs across platforms
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml | grep web_hook_url
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml | grep web_hook_url
+```
+
+### Key Benefits
+
+- **No Deployment Required**: Test serverless behavior locally
+- **Environment Simulation**: Complete platform-specific environment variable setup
+- **URL Generation**: Verify webhook URLs are generated correctly for each platform
+- **Function Execution**: Test with platform-specific request/response formats
+- **Environment Files**: Reusable configurations for different stages
+- **Multi-Platform**: Test Lambda, CGI, Cloud Functions, and Azure Functions
+
+For detailed testing documentation, see the [CLI Testing Guide](docs/cli_testing_guide.md).
+
 ## Documentation
 
 The package includes comprehensive documentation in the `docs/` directory:
@@ -609,6 +786,9 @@ The package includes comprehensive documentation in the `docs/` directory:
 - [Agent Guide](docs/agent_guide.md) - Detailed guide to creating and customizing agents, including dynamic configuration
 - [Architecture](docs/architecture.md) - Overview of the SDK architecture and core concepts
 - [SWML Service Guide](docs/swml_service_guide.md) - Guide to the underlying SWML service
+- [Local Search System](docs/search-system.md) - Complete guide to the local search system with vector similarity and keyword search
+- [Skills System](docs/skills_system.md) - Detailed documentation on the modular skills system
+- [CLI Tools](docs/cli.md) - Command-line interface tools for development and testing
 
 These documents provide in-depth explanations of the features, APIs, and usage patterns.
 

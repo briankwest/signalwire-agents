@@ -204,13 +204,8 @@ def main():
     print("✗ Limited custom logic")
     
     print("\nStarting agent server...")
-    print("Press Ctrl+C to stop")
-    
-    try:
-        agent.serve()
-    except KeyboardInterrupt:
-        print("\n\nShutting down agent...")
-        print("Goodbye! Goodbye!")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
 
 if __name__ == "__main__":
     main() 

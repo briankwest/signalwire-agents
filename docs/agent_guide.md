@@ -94,6 +94,89 @@ class MyAgent(AgentBase):
         self.set_post_prompt("Please summarize the key points of this conversation.")
 ```
 
+## Running Your Agent
+
+The SignalWire AI Agent SDK provides a `run()` method that automatically detects the execution environment and configures the agent appropriately. This method works across all deployment modes:
+
+### Deployment with `run()`
+
+```python
+def main():
+    agent = MyAgent()
+    
+    print("Starting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()  # Auto-detects environment
+
+if __name__ == "__main__":
+    main()
+```
+
+The `run()` method automatically detects and configures for:
+
+- **HTTP Server**: When run directly, starts an HTTP server
+- **CGI**: When CGI environment variables are detected, operates in CGI mode  
+- **AWS Lambda**: When Lambda environment is detected, configures for serverless execution
+
+### Deployment Modes
+
+#### HTTP Server Mode
+When run directly (e.g., `python my_agent.py`), the agent starts an HTTP server:
+
+```python
+# Automatically starts HTTP server when run directly
+agent.run()
+```
+
+#### CGI Mode  
+When CGI environment variables are present, operates in CGI mode with clean HTTP output:
+
+```python
+# Same code - automatically detects CGI environment
+agent.run()
+```
+
+#### AWS Lambda Mode
+When AWS Lambda environment is detected, configures for serverless execution:
+
+```python
+# Same code - automatically detects Lambda environment  
+agent.run()
+```
+
+### Environment Detection
+
+The SDK automatically detects the execution environment:
+
+| Environment | Detection Method | Behavior |
+|-------------|------------------|----------|
+| **HTTP Server** | Default when no serverless environment detected | Starts FastAPI server on specified host/port |
+| **CGI** | `GATEWAY_INTERFACE` environment variable present | Processes single CGI request and exits |
+| **AWS Lambda** | `AWS_LAMBDA_FUNCTION_NAME` environment variable | Handles Lambda event/context |
+| **Google Cloud** | `FUNCTION_NAME` or `K_SERVICE` variables | Processes Cloud Function request |
+| **Azure Functions** | `AZURE_FUNCTIONS_*` variables | Handles Azure Function request |
+
+### Logging Configuration
+
+The SDK includes a central logging system that automatically configures based on the deployment environment:
+
+```python
+# Logging is automatically configured based on environment
+# No manual setup required in most cases
+
+# Optional: Override logging mode via environment variable
+# SIGNALWIRE_LOG_MODE=off      # Disable all logging
+# SIGNALWIRE_LOG_MODE=stderr   # Log to stderr
+# SIGNALWIRE_LOG_MODE=default  # Use default logging
+# SIGNALWIRE_LOG_MODE=auto     # Auto-detect (default)
+```
+
+The logging system automatically:
+- **CGI Mode**: Sets logging to 'off' to avoid interfering with HTTP headers
+- **Lambda Mode**: Configures appropriate logging for serverless environment
+- **Server Mode**: Uses structured logging with timestamps and levels
+- **Debug Mode**: Enhanced logging when debug flags are set
+
 ## Prompt Building
 
 There are several ways to build prompts for your agent:
@@ -635,6 +718,90 @@ agent.add_skill("datasphere", {
 })
 # Creates tool: search_support
 ```
+
+#### Native Vector Search Skill (`native_vector_search`)
+Provides local document search capabilities using vector similarity and keyword search. This skill works entirely offline with local `.swsearch` index files or can connect to remote search servers.
+
+**Requirements:**
+- Packages: `sentence-transformers`, `scikit-learn`, `numpy` (install with `pip install signalwire-agents[search]`)
+
+**Parameters:**
+- `tool_name` (default: "search_knowledge"): Custom name for the search tool
+- `description` (default: "Search the local knowledge base for information"): Tool description
+- `index_file` (optional): Path to local `.swsearch` index file
+- `remote_url` (optional): URL of remote search server (e.g., "http://localhost:8001")
+- `index_name` (default: "default"): Index name on remote server (for remote mode)
+- `build_index` (default: False): Auto-build index if missing
+- `source_dir` (optional): Source directory for auto-building index
+- `file_types` (default: ["md", "txt"]): File types to include when building index
+- `count` (default: 3): Number of search results to return
+- `distance_threshold` (default: 0.0): Minimum similarity score for results
+- `tags` (optional): List of tags to filter search results
+- `response_prefix` (optional): Text to prepend to all search responses
+- `response_postfix` (optional): Text to append to all search responses
+- `no_results_message` (default: "No information found for '{query}'"): Custom message when no results found
+
+**Multiple Instance Support:**
+The native vector search skill supports multiple instances with different indexes and tool names:
+
+**Example:**
+```python
+# Local mode with auto-build
+agent.add_skill("native_vector_search", {
+    "tool_name": "search_docs",
+    "description": "Search SDK concepts guide",
+    "build_index": True,
+    "source_dir": "./docs",
+    "index_file": "concepts.swsearch",
+    "count": 5
+})
+# Creates tool: search_docs
+
+# Remote mode connecting to search server
+agent.add_skill("native_vector_search", {
+    "tool_name": "search_knowledge",
+    "description": "Search the knowledge base",
+    "remote_url": "http://localhost:8001",
+    "index_name": "concepts",
+    "count": 3
+})
+# Creates tool: search_knowledge
+
+# Multiple local indexes
+agent.add_skill("native_vector_search", {
+    "tool_name": "search_examples",
+    "description": "Search code examples",
+    "index_file": "examples.swsearch",
+    "response_prefix": "From the examples:"
+})
+# Creates tool: search_examples
+
+# Voice-optimized responses using concepts guide
+agent.add_skill("native_vector_search", {
+    "tool_name": "search_docs",
+    "index_file": "concepts.swsearch",
+    "response_prefix": "Based on the comprehensive SDK guide:",
+    "response_postfix": "Would you like more specific information?",
+    "no_results_message": "I couldn't find information about '{query}' in the concepts guide."
+})
+```
+
+**Building Search Indexes:**
+Before using local mode, you need to build search indexes:
+
+```bash
+# Build index from documentation
+python -m signalwire_agents.cli.build_search docs --output docs.swsearch
+
+# Build with custom settings
+python -m signalwire_agents.cli.build_search ./knowledge \
+    --output knowledge.swsearch \
+    --file-types md,txt,pdf \
+    --chunk-size 500 \
+    --verbose
+```
+
+For complete documentation on the search system, see [Local Search System](search-system.md).
 
 ### Skill Management
 
@@ -2280,6 +2447,181 @@ The SDK provides several endpoints for different purposes:
 - Debug endpoint (`/debug`): Serves the SWML document with debug headers
 - SIP routing endpoint (configurable, default `/sip`): Handles SIP routing requests
 
+## Testing
+
+The SignalWire AI Agent SDK provides comprehensive testing capabilities through the `swaig-test` CLI tool, which allows you to test agents locally and simulate serverless environments without deployment.
+
+### Local Agent Testing
+
+Test your agents locally before deployment:
+
+```bash
+# Discover agents in a file
+swaig-test examples/my_agent.py
+
+# List available functions
+swaig-test examples/my_agent.py --list-tools
+
+# Test SWAIG functions
+swaig-test examples/my_agent.py --exec get_weather --location "New York"
+
+# Generate SWML documents
+swaig-test examples/my_agent.py --dump-swml
+```
+
+### Serverless Environment Simulation
+
+Test your agents in simulated serverless environments to ensure they work correctly when deployed:
+
+#### AWS Lambda Testing
+
+```bash
+# Basic Lambda environment simulation
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+
+# Test with custom Lambda configuration
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-function-name my-production-function \
+  --aws-region us-west-2 \
+  --exec my_function --param value
+
+# Test function execution in Lambda context
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --exec get_weather --location "Miami" \
+  --full-request
+```
+
+#### CGI Environment Testing
+
+```bash
+# Test CGI environment
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host my-server.com \
+  --cgi-https \
+  --dump-swml
+
+# Test function in CGI context
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host example.com \
+  --exec my_function --param value
+```
+
+#### Google Cloud Functions Testing
+
+```bash
+# Test Cloud Functions environment
+swaig-test examples/my_agent.py --simulate-serverless cloud_function \
+  --gcp-project my-project \
+  --gcp-function-url https://my-function.cloudfunctions.net \
+  --dump-swml
+```
+
+#### Azure Functions Testing
+
+```bash
+# Test Azure Functions environment
+swaig-test examples/my_agent.py --simulate-serverless azure_function \
+  --azure-env production \
+  --azure-function-url https://my-function.azurewebsites.net \
+  --exec my_function
+```
+
+### Environment Variable Management
+
+Use environment files for consistent testing across different platforms:
+
+```bash
+# Create environment file for production testing
+cat > production.env << EOF
+AWS_LAMBDA_FUNCTION_NAME=prod-my-agent
+AWS_REGION=us-east-1
+API_KEY=prod_api_key_123
+DEBUG=false
+TIMEOUT=60
+EOF
+
+# Test with environment file
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file production.env \
+  --exec critical_function --input "test"
+
+# Override specific variables
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file production.env \
+  --env DEBUG=true \
+  --dump-swml
+```
+
+### Cross-Platform Testing
+
+Test the same agent across multiple platforms to ensure compatibility:
+
+```bash
+# Test across all platforms
+for platform in lambda cgi cloud_function azure_function; do
+  echo "Testing $platform..."
+  swaig-test examples/my_agent.py --simulate-serverless $platform \
+    --exec my_function --param value
+done
+
+# Compare SWML generation across platforms
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml > lambda.swml
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml > cgi.swml
+diff lambda.swml cgi.swml
+```
+
+### Webhook URL Verification
+
+The serverless simulation automatically generates platform-appropriate webhook URLs:
+
+| Platform | Example Webhook URL |
+|----------|-------------------|
+| Lambda (Function URL) | `https://abc123.lambda-url.us-east-1.on.aws/swaig/` |
+| Lambda (API Gateway) | `https://api123.execute-api.us-east-1.amazonaws.com/prod/swaig/` |
+| CGI | `https://example.com/cgi-bin/agent.cgi/swaig/` |
+| Cloud Functions | `https://my-function-abc123.cloudfunctions.net/swaig/` |
+| Azure Functions | `https://my-function.azurewebsites.net/swaig/` |
+
+Verify webhook URLs are generated correctly:
+
+```bash
+# Check Lambda webhook URL
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+
+# Check CGI webhook URL
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host my-production-server.com \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+```
+
+### Testing Best Practices
+
+1. **Test locally first**: Always test your agent in local mode before serverless simulation
+2. **Test target platforms**: Test on all platforms where you plan to deploy
+3. **Use environment files**: Create reusable environment configurations for different stages
+4. **Verify webhook URLs**: Ensure URLs are generated correctly for your target platform
+5. **Test function execution**: Verify that functions work correctly in serverless context
+6. **Use verbose mode**: Enable `--verbose` for debugging environment setup and execution
+
+### Multi-Agent Testing
+
+For files with multiple agents, specify which agent to test:
+
+```bash
+# Discover available agents
+swaig-test multi_agent_file.py --list-agents
+
+# Test specific agent
+swaig-test multi_agent_file.py --agent-class MyAgent --simulate-serverless lambda --dump-swml
+
+# Test different agents across platforms
+swaig-test multi_agent_file.py --agent-class AgentA --simulate-serverless lambda --exec function1
+swaig-test multi_agent_file.py --agent-class AgentB --simulate-serverless cgi --cgi-host example.com --exec function2
+```
+
+For more detailed testing documentation, see the [CLI Testing Guide](cli_testing_guide.md).
+
 ## Examples
 
 ### Simple Question-Answering Agent
@@ -2316,6 +2658,15 @@ class SimpleAgent(AgentBase):
         now = datetime.now()
         formatted_time = now.strftime("%H:%M:%S")
         return SwaigFunctionResult(f"The current time is {formatted_time}")
+
+def main():
+    agent = SimpleAgent()
+    print("Starting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+if __name__ == "__main__":
+    main()
 ```
 
 ### Multi-Language Customer Service Agent
@@ -2408,6 +2759,15 @@ class CustomerServiceAgent(AgentBase):
             f"Support ticket {ticket_id} has been created with {priority} priority. " +
             "A support representative will contact you shortly."
         )
+
+def main():
+    agent = CustomerServiceAgent()
+    print("Starting customer service agent...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+if __name__ == "__main__":
+    main()
 ```
 
 ### Dynamic Agent Configuration Examples
@@ -2424,3 +2784,17 @@ For working examples of dynamic agent configuration, see these files in the `exa
 These examples demonstrate the progression from static to dynamic configuration and show real-world use cases like multi-tenant applications, A/B testing, and personalization.
 
 For more examples, see the `examples` directory in the SignalWire AI Agent SDK repository. 
+
+# Build index from the comprehensive concepts guide
+sw-search docs/signalwire_agents_concepts_guide.md --output concepts.swsearch
+
+# Build from multiple sources
+sw-search docs/signalwire_agents_concepts_guide.md examples README.md --output comprehensive.swsearch
+
+# Traditional directory approach with custom settings
+sw-search ./knowledge \
+    --output knowledge.swsearch \
+    --file-types md,txt,pdf \
+    --chunking-strategy sentence \
+    --max-sentences-per-chunk 50 \
+    --verbose

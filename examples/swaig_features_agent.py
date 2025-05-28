@@ -190,13 +190,12 @@ class SwaigFeaturesAgent(AgentBase):
         return SwaigFunctionResult(f"3-day forecast for {location}:\n{forecast_text}")
 
 
-if __name__ == "__main__":
+def main():
     agent = SwaigFeaturesAgent()
-    print("Starting the SWAIG features demo agent. Press Ctrl+C to stop.")
-    print(f"Agent is accessible at: http://localhost:3000/swaig_features")
-    
-    try:
-        agent.serve()
-    except KeyboardInterrupt:
-        print("\nStopping the agent.")
-        agent.stop() 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+
+if __name__ == "__main__":
+    main() 

@@ -200,7 +200,7 @@ def example_using_ai():
     return service
 
 
-if __name__ == "__main__":
+def main():
     #------------------------------------------------------------------------
     # RUN EXAMPLES AND INTERACTIVE SELECTION
     # Create all three services and let the user choose which to run
@@ -224,14 +224,18 @@ if __name__ == "__main__":
     if choice == "1":
         print("Starting simple SWML service on http://localhost:3001/simple")
         print("To test: curl http://localhost:3001/simple")
-        service1.serve()
+        service1.run()
     elif choice == "2":
         print("Starting builder SWML service on http://localhost:3002/builder")
         print("To test: curl http://localhost:3002/builder")
-        service2.serve()
+        service2.run()
     elif choice == "3":
         print("Starting AI SWML service on http://localhost:3003/ai")
         print("To test: curl http://localhost:3003/ai")
-        service3.serve()
+        service3.run()
     else:
-        print("Exiting.") 
+        print("Exiting.")
+
+
+if __name__ == "__main__":
+    main() 

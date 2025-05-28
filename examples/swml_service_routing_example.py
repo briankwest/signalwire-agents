@@ -181,19 +181,15 @@ class RoutingExample(SWMLService):
         return None
 
 
-if __name__ == "__main__":
+def main():
     # Create an instance of our example service
     service = RoutingExample()
     
     # Start the service
-    print("Starting the routing example service. Press Ctrl+C to stop.")
-    print(f"Main endpoint: http://localhost:3000/main")
-    print(f"Customer endpoint: http://localhost:3000/customer")
-    print(f"Product endpoint: http://localhost:3000/product")
-    
-    # Get and print the basic auth credentials
-    username, password, source = service.get_basic_auth_credentials(include_source=True)
-    print(f"Basic Auth: {username}:{password}")
-    
-    # Start the server
-    service.serve() 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    service.run()
+
+
+if __name__ == "__main__":
+    main() 

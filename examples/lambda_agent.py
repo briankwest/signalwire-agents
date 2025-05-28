@@ -124,10 +124,10 @@ def lambda_handler(event, context):
 
 
 # For local testing (optional)
+def main():
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
 if __name__ == "__main__":
-    print("TESTING: Testing Lambda agent locally...")
-    print("NOTE: This runs FastAPI directly, not via Lambda")
-    print()
-    
-    # Run locally for testing (same as agent.serve())
-    agent.serve(host="0.0.0.0", port=8080) 
+    main() 

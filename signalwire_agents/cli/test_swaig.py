@@ -71,8 +71,11 @@ except ImportError:
     AgentBase = None
     SwaigFunctionResult = None
 
-# Early warning suppression for module execution warnings
+# Early setup for raw mode using the central logging system
 if "--raw" in sys.argv:
+    # Use the central logging system's OFF mode for raw output
+    # This eliminates all logging output without complex suppression hacks
+    os.environ["SIGNALWIRE_LOG_MODE"] = "off"
     warnings.filterwarnings("ignore")
 
 # Store original print function before any potential suppression
@@ -198,24 +201,157 @@ def create_mock_request(method: str = "POST", url: str = "http://localhost:8080/
                        body: Optional[Dict[str, Any]] = None) -> MockRequest:
     """
     Factory function to create a mock FastAPI Request object
-    
-    Args:
-        method: HTTP method (default: POST)
-        url: Request URL (default: http://localhost:8080/swml)
-        headers: HTTP headers dict
-        query_params: Query parameters dict
-        body: JSON body dict
-        
-    Returns:
-        MockRequest object compatible with agent callbacks
     """
-    return MockRequest(
-        method=method,
-        url=url,
-        headers=headers,
-        query_params=query_params,
-        json_body=body
-    )
+    return MockRequest(method=method, url=url, headers=headers, 
+                      query_params=query_params, json_body=body)
+
+
+# ===== SERVERLESS ENVIRONMENT SIMULATION =====
+
+class ServerlessSimulator:
+    """Manages serverless environment simulation for different platforms"""
+    
+    # Default environment presets for each platform
+    PLATFORM_PRESETS = {
+        'lambda': {
+            'AWS_LAMBDA_FUNCTION_NAME': 'test-agent-function',
+            'AWS_LAMBDA_FUNCTION_URL': 'https://abc123.lambda-url.us-east-1.on.aws/',
+            'AWS_REGION': 'us-east-1',
+            '_HANDLER': 'lambda_function.lambda_handler'
+        },
+        'cgi': {
+            'GATEWAY_INTERFACE': 'CGI/1.1',
+            'HTTP_HOST': 'example.com',
+            'SCRIPT_NAME': '/cgi-bin/agent.cgi',
+            'HTTPS': 'on',
+            'SERVER_NAME': 'example.com'
+        },
+        'cloud_function': {
+            'GOOGLE_CLOUD_PROJECT': 'test-project',
+            'FUNCTION_URL': 'https://my-function-abc123.cloudfunctions.net',
+            'GOOGLE_CLOUD_REGION': 'us-central1',
+            'K_SERVICE': 'agent'
+        },
+        'azure_function': {
+            'AZURE_FUNCTIONS_ENVIRONMENT': 'Development',
+            'FUNCTIONS_WORKER_RUNTIME': 'python',
+            'WEBSITE_SITE_NAME': 'my-function-app'
+        }
+    }
+    
+    def __init__(self, platform: str, overrides: Optional[Dict[str, str]] = None):
+        self.platform = platform
+        self.original_env = dict(os.environ)
+        self.preset_env = self.PLATFORM_PRESETS.get(platform, {}).copy()
+        self.overrides = overrides or {}
+        self.active = False
+        self._cleared_vars = {}
+    
+    def activate(self, verbose: bool = False):
+        """Apply serverless environment simulation"""
+        if self.active:
+            return
+            
+        # Clear conflicting environment variables
+        self._clear_conflicting_env()
+        
+        # Apply preset environment
+        os.environ.update(self.preset_env)
+        
+        # Apply user overrides
+        os.environ.update(self.overrides)
+        
+        # Set appropriate logging mode for serverless simulation
+        if self.platform == 'cgi' and 'SIGNALWIRE_LOG_MODE' not in self.overrides:
+            # CGI mode should default to 'off' unless explicitly overridden
+            os.environ['SIGNALWIRE_LOG_MODE'] = 'off'
+        
+        self.active = True
+        
+        if verbose:
+            print(f"✓ Activated {self.platform} environment simulation")
+            
+            # Debug: Show key environment variables
+            if self.platform == 'lambda':
+                print(f"  AWS_LAMBDA_FUNCTION_NAME: {os.environ.get('AWS_LAMBDA_FUNCTION_NAME')}")
+                print(f"  AWS_LAMBDA_FUNCTION_URL: {os.environ.get('AWS_LAMBDA_FUNCTION_URL')}")
+                print(f"  AWS_REGION: {os.environ.get('AWS_REGION')}")
+            elif self.platform == 'cgi':
+                print(f"  GATEWAY_INTERFACE: {os.environ.get('GATEWAY_INTERFACE')}")
+                print(f"  HTTP_HOST: {os.environ.get('HTTP_HOST')}")
+                print(f"  SCRIPT_NAME: {os.environ.get('SCRIPT_NAME')}")
+                print(f"  SIGNALWIRE_LOG_MODE: {os.environ.get('SIGNALWIRE_LOG_MODE')}")
+            elif self.platform == 'cloud_function':
+                print(f"  GOOGLE_CLOUD_PROJECT: {os.environ.get('GOOGLE_CLOUD_PROJECT')}")
+                print(f"  FUNCTION_URL: {os.environ.get('FUNCTION_URL')}")
+                print(f"  GOOGLE_CLOUD_REGION: {os.environ.get('GOOGLE_CLOUD_REGION')}")
+            elif self.platform == 'azure_function':
+                print(f"  AZURE_FUNCTIONS_ENVIRONMENT: {os.environ.get('AZURE_FUNCTIONS_ENVIRONMENT')}")
+                print(f"  WEBSITE_SITE_NAME: {os.environ.get('WEBSITE_SITE_NAME')}")
+            
+            # Debug: Confirm SWML_PROXY_URL_BASE is cleared
+            proxy_url = os.environ.get('SWML_PROXY_URL_BASE')
+            if proxy_url:
+                print(f"  WARNING: SWML_PROXY_URL_BASE still set: {proxy_url}")
+            else:
+                print(f"  ✓ SWML_PROXY_URL_BASE cleared successfully")
+    
+    def deactivate(self, verbose: bool = False):
+        """Restore original environment"""
+        if not self.active:
+            return
+            
+        os.environ.clear()
+        os.environ.update(self.original_env)
+        self.active = False
+        
+        if verbose:
+            print(f"✓ Deactivated {self.platform} environment simulation")
+    
+    def _clear_conflicting_env(self):
+        """Clear environment variables that might conflict with simulation"""
+        # Remove variables from other platforms
+        conflicting_vars = []
+        for platform, preset in self.PLATFORM_PRESETS.items():
+            if platform != self.platform:
+                conflicting_vars.extend(preset.keys())
+        
+        # Always clear SWML_PROXY_URL_BASE during serverless simulation
+        # so that platform-specific URL generation takes precedence
+        conflicting_vars.append('SWML_PROXY_URL_BASE')
+        
+        for var in conflicting_vars:
+            if var in os.environ:
+                self._cleared_vars[var] = os.environ[var]
+                os.environ.pop(var)
+    
+    def add_override(self, key: str, value: str):
+        """Add an environment variable override"""
+        self.overrides[key] = value
+        if self.active:
+            os.environ[key] = value
+    
+    def get_current_env(self) -> Dict[str, str]:
+        """Get the current environment that would be applied"""
+        env = self.preset_env.copy()
+        env.update(self.overrides)
+        return env
+
+
+def load_env_file(env_file_path: str) -> Dict[str, str]:
+    """Load environment variables from a file"""
+    env_vars = {}
+    if not os.path.exists(env_file_path):
+        raise FileNotFoundError(f"Environment file not found: {env_file_path}")
+    
+    with open(env_file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                env_vars[key.strip()] = value.strip()
+    
+    return env_vars
 
 
 # ===== FAKE SWML POST DATA GENERATION =====
@@ -663,46 +799,18 @@ def handle_dump_swml(agent: 'AgentBase', args: argparse.Namespace) -> int:
 
 
 def setup_raw_mode_suppression():
-    """Set up comprehensive output suppression for raw mode"""
-    # Suppress all warnings including RuntimeWarnings
+    """Set up output suppression for raw mode using central logging system"""
+    # The central logging system is already configured via environment variable
+    # Just suppress any remaining warnings
     warnings.filterwarnings("ignore")
     
-    # More aggressive logging suppression for raw mode
-    logging.getLogger().setLevel(logging.CRITICAL + 1)  # Suppress everything
-    logging.getLogger().addHandler(logging.NullHandler())
-    
-    # Monkey-patch specific loggers to completely silence them
-    def silent_log(*args, **kwargs):
-        pass
-    
-    # Capture and suppress print statements in raw mode
+    # Capture and suppress print statements in raw mode if needed
     def suppressed_print(*args, **kwargs):
         pass
     
-    # Replace print function globally
+    # Replace print function globally for raw mode
     import builtins
     builtins.print = suppressed_print
-    
-    # Also suppress specific loggers
-    loggers_to_suppress = [
-        "skill_registry",
-        "simple_agent", 
-        "swml_service",
-        "agent_base",
-        "signalwire_agents"
-    ]
-    
-    for logger_name in loggers_to_suppress:
-        # Suppress standard Python logger
-        logger = logging.getLogger(logger_name)
-        logger.setLevel(logging.CRITICAL + 1)
-        logger.addHandler(logging.NullHandler())
-        # Monkey-patch all logging methods
-        logger.debug = silent_log
-        logger.info = silent_log
-        logger.warning = silent_log
-        logger.error = silent_log
-        logger.critical = silent_log
 
 
 def generate_comprehensive_post_data(function_name: str, args: Dict[str, Any], 
@@ -1678,8 +1786,23 @@ Examples:
   %(prog)s examples/dynamic_agent.py --dump-swml --query-params '{"source":"api","debug":"true"}'
   %(prog)s examples/dynamic_agent.py --dump-swml --method GET --body '{"custom":"data"}'
   
+  # Serverless environment simulation
+  %(prog)s examples/my_agent.py --simulate-serverless lambda --dump-swml
+  %(prog)s examples/my_agent.py --simulate-serverless lambda --exec my_function --param value
+  %(prog)s examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml
+  %(prog)s examples/my_agent.py --simulate-serverless cloud_function --gcp-project my-project --exec my_function
+  
+  # Serverless with environment variables
+  %(prog)s examples/my_agent.py --simulate-serverless lambda --env API_KEY=secret --env DEBUG=1 --exec my_function
+  %(prog)s examples/my_agent.py --simulate-serverless lambda --env-file production.env --exec my_function
+  
+  # Platform-specific serverless configuration
+  %(prog)s examples/my_agent.py --simulate-serverless lambda --aws-function-name prod-function --aws-region us-west-2 --dump-swml
+  %(prog)s examples/my_agent.py --simulate-serverless cgi --cgi-host production.com --cgi-https --exec my_function
+  
   # Combined testing scenarios
   %(prog)s examples/agent.py --dump-swml --call-type sip --user-vars '{"vip":"true"}' --header "X-Source=test" --verbose
+  %(prog)s examples/agent.py --simulate-serverless lambda --dump-swml --call-type sip --verbose
   
   # Discovery commands
   %(prog)s examples/my_agent.py --list-agents
@@ -1857,6 +1980,112 @@ Examples:
         help="JSON string for mock request body"
     )
     
+    # ===== SERVERLESS SIMULATION ARGUMENTS =====
+    
+    parser.add_argument(
+        "--simulate-serverless",
+        choices=["lambda", "cgi", "cloud_function", "azure_function"],
+        help="Simulate serverless platform environment (lambda, cgi, cloud_function, azure_function)"
+    )
+    
+    parser.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        help="Set environment variable (e.g., --env API_KEY=secret123)"
+    )
+    
+    parser.add_argument(
+        "--env-file",
+        help="Load environment variables from file"
+    )
+    
+    # AWS Lambda specific options
+    parser.add_argument(
+        "--aws-function-name",
+        help="AWS Lambda function name (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--aws-function-url",
+        help="AWS Lambda function URL (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--aws-region",
+        help="AWS region (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--aws-api-gateway-id",
+        help="AWS API Gateway ID for API Gateway URLs"
+    )
+    
+    parser.add_argument(
+        "--aws-stage",
+        help="AWS API Gateway stage (default: prod)"
+    )
+    
+    # CGI specific options
+    parser.add_argument(
+        "--cgi-host",
+        help="CGI server hostname (required for CGI simulation)"
+    )
+    
+    parser.add_argument(
+        "--cgi-script-name",
+        help="CGI script name/path (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--cgi-https",
+        action="store_true",
+        help="Use HTTPS for CGI URLs"
+    )
+    
+    parser.add_argument(
+        "--cgi-path-info",
+        help="CGI PATH_INFO value"
+    )
+    
+    # Google Cloud Functions specific options
+    parser.add_argument(
+        "--gcp-project",
+        help="Google Cloud project ID (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--gcp-function-url",
+        help="Google Cloud Function URL (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--gcp-region",
+        help="Google Cloud region (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--gcp-service",
+        help="Google Cloud service name (overrides default)"
+    )
+    
+    # Azure Functions specific options
+    parser.add_argument(
+        "--azure-env",
+        help="Azure Functions environment (overrides default)"
+    )
+    
+    parser.add_argument(
+        "--azure-function-url",
+        help="Azure Function URL (overrides default)"
+    )
+    
+    # Legacy compatibility
+    parser.add_argument(
+        "--serverless-mode",
+        help="Legacy option for serverless mode (use --simulate-serverless instead)"
+    )
+    
     args = parser.parse_args()
     
     # Restore original sys.argv
@@ -1882,6 +2111,90 @@ Examples:
                     pass
                 else:
                     parser.error("Positional tool_name requires args_json parameter. Use --exec for CLI-style arguments.")
+    
+    # ===== SERVERLESS SIMULATION SETUP =====
+    serverless_simulator = None
+    
+    # Handle legacy --serverless-mode option
+    if args.serverless_mode and not args.simulate_serverless:
+        args.simulate_serverless = args.serverless_mode
+        if not args.raw:
+            print("Warning: --serverless-mode is deprecated, use --simulate-serverless instead")
+    
+    if args.simulate_serverless:
+        # Validate CGI requirements
+        if args.simulate_serverless == 'cgi' and not args.cgi_host:
+            parser.error("CGI simulation requires --cgi-host")
+        
+        # Collect environment variable overrides
+        env_overrides = {}
+        
+        # Load from environment file first
+        if args.env_file:
+            try:
+                file_env = load_env_file(args.env_file)
+                env_overrides.update(file_env)
+                if args.verbose and not args.raw:
+                    print(f"Loaded {len(file_env)} environment variables from {args.env_file}")
+            except FileNotFoundError as e:
+                print(f"Error: {e}")
+                return 1
+        
+        # Parse --env arguments
+        for env_arg in args.env:
+            if '=' not in env_arg:
+                print(f"Error: Invalid environment variable format: {env_arg}")
+                print("Expected format: --env KEY=value")
+                return 1
+            key, value = env_arg.split('=', 1)
+            env_overrides[key] = value
+        
+        # Add platform-specific overrides
+        if args.simulate_serverless == 'lambda':
+            if args.aws_function_name:
+                env_overrides['AWS_LAMBDA_FUNCTION_NAME'] = args.aws_function_name
+            if args.aws_function_url:
+                env_overrides['AWS_LAMBDA_FUNCTION_URL'] = args.aws_function_url
+            if args.aws_region:
+                env_overrides['AWS_REGION'] = args.aws_region
+            if args.aws_api_gateway_id:
+                env_overrides['AWS_API_GATEWAY_ID'] = args.aws_api_gateway_id
+            if args.aws_stage:
+                env_overrides['AWS_API_GATEWAY_STAGE'] = args.aws_stage
+        
+        elif args.simulate_serverless == 'cgi':
+            if args.cgi_host:
+                env_overrides['HTTP_HOST'] = args.cgi_host
+            if args.cgi_script_name:
+                env_overrides['SCRIPT_NAME'] = args.cgi_script_name
+            if args.cgi_https:
+                env_overrides['HTTPS'] = 'on'
+            if args.cgi_path_info:
+                env_overrides['PATH_INFO'] = args.cgi_path_info
+        
+        elif args.simulate_serverless == 'cloud_function':
+            if args.gcp_project:
+                env_overrides['GOOGLE_CLOUD_PROJECT'] = args.gcp_project
+            if args.gcp_function_url:
+                env_overrides['FUNCTION_URL'] = args.gcp_function_url
+            if args.gcp_region:
+                env_overrides['GOOGLE_CLOUD_REGION'] = args.gcp_region
+            if args.gcp_service:
+                env_overrides['K_SERVICE'] = args.gcp_service
+        
+        elif args.simulate_serverless == 'azure_function':
+            if args.azure_env:
+                env_overrides['AZURE_FUNCTIONS_ENVIRONMENT'] = args.azure_env
+            if args.azure_function_url:
+                env_overrides['AZURE_FUNCTION_URL'] = args.azure_function_url
+        
+        # Create and activate serverless simulator
+        serverless_simulator = ServerlessSimulator(args.simulate_serverless, env_overrides)
+        try:
+            serverless_simulator.activate(args.verbose and not args.raw)
+        except Exception as e:
+            print(f"Error setting up serverless simulation: {e}")
+            return 1
     
     try:
         # Handle agent listing first (doesn't require loading a specific agent)
@@ -2196,6 +2509,10 @@ Examples:
             import traceback
             traceback.print_exc()
         return 1
+    finally:
+        # Clean up serverless simulation
+        if serverless_simulator:
+            serverless_simulator.deactivate(args.verbose and not args.raw)
     
     return 0
 

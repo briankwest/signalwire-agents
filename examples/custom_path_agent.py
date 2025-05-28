@@ -95,19 +95,7 @@ class ChatAgent(AgentBase):
 
 
 if __name__ == "__main__":
-    # Create the agent with custom path
+    # Create and start the agent
     agent = ChatAgent("/chat")
-    
-    print("Starting Chat Agent")
-    print(f"\nAgent available at: http://localhost:3000/chat")
-    print("\nTry these example requests:")
-    print("curl 'http://localhost:3000/chat'")
-    print("curl 'http://localhost:3000/chat?user_name=Alice&topic=AI&mood=professional'")
-    print("curl 'http://localhost:3000/chat?user_name=Bob&topic=cooking&mood=casual'")
-    print("curl 'http://localhost:3000/chat/debug?user_name=Developer&topic=testing'")
-    print()
-    
-    # You could also pass a different path at runtime:
-    # agent = ChatAgent("/assistant")  # Would be available at /assistant instead
-    
-    agent.serve() 
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run() 

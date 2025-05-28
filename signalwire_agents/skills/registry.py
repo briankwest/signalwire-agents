@@ -15,28 +15,15 @@ import sys
 from typing import Dict, List, Type, Optional
 from pathlib import Path
 
-try:
-    import structlog
-    logger_available = True
-except ImportError:
-    import logging
-    logger_available = False
-
 from signalwire_agents.core.skill_base import SkillBase
+from signalwire_agents.core.logging_config import get_logger
 
 class SkillRegistry:
     """Global registry for discovering and managing skills"""
     
     def __init__(self):
         self._skills: Dict[str, Type[SkillBase]] = {}
-        
-        # Use structlog if available, fallback to logging
-        if logger_available:
-            self.logger = structlog.get_logger("skill_registry")
-        else:
-            import logging
-            self.logger = logging.getLogger("skill_registry")
-            
+        self.logger = get_logger("skill_registry")
         self._discovered = False
     
     def discover_skills(self) -> None:

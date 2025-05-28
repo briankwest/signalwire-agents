@@ -11,7 +11,6 @@ See LICENSE file in the project root for full license information.
 AgentServer - Class for hosting multiple SignalWire AI Agents in a single server
 """
 
-import logging
 import re
 from typing import Dict, Any, Optional, List, Tuple, Callable
 
@@ -25,6 +24,7 @@ except ImportError:
 
 from signalwire_agents.core.agent_base import AgentBase
 from signalwire_agents.core.swml_service import SWMLService
+from signalwire_agents.core.logging_config import get_logger, get_execution_mode
 
 
 class AgentServer:
@@ -48,19 +48,13 @@ class AgentServer:
         Args:
             host: Host to bind the server to
             port: Port to bind the server to
-            log_level: Logging level (debug, info, warning, error)
+            log_level: Logging level (debug, info, warning, error, critical)
         """
         self.host = host
         self.port = port
         self.log_level = log_level.lower()
         
-        # Set up logging
-        numeric_level = getattr(logging, self.log_level.upper(), logging.INFO)
-        logging.basicConfig(
-            level=numeric_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        self.logger = logging.getLogger("AgentServer")
+        self.logger = get_logger("AgentServer")
         
         # Create FastAPI app
         self.app = FastAPI(
@@ -304,14 +298,229 @@ class AgentServer:
         
         return self.agents.get(route)
     
-    def run(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
+    def run(self, event=None, context=None, host: Optional[str] = None, port: Optional[int] = None) -> Any:
         """
-        Start the server
+        Universal run method that automatically detects environment and handles accordingly
+        
+        Detects execution mode and routes appropriately:
+        - Server mode: Starts uvicorn server with FastAPI
+        - CGI mode: Uses same routing logic but outputs CGI headers  
+        - Lambda mode: Uses same routing logic but returns Lambda response
         
         Args:
-            host: Optional host to override the default
-            port: Optional port to override the default
+            event: Serverless event object (Lambda, Cloud Functions)
+            context: Serverless context object (Lambda, Cloud Functions)  
+            host: Optional host to override the default (server mode only)
+            port: Optional port to override the default (server mode only)
+            
+        Returns:
+            Response for serverless modes, None for server mode
         """
+        from signalwire_agents.core.logging_config import get_execution_mode
+        import os
+        import json
+        
+        # Detect execution mode
+        mode = get_execution_mode()
+        
+        if mode == 'cgi':
+            return self._handle_cgi_request()
+        elif mode == 'lambda':
+            return self._handle_lambda_request(event, context)
+        else:
+            # Server mode - use existing logic
+            return self._run_server(host, port)
+    
+    def _handle_cgi_request(self) -> str:
+        """Handle CGI request using same routing logic as server"""
+        import os
+        import sys
+        import json
+        
+        # Get PATH_INFO to determine routing
+        path_info = os.getenv('PATH_INFO', '').strip('/')
+        
+        # Use same routing logic as the server
+        if not path_info:
+            # Root request - return basic info or 404
+            response = {"error": "No agent specified in path"}
+            return self._format_cgi_response(response, status="404 Not Found")
+        
+        # Find matching agent using same logic as server
+        for route, agent in self.agents.items():
+            route_clean = route.lstrip("/")
+            
+            if path_info == route_clean:
+                # Request to agent root - return SWML
+                try:
+                    swml = agent._render_swml()
+                    return self._format_cgi_response(swml, content_type="application/json")
+                except Exception as e:
+                    error_response = {"error": f"Failed to generate SWML: {str(e)}"}
+                    return self._format_cgi_response(error_response, status="500 Internal Server Error")
+                    
+            elif path_info.startswith(route_clean + "/"):
+                # Request to agent sub-path
+                relative_path = path_info[len(route_clean):].lstrip("/")
+                
+                if relative_path == "swaig":
+                    # SWAIG function call - parse stdin for POST data
+                    try:
+                        # Read POST data from stdin
+                        content_length = os.getenv('CONTENT_LENGTH')
+                        if content_length:
+                            raw_data = sys.stdin.buffer.read(int(content_length))
+                            try:
+                                post_data = json.loads(raw_data.decode('utf-8'))
+                            except:
+                                post_data = {}
+                        else:
+                            post_data = {}
+                        
+                        # Execute SWAIG function
+                        result = agent._execute_swaig_function("", post_data, None, None)
+                        return self._format_cgi_response(result, content_type="application/json")
+                        
+                    except Exception as e:
+                        error_response = {"error": f"SWAIG function failed: {str(e)}"}
+                        return self._format_cgi_response(error_response, status="500 Internal Server Error")
+                
+                elif relative_path.startswith("swaig/"):
+                    # Direct function call like /matti/swaig/function_name
+                    function_name = relative_path[6:]  # Remove "swaig/"
+                    try:
+                        # Read POST data from stdin  
+                        content_length = os.getenv('CONTENT_LENGTH')
+                        if content_length:
+                            raw_data = sys.stdin.buffer.read(int(content_length))
+                            try:
+                                post_data = json.loads(raw_data.decode('utf-8'))
+                            except:
+                                post_data = {}
+                        else:
+                            post_data = {}
+                            
+                        result = agent._execute_swaig_function(function_name, post_data, None, None)
+                        return self._format_cgi_response(result, content_type="application/json")
+                        
+                    except Exception as e:
+                        error_response = {"error": f"Function call failed: {str(e)}"}
+                        return self._format_cgi_response(error_response, status="500 Internal Server Error")
+        
+        # No matching agent found
+        error_response = {"error": "Not Found"}
+        return self._format_cgi_response(error_response, status="404 Not Found")
+    
+    def _handle_lambda_request(self, event, context) -> dict:
+        """Handle Lambda request using same routing logic as server"""
+        import json
+        
+        # Extract path from Lambda event
+        path = ""
+        if event and 'pathParameters' in event and event['pathParameters']:
+            path = event['pathParameters'].get('proxy', '')
+        elif event and 'path' in event:
+            path = event['path']
+        
+        path = path.strip('/')
+        
+        # Use same routing logic as server
+        if not path:
+            return {
+                "statusCode": 404,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": "No agent specified in path"})
+            }
+        
+        # Find matching agent
+        for route, agent in self.agents.items():
+            route_clean = route.lstrip("/")
+            
+            if path == route_clean:
+                # Request to agent root - return SWML
+                try:
+                    swml = agent._render_swml()
+                    return {
+                        "statusCode": 200,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps(swml) if isinstance(swml, dict) else swml
+                    }
+                except Exception as e:
+                    return {
+                        "statusCode": 500,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": json.dumps({"error": f"Failed to generate SWML: {str(e)}"})
+                    }
+                    
+            elif path.startswith(route_clean + "/"):
+                # Request to agent sub-path
+                relative_path = path[len(route_clean):].lstrip("/")
+                
+                if relative_path == "swaig" or relative_path.startswith("swaig/"):
+                    # SWAIG function call
+                    try:
+                        # Parse function name and body from event
+                        function_name = relative_path[6:] if relative_path.startswith("swaig/") else ""
+                        
+                        # Get POST data from Lambda event body
+                        post_data = {}
+                        if event and 'body' in event and event['body']:
+                            try:
+                                post_data = json.loads(event['body'])
+                            except:
+                                pass
+                        
+                        result = agent._execute_swaig_function(function_name, post_data, None, None)
+                        return {
+                            "statusCode": 200,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps(result) if isinstance(result, dict) else result
+                        }
+                        
+                    except Exception as e:
+                        return {
+                            "statusCode": 500,
+                            "headers": {"Content-Type": "application/json"},
+                            "body": json.dumps({"error": f"Function call failed: {str(e)}"})
+                        }
+        
+        # No matching agent found
+        return {
+            "statusCode": 404,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"error": "Not Found"})
+        }
+    
+    def _format_cgi_response(self, data, content_type: str = "application/json", status: str = "200 OK") -> str:
+        """Format response for CGI output"""
+        import json
+        import sys
+        
+        # Format the body
+        if isinstance(data, dict):
+            body = json.dumps(data)
+        else:
+            body = str(data)
+        
+        # Build CGI response with headers
+        response_lines = [
+            f"Status: {status}",
+            f"Content-Type: {content_type}",
+            f"Content-Length: {len(body.encode('utf-8'))}",
+            "",  # Empty line separates headers from body
+            body
+        ]
+        
+        response = "\n".join(response_lines)
+        
+        # Write directly to stdout and flush to ensure immediate output
+        sys.stdout.write(response)
+        sys.stdout.flush()
+        
+        return response
+    
+    def _run_server(self, host: Optional[str] = None, port: Optional[int] = None) -> None:
+        """Original server mode logic"""
         if not self.agents:
             self.logger.warning("Starting server with no registered agents")
             

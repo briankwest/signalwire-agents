@@ -34,8 +34,7 @@ class KubernetesReadyAgent(AgentBase):
             name="k8s-agent",
             route="/",  # Root route for simplicity
             host="0.0.0.0",  # Bind to all interfaces
-            port=port,
-            suppress_logs=False  # Keep structured logging
+            port=port
         )
         
         # Setup graceful shutdown for Kubernetes
@@ -97,9 +96,10 @@ if __name__ == "__main__":
     print(f"HEALTH: Health check: http://localhost:{agent.port}/health")
     print(f"STATUS: Readiness check: http://localhost:{agent.port}/ready")
     print(f"LOG: Log level: {log_level}")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
     
     try:
-        agent.serve()
+        agent.run()
     except KeyboardInterrupt:
         agent.log.info("agent_shutdown_requested")
         print("\nSTOPPED: Agent shutdown complete") 

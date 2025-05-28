@@ -268,10 +268,10 @@ class HealthcareAgent(AgentBase):
         # Configure voice based on urgency
         if urgency == 'high':
             agent.add_language("English", "en-US", "rime.spore")  # Clear, professional voice
-            agent.set_params({"end_of_speech_timeout": 300})  # Faster response
+            agent.set_params({"ai_model": "gpt-4.1-nano", "end_of_speech_timeout": 300})  # Faster response
         else:
             agent.add_language("English", "en-US", "rime.spore")  # Professional voice
-            agent.set_params({"end_of_speech_timeout": 500})  # Normal response
+            agent.set_params({"ai_model": "gpt-4.1-nano", "end_of_speech_timeout": 500})  # Normal response
         
         # Department-specific configuration
         if department == 'emergency':
@@ -334,18 +334,21 @@ class FinanceAgent(AgentBase):
         if account_type == 'premium':
             agent.add_language("English", "en-US", "rime.flower")
             agent.set_params({
+                "ai_model": "gpt-4.1-nano",
                 "end_of_speech_timeout": 600,
                 "attention_timeout": 20000
             })
         elif account_type == 'wealth':
             agent.add_language("English", "en-US", "rime.spore")
             agent.set_params({
+                "ai_model": "gpt-4.1-nano",
                 "end_of_speech_timeout": 800,
                 "attention_timeout": 25000
             })
         else:
             agent.add_language("English", "en-US", "rime.cove")
             agent.set_params({
+                "ai_model": "gpt-4.1-nano",
                 "end_of_speech_timeout": 400,
                 "attention_timeout": 15000
             })
@@ -420,10 +423,10 @@ class RetailAgent(AgentBase):
         # Voice based on customer tier
         if customer_tier == 'vip':
             agent.add_language("English", "en-US", "rime.spore")
-            agent.set_params({"end_of_speech_timeout": 600})
+            agent.set_params({"ai_model": "gpt-4.1-nano", "end_of_speech_timeout": 600})
         else:
             agent.add_language("English", "en-US", "rime.marsh")
-            agent.set_params({"end_of_speech_timeout": 400})
+            agent.set_params({"ai_model": "gpt-4.1-nano", "end_of_speech_timeout": 400})
         
         # Department-specific knowledge
         if department == 'electronics':

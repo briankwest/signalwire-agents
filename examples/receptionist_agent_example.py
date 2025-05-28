@@ -132,8 +132,9 @@ def main():
     print("----------------------------------------")
     print("Press Ctrl+C to stop the agent")
     
-    # Start the agent server
-    agent.serve()
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
 
 if __name__ == "__main__":
     main() 

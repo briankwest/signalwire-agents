@@ -7,5 +7,17 @@ Licensed under the MIT License.
 See LICENSE file in the project root for full license information.
 """
 
-from .serverless import get_execution_mode, is_serverless_mode
+from .schema_utils import SchemaUtils
+from signalwire_agents.core.logging_config import get_execution_mode
+
+def is_serverless_mode() -> bool:
+    """
+    Check if running in any serverless environment.
+    
+    Returns:
+        bool: True if in serverless mode, False if in server mode
+    """
+    return get_execution_mode() != 'server'
+
+__all__ = ["SchemaUtils", "get_execution_mode", "is_serverless_mode"]
 

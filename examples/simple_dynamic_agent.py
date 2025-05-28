@@ -66,6 +66,7 @@ class SimpleDynamicAgent(AgentBase):
         
         # AI parameters (same as static version)
         agent.set_params({
+            "ai_model": "gpt-4.1-nano",
             "end_of_speech_timeout": 500,
             "attention_timeout": 15000,
             "background_file_volume": -20
@@ -136,21 +137,10 @@ class SimpleDynamicAgent(AgentBase):
 
 
 if __name__ == "__main__":
+    # Create and start the agent
+    print("Starting Simple Dynamic Agent - configuration changes based on requests")
+    print("Available at: http://localhost:3000/")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    
     agent = SimpleDynamicAgent()
-    
-    print("Starting Simple Dynamic Agent")
-    print("\nConfiguration: DYNAMIC (configured fresh for each request)")
-    print("- Voice: rime.spore (professional)")
-    print("- Service Level: standard")
-    print("- Speech Timeout: 500ms") 
-    print("- Features: basic conversation, help desk")
-    print("\nAgent available at: http://localhost:3000/")
-    print("\nTry these requests:")
-    print("curl 'http://localhost:3000'")
-    print("curl 'http://localhost:3000/debug'")
-    print("\nNote: Configuration happens fresh each request!")
-    print("LEARNING: Compare SWML output with simple_static_agent.py - it's identical!")
-    print("POWER: Easy to extend with query parameter customization")
-    print()
-    
-    agent.serve() 
+    agent.run() 

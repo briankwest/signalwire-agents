@@ -14,6 +14,10 @@ SignalWire AI Agents SDK
 A package for building AI agents using SignalWire's AI and SWML capabilities.
 """
 
+# Configure logging before any other imports to ensure early initialization
+from .core.logging_config import configure_logging
+configure_logging()
+
 __version__ = "0.1.9"
 
 # Import core classes for easier access

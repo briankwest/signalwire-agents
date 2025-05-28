@@ -76,12 +76,14 @@ class SimpleDynamicEnhanced(AgentBase):
         # === AI PARAMETERS (VIP gets faster response) ===
         if is_vip:
             agent.set_params({
+                "ai_model": "gpt-4.1-nano",
                 "end_of_speech_timeout": 300,  # Faster for VIP
                 "attention_timeout": 20000,     # Longer attention for VIP
                 "background_file_volume": -30   # Better audio quality
             })
         else:
             agent.set_params({
+                "ai_model": "gpt-4.1-nano",
                 "end_of_speech_timeout": 500,  # Standard timing
                 "attention_timeout": 15000,     # Standard attention span
                 "background_file_volume": -20   # Standard audio
@@ -242,7 +244,7 @@ class SimpleDynamicEnhanced(AgentBase):
         agent.prompt_add_section("Available Services", f"You can help customers with:", bullets=services)
 
 
-if __name__ == "__main__":
+def main():
     agent = SimpleDynamicEnhanced()
     
     print("Starting Enhanced Dynamic Agent")
@@ -262,4 +264,10 @@ if __name__ == "__main__":
     print("\nCOMPARE: Compare the SWML output - each request creates different configuration!")
     print()
     
-    agent.serve() 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+
+if __name__ == "__main__":
+    main() 

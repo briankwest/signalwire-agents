@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger("concierge_example")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Run the ConciergeAgent Example")
     parser.add_argument("--port", type=int, default=3000, help="Port to run the server on")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host to bind the server to")
@@ -151,13 +151,10 @@ if __name__ == "__main__":
     logger.info(f"Services available: {', '.join(services)}")
     logger.info(f"Amenities available: {', '.join(amenities.keys())}")
     
-    print("\nStarting the Concierge Agent. Press Ctrl+C to stop.")
-    print(f"Agent is available at: http://{args.host}:{args.port}/concierge")
-    print(f"Basic Auth: {username}:{password}")
-    
-    try:
-        # Start the agent's server
-        agent.serve()
-    except KeyboardInterrupt:
-        logger.info("Server shutdown")
-        print("\nStopping the agent.") 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+
+if __name__ == "__main__":
+    main() 

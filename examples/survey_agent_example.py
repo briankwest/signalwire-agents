@@ -142,6 +142,7 @@ class ProductSurveyAgent(SurveyAgent):
         
         # Override some parameters for better user experience
         self.set_params({
+            "ai_model": "gpt-4.1-nano",
             "end_of_speech_timeout": 2000,  # Longer timeout for more thoughtful responses
             "ai_volume": 6,  # Slightly louder than default
             "wait_for_user": True  # Wait for user to speak first

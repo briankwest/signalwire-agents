@@ -927,7 +927,7 @@ class SessionAwareAgent(AgentBase):
 ```python
 # This is ALL you need for a production-ready AI agent
 agent = MyAgent()
-agent.serve()  # Handles routing, webhooks, sessions, security
+agent.run()  # Auto-detects environment (server/CGI/Lambda)
 ```
 
 #### 2. **Composable by Design**
@@ -1297,7 +1297,7 @@ class OrderServiceAgent(AgentBase):
            return "You are a friendly AI assistant"
    
    agent = HelloWorldAgent()
-   agent.serve()
+   agent.run()
    ```
 
 3. **Deploy and Test**:

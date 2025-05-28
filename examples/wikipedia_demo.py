@@ -77,7 +77,8 @@ def main():
     print("   - Tool name: search_wiki")
     
     print("\nStarting Wikipedia Assistant...")
-    agent.serve()
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
 
 if __name__ == "__main__":
     main() 

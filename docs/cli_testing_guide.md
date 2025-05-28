@@ -28,6 +28,7 @@ The tool automatically detects function types, provides appropriate execution en
 - **Mock Request Objects**: Complete FastAPI Request simulation for dynamic agents
 - **Verbose Debugging**: Detailed execution tracing for both function types
 - **Flexible Data Modes**: Choose between minimal, comprehensive, or custom post_data
+- **Serverless Environment Simulation**: Complete platform simulation for Lambda, CGI, Cloud Functions, and Azure Functions with environment variable management
 
 ## Installation
 
@@ -120,6 +121,410 @@ swaig-test examples/my_agent.py --dump-swml --verbose
 
 # Custom call types and scenarios
 swaig-test examples/my_agent.py --dump-swml --call-type sip --call-direction outbound
+
+# Test SWML in serverless environments
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml
+```
+
+## Serverless Environment Simulation
+
+The CLI tool provides comprehensive serverless platform simulation, allowing you to test your agents in Lambda, CGI, Cloud Functions, and Azure Functions environments locally without deployment.
+
+### Quick Start with Serverless Simulation
+
+```bash
+# Test agent in Lambda environment
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+
+# Test function execution in Lambda context
+swaig-test examples/my_agent.py --simulate-serverless lambda --exec my_function --param value
+
+# Test with custom Lambda configuration
+swaig-test examples/my_agent.py --simulate-serverless lambda --aws-function-name my-func --aws-region us-west-2 --exec my_function
+
+# Test CGI environment with custom host
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml
+
+# Test with environment variables
+swaig-test examples/my_agent.py --simulate-serverless lambda --env DEBUG=1 --env TEST_MODE=cli --exec my_function
+```
+
+### Supported Serverless Platforms
+
+| Platform | Simulation Flag | Key Features |
+|----------|-----------------|--------------|
+| **AWS Lambda** | `--simulate-serverless lambda` | Function URLs, API Gateway, environment detection |
+| **CGI** | `--simulate-serverless cgi` | HTTP host, script paths, HTTPS simulation |
+| **Google Cloud Functions** | `--simulate-serverless cloud_function` | Function URLs, project configuration |
+| **Azure Functions** | `--simulate-serverless azure_function` | Function URLs, environment settings |
+
+### Platform-Specific Configuration
+
+#### AWS Lambda Simulation
+
+```bash
+# Default Lambda simulation with auto-generated URLs
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+
+# Custom Lambda function configuration
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-function-name my-custom-function \
+  --aws-function-url https://abc123.lambda-url.us-west-2.on.aws/ \
+  --aws-region us-west-2 \
+  --dump-swml
+
+# API Gateway configuration
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-api-gateway-id abc123def \
+  --aws-region us-east-1 \
+  --aws-stage prod \
+  --exec my_function --param value
+
+# Test function execution in Lambda context
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --exec get_weather --location "San Francisco" \
+  --full-request
+```
+
+**Lambda Environment Variables Set:**
+- `AWS_LAMBDA_FUNCTION_NAME`
+- `AWS_LAMBDA_FUNCTION_URL` (if using Function URLs)
+- `AWS_API_GATEWAY_ID` (if using API Gateway)
+- `AWS_REGION`
+- `_HANDLER`
+
+#### CGI Simulation
+
+```bash
+# Basic CGI simulation
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml
+
+# Custom CGI configuration
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host my-server.com \
+  --cgi-script-name /cgi-bin/my-agent.cgi \
+  --cgi-https \
+  --cgi-path-info /custom/path \
+  --exec my_function --param value
+
+# Test CGI with specific environment
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host production.example.com \
+  --cgi-https \
+  --env REMOTE_USER=admin \
+  --dump-swml
+```
+
+**CGI Environment Variables Set:**
+- `GATEWAY_INTERFACE=CGI/1.1`
+- `HTTP_HOST` (from --cgi-host)
+- `SCRIPT_NAME` (from --cgi-script-name)
+- `HTTPS=on` (if --cgi-https)
+- `PATH_INFO` (from --cgi-path-info)
+
+#### Google Cloud Functions Simulation
+
+```bash
+# Basic Cloud Function simulation
+swaig-test examples/my_agent.py --simulate-serverless cloud_function --dump-swml
+
+# Custom GCP configuration
+swaig-test examples/my_agent.py --simulate-serverless cloud_function \
+  --gcp-project my-project \
+  --gcp-function-url https://my-function-abc123.cloudfunctions.net \
+  --gcp-region us-central1 \
+  --gcp-service my-service \
+  --exec my_function --param value
+```
+
+**Cloud Function Environment Variables Set:**
+- `GOOGLE_CLOUD_PROJECT`
+- `FUNCTION_URL` (if provided)
+- `GOOGLE_CLOUD_REGION`
+- `K_SERVICE` (Knative service name)
+
+#### Azure Functions Simulation
+
+```bash
+# Basic Azure Functions simulation
+swaig-test examples/my_agent.py --simulate-serverless azure_function --dump-swml
+
+# Custom Azure configuration
+swaig-test examples/my_agent.py --simulate-serverless azure_function \
+  --azure-env production \
+  --azure-function-url https://my-function.azurewebsites.net \
+  --exec my_function --param value
+```
+
+**Azure Functions Environment Variables Set:**
+- `AZURE_FUNCTIONS_ENVIRONMENT`
+- `WEBSITE_SITE_NAME`
+- Custom function URL (if provided)
+
+### Environment Variable Management
+
+#### Manual Environment Variables
+
+```bash
+# Set custom environment variables
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env API_KEY=secret123 \
+  --env DEBUG=true \
+  --env TIMEOUT=30 \
+  --exec my_function
+
+# Multiple environment variables
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --env DB_HOST=localhost \
+  --env DB_PORT=5432 \
+  --env LOG_LEVEL=info \
+  --cgi-host example.com \
+  --dump-swml
+```
+
+#### Environment Files
+
+Create environment files for reusable configurations:
+
+```bash
+# Create environment file
+cat > lambda.env << EOF
+AWS_LAMBDA_FUNCTION_NAME=my-production-function
+AWS_REGION=us-west-2
+API_KEY=prod_key_123
+DEBUG=false
+TIMEOUT=60
+EOF
+
+# Use environment file
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file lambda.env \
+  --exec my_function --param value
+
+# Override specific variables from file
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file lambda.env \
+  --env DEBUG=true \
+  --env AWS_REGION=us-east-1 \
+  --dump-swml
+```
+
+### Webhook URL Generation
+
+The serverless simulation automatically generates appropriate webhook URLs for each platform:
+
+#### Platform-Specific URLs
+
+| Platform | Example Webhook URL |
+|----------|-------------------|
+| **Lambda (Function URL)** | `https://abc123.lambda-url.us-east-1.on.aws/swaig/` |
+| **Lambda (API Gateway)** | `https://api123.execute-api.us-east-1.amazonaws.com/prod/swaig/` |
+| **CGI** | `https://example.com/cgi-bin/agent.cgi/swaig/` |
+| **Cloud Functions** | `https://my-function-abc123.cloudfunctions.net/swaig/` |
+| **Azure Functions** | `https://my-function.azurewebsites.net/swaig/` |
+
+#### URL Generation Examples
+
+```bash
+# Lambda Function URL
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-function-url https://custom123.lambda-url.us-west-2.on.aws/ \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+
+# CGI with custom host
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host my-production-server.com \
+  --cgi-https \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+
+# Cloud Functions with custom URL
+swaig-test examples/my_agent.py --simulate-serverless cloud_function \
+  --gcp-function-url https://my-custom-function.cloudfunctions.net \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+```
+
+### Function Execution in Serverless Context
+
+Test function execution with platform-specific request/response formats:
+
+#### Lambda Function Execution
+
+```bash
+# Test function in Lambda context
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --exec get_weather --location "Miami" \
+  --full-request
+
+# Example output shows Lambda event format
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --exec calculate --expression "2+2" \
+  --full-request --format-json
+```
+
+**Lambda Response Format:**
+```json
+{
+  "statusCode": 200,
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"result\": 4, \"expression\": \"2+2\"}"
+}
+```
+
+#### CGI Function Execution
+
+```bash
+# Test function in CGI context
+swaig-test examples/my_agent.py --simulate-serverless cgi \
+  --cgi-host example.com \
+  --exec my_function --param value
+```
+
+### Advanced Serverless Features
+
+#### Environment Presets
+
+The tool includes built-in environment presets for each platform:
+
+```bash
+# Use default Lambda preset
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml
+
+# Override preset values
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --aws-function-name custom-name \
+  --env CUSTOM_VAR=value \
+  --dump-swml
+```
+
+#### Environment Conflict Resolution
+
+The tool automatically clears conflicting environment variables between platforms:
+
+```bash
+# Switching platforms clears previous environment
+export AWS_LAMBDA_FUNCTION_NAME=old-function
+
+# This will clear AWS variables and set GCP variables
+swaig-test examples/my_agent.py --simulate-serverless cloud_function \
+  --gcp-project new-project \
+  --dump-swml
+```
+
+#### Testing Multiple Platforms
+
+```bash
+# Test the same agent across multiple platforms
+for platform in lambda cgi cloud_function azure_function; do
+  echo "Testing $platform..."
+  swaig-test examples/my_agent.py --simulate-serverless $platform \
+    --exec my_function --param value
+done
+
+# Compare SWML generation across platforms
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml > lambda.swml
+swaig-test examples/my_agent.py --simulate-serverless cgi --cgi-host example.com --dump-swml > cgi.swml
+diff lambda.swml cgi.swml
+```
+
+### Debugging Serverless Simulation
+
+#### Verbose Mode
+
+```bash
+# See detailed environment setup
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --verbose \
+  --dump-swml
+
+# Debug function execution
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --verbose \
+  --exec my_function --param value \
+  --full-request
+```
+
+#### Environment Inspection
+
+```bash
+# Show environment variables being set
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env DEBUG=1 \
+  --exec get_status  # Use a function that returns environment info
+```
+
+#### Format Options
+
+```bash
+# Pretty-print JSON output
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --dump-swml --format-json
+
+# Raw JSON for piping
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.functions[0]'
+```
+
+### Serverless Best Practices
+
+#### Development Workflow
+
+1. **Start with local testing**: Test your agent normally first
+2. **Test each platform**: Use serverless simulation for target platforms
+3. **Verify webhook URLs**: Check that URLs are generated correctly for your platform
+4. **Test environment variables**: Ensure your agent works with platform-specific variables
+5. **Test function execution**: Verify functions work in serverless context
+
+#### Platform-Specific Testing
+
+```bash
+# Lambda development workflow
+swaig-test examples/my_agent.py --list-tools  # First test locally
+swaig-test examples/my_agent.py --simulate-serverless lambda --dump-swml  # Check SWML
+swaig-test examples/my_agent.py --simulate-serverless lambda --exec my_function --param value  # Test functions
+
+# Production-like testing
+swaig-test examples/my_agent.py --simulate-serverless lambda \
+  --env-file production.env \
+  --aws-function-name prod-my-agent \
+  --aws-region us-east-1 \
+  --exec critical_function --input "test"
+```
+
+#### Environment Management
+
+```bash
+# Development environment
+cat > dev.env << EOF
+DEBUG=true
+LOG_LEVEL=debug
+API_TIMEOUT=10
+EOF
+
+# Production environment  
+cat > prod.env << EOF
+DEBUG=false
+LOG_LEVEL=info
+API_TIMEOUT=30
+EOF
+
+# Test both environments
+swaig-test examples/my_agent.py --simulate-serverless lambda --env-file dev.env --exec my_function
+swaig-test examples/my_agent.py --simulate-serverless lambda --env-file prod.env --exec my_function
+```
+
+### Legacy Compatibility
+
+The tool maintains backward compatibility with existing serverless parameters:
+
+```bash
+# Legacy syntax (still supported)
+swaig-test examples/my_agent.py --serverless-mode lambda --function my_function --args '{"param":"value"}'
+
+# New syntax (recommended)
+swaig-test examples/my_agent.py --simulate-serverless lambda --exec my_function --param value
 ```
 
 ### CLI Syntax with --exec
@@ -935,9 +1340,9 @@ Available SWAIG functions:
 | `--call-type` | Call type: `sip` or `webrtc` (default: webrtc) |
 | `--call-direction` | Call direction: `inbound` or `outbound` (default: inbound) |
 | `--call-state` | Call state (default: created) |
-| `--call-id` | Override call_id in fake data |
-| `--project-id` | Override project_id in fake data |
-| `--space-id` | Override space_id in fake data |
+| `--call-id` | Override call_id |
+| `--project-id` | Override project_id |
+| `--space-id` | Override space_id |
 | `--from-number` | Override from address |
 | `--to-extension` | Override to address |
 
@@ -1300,6 +1705,12 @@ swaig-test examples/upload_agent.py --dump-swml \
 | **SWML Generation** | "Error generating SWML" | Check agent initialization and SWML template syntax |
 | **Dynamic Agent** | "Dynamic agent callback failed" | Verify on_swml_request method signature and mock request handling |
 | **Override Syntax** | "Override path not found" | Use `--verbose` to see generated data structure and verify paths |
+| **Wrong Argument Order** | CLI flags not working | Put all CLI flags BEFORE `--exec` |
+| **Template Expansion** | "MISSING:variable" in output | Verify template variable names match data structure |
+| **JSON Parsing** | "Invalid JSON in args" | Check JSON syntax or use `--exec` syntax |
+| **Serverless URL Issues** | Wrong webhook URLs in SWML | Verify platform-specific configuration and environment variables |
+| **Environment Conflicts** | Unexpected behavior in serverless mode | Clear conflicting environment variables or restart shell |
+| **Platform Detection** | Wrong platform detected | Use `--simulate-serverless` explicitly instead of relying on auto-detection |
 
 ### Debug Strategies
 
@@ -1413,7 +1824,7 @@ For DataMap function issues:
 
 ```bash
 # Enable verbose to see HTTP details
-swaig-test my_agent.py my_datamap '{"input":"test"}' --verbose
+swaig-test my_agent.py --verbose --exec my_datamap_func --input test
 
 # Check the complete configuration
 swaig-test my_agent.py --list-tools --verbose | grep -A 20 my_datamap
@@ -1507,6 +1918,9 @@ When a webhook fails, the tool:
 | **Wrong Argument Order** | CLI flags not working | Put all CLI flags BEFORE `--exec` |
 | **Template Expansion** | "MISSING:variable" in output | Verify template variable names match data structure |
 | **JSON Parsing** | "Invalid JSON in args" | Check JSON syntax or use `--exec` syntax |
+| **Serverless URL Issues** | Wrong webhook URLs in SWML | Verify platform-specific configuration and environment variables |
+| **Environment Conflicts** | Unexpected behavior in serverless mode | Clear conflicting environment variables or restart shell |
+| **Platform Detection** | Wrong platform detected | Use `--simulate-serverless` explicitly instead of relying on auto-detection |
 
 ### Debug Strategies
 
@@ -1516,6 +1930,60 @@ When a webhook fails, the tool:
 4. **Test connectivity**: For DataMap functions, ensure API endpoints are reachable
 5. **Check argument order**: CLI flags before `--exec`, function args after function name
 6. **Validate syntax**: Use `--exec` syntax to avoid JSON parsing issues
+
+### Serverless Debugging
+
+#### Environment Variable Issues
+
+```bash
+# Debug environment variable setup
+swaig-test my_agent.py --simulate-serverless lambda --verbose --exec get_status
+
+# Check what environment variables are set
+swaig-test my_agent.py --simulate-serverless lambda --env DEBUG=1 --exec debug_env
+
+# Test environment file loading
+swaig-test my_agent.py --simulate-serverless lambda --env-file my.env --verbose --dump-swml
+
+# Clear conflicting variables
+unset AWS_LAMBDA_FUNCTION_NAME GOOGLE_CLOUD_PROJECT
+swaig-test my_agent.py --simulate-serverless cloud_function --verbose --dump-swml
+```
+
+#### Platform-Specific Debugging
+
+```bash
+# Debug Lambda configuration
+swaig-test my_agent.py --simulate-serverless lambda \
+  --aws-function-name my-function \
+  --aws-region us-west-2 \
+  --verbose --dump-swml
+
+# Debug CGI configuration  
+swaig-test my_agent.py --simulate-serverless cgi \
+  --cgi-host example.com \
+  --cgi-https \
+  --verbose --dump-swml
+
+# Debug webhook URL generation
+swaig-test my_agent.py --simulate-serverless lambda \
+  --dump-swml --format-json | jq '.sections.main[1].ai.SWAIG.defaults.web_hook_url'
+```
+
+#### Function Execution Debugging
+
+```bash
+# Debug function execution in serverless context
+swaig-test my_agent.py --simulate-serverless lambda \
+  --verbose \
+  --exec my_function --param value \
+  --full-request
+
+# Compare responses across platforms
+swaig-test my_agent.py --exec my_function --param value > local.json
+swaig-test my_agent.py --simulate-serverless lambda --exec my_function --param value > lambda.json
+diff local.json lambda.json
+```
 
 ### Agent Discovery Debugging
 
@@ -1629,6 +2097,15 @@ This demonstrates both:
 2. **Put CLI flags before `--exec`** for correct parsing
 3. **Use `--verbose`** to see argument parsing results
 4. **Use JSON syntax** when needed for complex argument structures
+
+### Serverless Testing
+
+1. **Test locally first** before using serverless simulation
+2. **Use environment files** for consistent platform configuration
+3. **Test all target platforms** to ensure compatibility
+4. **Verify webhook URLs** are generated correctly for each platform
+5. **Clear environment variables** between platform tests to avoid conflicts
+6. **Use `--verbose`** to debug environment setup and URL generation
 
 ## Conclusion
 

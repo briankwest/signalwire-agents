@@ -69,7 +69,7 @@ class SimpleVoiceService(SWMLService):
 
 # Create and start the service
 service = SimpleVoiceService()
-service.serve()
+service.run()
 ```
 
 ## Centralized Logging System
@@ -485,7 +485,7 @@ service = SWMLService(
 ### Service Methods
 
 - `as_router()`: Get a FastAPI router for the service
-- `serve(host=None, port=None)`: Start the service
+- `run()`: Start the service
 - `stop()`: Stop the service
 - `get_basic_auth_credentials(include_source=False)`: Get the basic auth credentials
 - `on_swml_request(request_data=None)`: Called when SWML is requested

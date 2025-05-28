@@ -205,7 +205,8 @@ def main():
     print("   agent.add_skill('web_search', {..., 'tool_name': 'quick_search'})")
     
     print("\nStarting agent server...")
-    agent.serve()
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
 
 if __name__ == "__main__":
     main() 

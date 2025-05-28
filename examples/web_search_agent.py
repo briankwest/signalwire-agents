@@ -111,7 +111,8 @@ def main():
     print("The agent can now search the web for information and provide comprehensive answers.")
     
     print("\nStarting agent server...")
-    agent.serve()
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
 
 if __name__ == "__main__":
     main() 

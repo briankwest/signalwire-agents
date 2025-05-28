@@ -280,7 +280,7 @@ class PomFormatAgent(AgentBase):
         )
 
 
-if __name__ == "__main__":
+def main():
     #------------------------------------------------------------------------
     # AGENT STARTUP
     # Create and run the declarative agent
@@ -288,36 +288,10 @@ if __name__ == "__main__":
     
     # Create and start the agent
     agent = DeclarativeAgent()
-    print("\nStarting the declarative agent. Press Ctrl+C to stop.")
-    print("The prompt is automatically built from the PROMPT_SECTIONS class attribute.")
-    
-    # Print the rendered markdown prompt for demonstration
-    # This shows how the declarative format is transformed into the actual prompt
-    print("\nGenerated Prompt:")
-    print("-" * 50)
-    
-    # Get the formatted prompt from the agent's POM
-    try:
-        # Try to use pom directly (modern approach)
-        if agent.pom:
-            print(agent.pom.render_markdown())
-        # Fallback for older implementations that might use _pom_builder
-        elif hasattr(agent, '_pom_builder') and agent._pom_builder:
-            print(agent._pom_builder.render_markdown())
-        else:
-            print(agent.get_prompt())
-    except Exception as e:
-        print(f"Could not render prompt: {e}")
-        
-    print("-" * 50)
-    
-    # Print example usage instructions
-    print("\nTest the agent with:")
-    print("curl -X POST -H \"Content-Type: application/json\" -d '{\"message\": \"What time is it?\"}' http://localhost:3000/declarative")
-    
-    # Start the agent's HTTP server
-    try:
-        agent.serve()
-    except KeyboardInterrupt:
-        print("\nStopping the agent.")
-        agent.stop() 
+    print("\nStarting agent server...")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run()
+
+
+if __name__ == "__main__":
+    main() 

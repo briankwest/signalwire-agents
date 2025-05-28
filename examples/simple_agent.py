@@ -226,6 +226,7 @@ class SimpleAgent(AgentBase):
         
         # Set AI behavior parameters that control conversation flow
         self.set_params({
+            "ai_model": "gpt-4.1-nano",
             "wait_for_user": False,          # Start speaking immediately rather than waiting
             "end_of_speech_timeout": 1000,   # Milliseconds of silence before assuming speech ended
             "ai_volume": 5,                  # Voice volume level
@@ -482,11 +483,12 @@ if __name__ == "__main__":
     print(f"Agent 'simple' is available at:")
     print(f"URL: http://localhost:3000/simple")
     print(f"Basic Auth: {username}:{password}")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
     
     try:
         # Start the agent's server using the built-in serve method
         # This starts a uvicorn server with the FastAPI app
-        agent.serve()
+        agent.run()
     except KeyboardInterrupt:
         # Handle clean shutdown on Ctrl+C
         logger.info("server_shutdown")

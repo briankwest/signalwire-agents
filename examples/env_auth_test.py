@@ -48,22 +48,5 @@ class SimpleTestAgent(AgentBase):
 
 if __name__ == "__main__":
     agent = SimpleTestAgent()
-    print("\nAgent initialized.")
-    print("-" * 50)
-    
-    username, password, source = agent.get_basic_auth_credentials(include_source=True)
-    print(f"Final credentials from agent object:")
-    print(f"Username: {username}")
-    print(f"Password: {password}")
-    print(f"Source: {source}")
-    
-    if source == "environment":
-        print("SUCCESS: SUCCESS: Environment variables are being used correctly.")
-    else:
-        print(f"ERROR: FAILURE: Credentials are coming from '{source}' instead of environment variables.")
-    
-    print("\nStarting server to verify printed credentials...")
-    try:
-        agent.serve()
-    except KeyboardInterrupt:
-        print("\nServer stopped.") 
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+    agent.run() 

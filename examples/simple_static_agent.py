@@ -40,6 +40,7 @@ class SimpleStaticAgent(AgentBase):
         
         # AI parameters (never changes)
         self.set_params({
+            "ai_model": "gpt-4.1-nano",
             "end_of_speech_timeout": 500,
             "attention_timeout": 15000,
             "background_file_volume": -20
@@ -111,6 +112,7 @@ if __name__ == "__main__":
     print("curl 'http://localhost:3000'")
     print("curl 'http://localhost:3000/debug'")
     print("\nNote: Configuration never changes regardless of request parameters")
+    print("Note: Works in any deployment mode (server/CGI/Lambda)")
     print()
     
-    agent.serve() 
+    agent.run() 
