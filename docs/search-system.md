@@ -77,11 +77,31 @@ pip install signalwire-agents[search-nlp]
 - Enhanced query preprocessing
 - Language detection
 
+**⚠️ Additional Setup Required:**
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Performance Note:** Advanced NLP features provide significantly better query understanding, synonym expansion, and search relevance, but are 2-3x slower than basic search. Only recommended if you have sufficient CPU power and can tolerate longer response times.
+
+**NLP Backend Control:** You can choose which NLP backend to use:
+- **NLTK (default)**: Fast processing, good for most use cases
+- **spaCy**: Better quality but slower, requires model download
+
+Configure via the `nlp_backend` parameter in your search skill.
+
 ### All Search Features (~700MB)
 ```bash
 pip install signalwire-agents[search-all]
 ```
 **Includes everything above**
+
+**⚠️ Additional Setup Required:**
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Performance Note:** This includes advanced NLP features which improve search quality but increase response times.
 
 ### Minimal Installation (Base SDK only)
 ```bash
@@ -219,132 +239,29 @@ self.add_skill("native_vector_search", {
 
 ### Advanced Configuration
 
-```python
-self.add_skill("native_vector_search", {
-    # Tool configuration
-    "tool_name": "search_docs",
-    "description": "Search SDK documentation for detailed information",
-    
-    # Index configuration
-    "index_file": "docs.swsearch",
-    "build_index": True,  # Auto-build if missing
-    "source_dir": "./docs",  # Source for auto-build
-    "file_types": ["md", "txt"],
-    
-    # Search parameters
-    "count": 5,  # Number of results
-    "distance_threshold": 0.1,  # Similarity threshold
-    "tags": ["documentation"],  # Filter by tags
-    
-    # Response formatting
-    "response_prefix": "Based on the documentation:",
-    "response_postfix": "Would you like more details?",
-    "no_results_message": "No information found for '{query}'",
-    
-    # SWAIG configuration
-    "swaig_fields": {
-        "fillers": {
-            "en-US": ["Let me search for that", "Checking the docs"]
-        }
-    }
-})
-```
+### NLP Backend Selection
 
-### Multiple Search Instances
-
-You can add multiple search instances for different document collections:
+Choose between NLTK (fast) and spaCy (better quality) for query processing:
 
 ```python
-# Documentation search
+# Fast NLTK processing (default)
 self.add_skill("native_vector_search", {
     "tool_name": "search_docs",
     "index_file": "docs.swsearch",
-    "description": "Search SDK documentation"
+    "nlp_backend": "nltk"  # Fast, good for most use cases
 })
 
-# Code examples search
+# Better quality spaCy processing
 self.add_skill("native_vector_search", {
-    "tool_name": "search_examples", 
-    "index_file": "examples.swsearch",
-    "description": "Search code examples"
+    "tool_name": "search_docs", 
+    "index_file": "docs.swsearch",
+    "nlp_backend": "spacy"  # Slower but better quality, requires model download
 })
 ```
 
-## Local vs Remote Modes
-
-The search skill supports both local and remote operation modes.
-
-### Local Mode (Default)
-
-**Pros:**
-- Faster (no network latency)
-- Works offline
-- Simple deployment
-- Lower operational complexity
-
-**Cons:**
-- Higher memory usage per agent
-- Index files must be distributed with each agent
-- Updates require redeploying agents
-
-**Configuration:**
-```python
-self.add_skill("native_vector_search", {
-    "tool_name": "search_docs",
-    "index_file": "docs.swsearch"  # Local file
-})
-```
-
-### Remote Mode
-
-**Pros:**
-- Lower memory usage per agent
-- Centralized index management
-- Easy updates without redeploying agents
-- Better scalability for multiple agents
-- Shared resources
-
-**Cons:**
-- Network dependency
-- Additional infrastructure complexity
-- Potential latency
-
-**Configuration:**
-```python
-self.add_skill("native_vector_search", {
-    "tool_name": "search_docs",
-    "remote_url": "http://localhost:8001",  # Search server
-    "index_name": "docs"  # Index name on server
-})
-```
-
-### Running a Remote Search Server
-
-1. **Start the search server:**
-```bash
-python examples/search_server_standalone.py
-```
-
-2. **The server provides HTTP API:**
-- `POST /search` - Search the indexes
-- `GET /health` - Health check and available indexes  
-- `POST /reload_index` - Add or reload an index
-
-3. **Test the API:**
-```bash
-curl -X POST "http://localhost:8001/search" \
-     -H "Content-Type: application/json" \
-     -d '{"query": "how to create an agent", "index_name": "docs", "count": 3}'
-```
-
-### Automatic Mode Detection
-
-The skill automatically detects which mode to use:
-- If `remote_url` is provided → Remote mode
-- If `index_file` is provided → Local mode
-- Remote mode takes priority if both are specified
-
-## Advanced Configuration
+**Performance Comparison:**
+- **NLTK**: ~50-100ms query processing, good synonym expansion
+- **spaCy**: ~150-300ms query processing, better POS tagging and entity recognition
 
 ### Custom Embedding Models
 
@@ -405,6 +322,144 @@ self.add_skill("native_vector_search", {
 })
 ```
 
+### Complete Configuration Example
+
+```python
+self.add_skill("native_vector_search", {
+    # Tool configuration
+    "tool_name": "search_docs",
+    "description": "Search SDK documentation for detailed information",
+    
+    # Index configuration
+    "index_file": "docs.swsearch",
+    "build_index": True,  # Auto-build if missing
+    "source_dir": "./docs",  # Source for auto-build
+    "file_types": ["md", "txt"],
+    
+    # Search parameters
+    "count": 5,  # Number of results
+    "distance_threshold": 0.1,  # Similarity threshold
+    "tags": ["documentation"],  # Filter by tags
+    
+    # NLP backend selection
+    "nlp_backend": "nltk",  # or "spacy" for better quality
+    
+    # Response formatting
+    "response_prefix": "Based on the documentation:",
+    "response_postfix": "Would you like more details?",
+    "no_results_message": "No information found for '{query}'",
+    
+    # SWAIG configuration
+    "swaig_fields": {
+        "fillers": {
+            "en-US": ["Let me search for that", "Checking the docs"]
+        }
+    }
+})
+```
+
+### Multiple Search Instances
+
+You can add multiple search instances for different document collections:
+
+```python
+# Documentation search with spaCy for better quality
+self.add_skill("native_vector_search", {
+    "tool_name": "search_docs",
+    "index_file": "docs.swsearch",
+    "nlp_backend": "spacy",
+    "description": "Search SDK documentation"
+})
+
+# Code examples search with NLTK for speed
+self.add_skill("native_vector_search", {
+    "tool_name": "search_examples", 
+    "index_file": "examples.swsearch",
+    "nlp_backend": "nltk",
+    "description": "Search code examples"
+})
+```
+
+## Local vs Remote Modes
+
+The search skill supports both local and remote operation modes.
+
+### Local Mode (Default)
+
+**Pros:**
+- Faster (no network latency)
+- Works offline
+- Simple deployment
+- Lower operational complexity
+
+**Cons:**
+- Higher memory usage per agent
+- Index files must be distributed with each agent
+- Updates require redeploying agents
+
+**Configuration:**
+```python
+self.add_skill("native_vector_search", {
+    "tool_name": "search_docs",
+    "index_file": "docs.swsearch",  # Local file
+    "nlp_backend": "nltk"  # Choose NLP backend
+})
+```
+
+### Remote Mode
+
+**Pros:**
+- Lower memory usage per agent
+- Centralized index management
+- Easy updates without redeploying agents
+- Better scalability for multiple agents
+- Shared resources
+
+**Cons:**
+- Network dependency
+- Additional infrastructure complexity
+- Potential latency
+
+**Configuration:**
+```python
+self.add_skill("native_vector_search", {
+    "tool_name": "search_docs",
+    "remote_url": "http://localhost:8001",  # Search server
+    "index_name": "docs",  # Index name on server
+    "nlp_backend": "nltk"  # NLP backend for query preprocessing
+})
+```
+
+### Running a Remote Search Server
+
+1. **Start the search server:**
+```bash
+python examples/search_server_standalone.py
+```
+
+2. **The server provides HTTP API:**
+- `POST /search` - Search the indexes
+- `GET /health` - Health check and available indexes  
+- `POST /reload_index` - Add or reload an index
+
+3. **Test the API:**
+```bash
+curl -X POST "http://localhost:8001/search" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "how to create an agent", "index_name": "docs", "count": 3}'
+```
+
+### Automatic Mode Detection
+
+The skill automatically detects which mode to use:
+- If `remote_url` is provided → Remote mode
+- If `index_file` is provided → Local mode
+- Remote mode takes priority if both are specified
+
+## Advanced Configuration
+
+### Custom Embedding Models
+
 ## CLI Reference
 
 ### sw-search Command
@@ -454,6 +509,7 @@ Search within an existing .swsearch index file. This is useful for:
 - `--count COUNT` - Number of results to return (default: 5)
 - `--distance-threshold FLOAT` - Minimum similarity score (default: 0.0)
 - `--tags TAGS` - Comma-separated tags to filter by
+- `--nlp-backend {nltk,spacy}` - NLP backend to use (default: nltk)
 - `--verbose` - Show detailed information including index stats
 - `--json` - Output results as JSON for scripting
 - `--no-content` - Hide content in results (show only metadata)
@@ -488,11 +544,16 @@ sw-search search concepts.swsearch "how to create an agent"
 sw-search search concepts.swsearch "API reference" --count 3 --verbose
 sw-search search concepts.swsearch "configuration" --tags documentation --json
 
+# Use different NLP backends
+sw-search search concepts.swsearch "deployment options" --nlp-backend nltk  # Fast
+sw-search search concepts.swsearch "deployment options" --nlp-backend spacy  # Better quality
+
 # Advanced search with filtering
 sw-search search concepts.swsearch "deployment options" \
     --count 10 \
     --distance-threshold 0.1 \
     --tags "deployment,production" \
+    --nlp-backend spacy \
     --verbose
 
 # JSON output for scripting

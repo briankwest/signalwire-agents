@@ -2,6 +2,30 @@
 
 The SignalWire Agents SDK includes optional local search capabilities that can be installed separately to avoid adding large dependencies to the base installation.
 
+## Which Installation Should I Choose?
+
+### For Development and Testing
+- **`search`** - Fast, lightweight, good for development and testing
+- No additional setup required
+- Best for: Local development, CI/CD, resource-constrained environments
+
+### For Production with Document Processing
+- **`search-full`** - Comprehensive document support without NLP overhead
+- Handles PDF, DOCX, Excel, PowerPoint files
+- Best for: Production systems that need document processing but prioritize speed
+
+### For Advanced Search Quality
+- **`search-nlp`** - Better search relevance with advanced query processing
+- Requires spaCy model download: `python -m spacy download en_core_web_sm`
+- 2-3x slower than basic search
+- Best for: Applications where search quality is more important than speed
+
+### For Everything
+- **`search-all`** - Complete feature set
+- Requires spaCy model download: `python -m spacy download en_core_web_sm`
+- Largest installation, slowest performance
+- Best for: Full-featured applications with powerful hardware
+
 ## Installation Options
 
 ### Basic Search
@@ -34,6 +58,31 @@ pip install signalwire-agents[search-nlp]
 **Size:** ~600MB  
 **Includes:** Basic search + spaCy
 
+**⚠️ Additional Setup Required:**
+After installation, you must download the spaCy language model:
+
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Performance Note:** Advanced NLP features provide better query understanding and synonym expansion, but are significantly slower than basic search. You can control which NLP backend to use:
+
+- **NLTK (default)**: Fast processing, good for most use cases
+- **spaCy**: Better quality but 2-3x slower, requires model download
+
+Use the `nlp_backend` parameter to choose:
+```python
+# Fast NLTK processing (default)
+self.add_skill("native_vector_search", {
+    "nlp_backend": "nltk"  # or omit for default
+})
+
+# Better quality spaCy processing
+self.add_skill("native_vector_search", {
+    "nlp_backend": "spacy"  # requires spaCy model download
+})
+```
+
 ### All Features
 For complete search functionality:
 
@@ -43,6 +92,19 @@ pip install signalwire-agents[search-all]
 
 **Size:** ~700MB  
 **Includes:** All search features combined
+
+**⚠️ Additional Setup Required:**
+After installation, you must download the spaCy language model:
+
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Performance Note:** This includes advanced NLP features which are slower but provide better search quality.
+
+You can control which NLP backend to use with the `nlp_backend` parameter:
+- `"nltk"` (default): Fast processing
+- `"spacy"`: Better quality but slower, requires model download
 
 ## Feature Comparison
 
@@ -189,7 +251,14 @@ class SearchAgent(AgentBase):
    nltk.download('averaged_perceptron_tagger')
    ```
 
-4. **Large download sizes**
+4. **spaCy model not found**
+   ```bash
+   python -m spacy download en_core_web_sm
+   ```
+   
+   If you see "spaCy model 'en_core_web_sm' not found. Falling back to NLTK", this means the spaCy language model wasn't installed. This is required for `search-nlp` and `search-all` installations.
+
+5. **Large download sizes**
    - The sentence-transformers library downloads pre-trained models (~400MB)
    - This happens on first use and is cached locally
    - Use `search` instead of `search-all` if you don't need document processing

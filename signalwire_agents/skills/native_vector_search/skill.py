@@ -57,9 +57,9 @@ class NativeVectorSearchSkill(SkillBase):
         self.index_file = self.params.get('index_file')
         self.build_index = self.params.get('build_index', False)
         self.source_dir = self.params.get('source_dir')
-        self.count = self.params.get('count', 3)
+        self.count = self.params.get('count', 5)
         self.distance_threshold = self.params.get('distance_threshold', 0.0)
-        self.tags = self.params.get('tags')
+        self.tags = self.params.get('tags', [])
         self.no_results_message = self.params.get(
             'no_results_message', 
             "No information found for '{query}'"
@@ -73,6 +73,12 @@ class NativeVectorSearchSkill(SkillBase):
         
         # SWAIG fields for function fillers
         self.swaig_fields = self.params.get('swaig_fields', {})
+        
+        # NLP backend configuration
+        self.nlp_backend = self.params.get('nlp_backend', 'nltk')  # Default to faster NLTK
+        if self.nlp_backend not in ['nltk', 'spacy']:
+            self.logger.warning(f"Invalid nlp_backend '{self.nlp_backend}', using 'nltk'")
+            self.nlp_backend = 'nltk'
         
         # Auto-build index if requested and search is available
         if self.build_index and self.source_dir and self.search_available:
@@ -181,7 +187,7 @@ class NativeVectorSearchSkill(SkillBase):
         try:
             # Preprocess the query
             from signalwire_agents.search.query_processor import preprocess_query
-            enhanced = preprocess_query(query, language='en', vector=True)
+            enhanced = preprocess_query(query, language='en', vector=True, nlp_backend=self.nlp_backend)
             
             # Perform search (local or remote)
             if self.use_remote:

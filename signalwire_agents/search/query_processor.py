@@ -186,7 +186,7 @@ def remove_duplicate_words(input_string: str) -> str:
 
 def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[List[str]] = None, 
                     max_synonyms: int = 5, debug: bool = False, vector: bool = False, 
-                    vectorize_query_param: bool = False) -> Dict[str, Any]:
+                    vectorize_query_param: bool = False, nlp_backend: str = 'nltk') -> Dict[str, Any]:
     """
     Advanced query preprocessing with language detection, POS tagging, synonym expansion, and vectorization
     
@@ -198,6 +198,7 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
         debug: Enable debug output
         vector: Include vector embedding in output
         vectorize_query_param: If True, just vectorize without other processing
+        nlp_backend: NLP backend to use ('nltk' for fast, 'spacy' for better quality)
         
     Returns:
         Dict containing processed query, language, POS tags, and optionally vector
@@ -223,8 +224,17 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
         if debug:
             logger.info(f"Detected language: {language}")
     
-    # Load spaCy model based on the language
-    nlp = load_spacy_model(language)
+    # Load spaCy model based on the language and backend choice
+    nlp = None
+    if nlp_backend == 'spacy':
+        nlp = load_spacy_model(language)
+        if nlp is None and debug:
+            logger.info("spaCy backend requested but not available, falling back to NLTK")
+    elif nlp_backend == 'nltk':
+        if debug:
+            logger.info("Using NLTK backend for NLP processing")
+    else:
+        logger.warning(f"Unknown NLP backend '{nlp_backend}', using NLTK")
     
     # Tokenization and stop word removal
     tokens = nltk.word_tokenize(query)
@@ -248,7 +258,7 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
     lemmas = []
     pos_tags = {}
 
-    if nlp:
+    if nlp and nlp_backend == 'spacy':
         # Use spaCy for better POS tagging
         doc = nlp(" ".join(tokens))
         for token in doc:
@@ -259,7 +269,7 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
         if debug:
             logger.info(f"POS Tagging Results (spaCy): {pos_tags}")
     else:
-        # Fall back to NLTK
+        # Use NLTK (default or fallback)
         nltk_pos_tags = nltk.pos_tag(tokens)
         for token, pos_tag in nltk_pos_tags:
             lemma = lemmatizer.lemmatize(token, get_wordnet_pos(pos_tag)).lower()
@@ -267,7 +277,7 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
             lemmas.append((token.lower(), stemmed))
             pos_tags[token.lower()] = pos_tag
         if debug:
-            logger.info(f"POS Tagging Results (nltk): {pos_tags}")
+            logger.info(f"POS Tagging Results (NLTK): {pos_tags}")
 
     # Expanding query with synonyms
     expanded_query_set = set()
@@ -293,12 +303,14 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
 
     if debug:
         logger.info(f"Expanded Query: {final_query_str}")
+        logger.info(f"NLP Backend Used: {nlp_backend if nlp or nlp_backend == 'nltk' else 'nltk (fallback)'}")
     
     formatted_output = {
         'input': final_query_str,
         'enhanced_text': final_query_str,  # Alias for compatibility
         'language': language,
-        'POS': pos_tags
+        'POS': pos_tags,
+        'nlp_backend_used': nlp_backend if nlp or nlp_backend == 'nltk' else 'nltk'
     }
     
     # Vectorize query if requested
@@ -311,13 +323,14 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
 
     return formatted_output
 
-def preprocess_document_content(content: str, language: str = 'en') -> Dict[str, Any]:
+def preprocess_document_content(content: str, language: str = 'en', nlp_backend: str = 'nltk') -> Dict[str, Any]:
     """
     Preprocess document content for better searchability
     
     Args:
         content: Document content to process
         language: Language code for processing
+        nlp_backend: NLP backend to use ('nltk' for fast, 'spacy' for better quality)
         
     Returns:
         Dict containing enhanced text and extracted keywords
@@ -330,7 +343,8 @@ def preprocess_document_content(content: str, language: str = 'en') -> Dict[str,
         pos_to_expand=['NOUN', 'VERB'],  # Less aggressive for documents
         max_synonyms=2,  # Fewer synonyms for documents
         debug=False,
-        vector=False
+        vector=False,
+        nlp_backend=nlp_backend
     )
     
     # Extract key terms for keyword search
