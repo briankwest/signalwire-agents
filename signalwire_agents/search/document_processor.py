@@ -74,29 +74,42 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     """Enhanced document processor with smart chunking capabilities"""
     
-    def __init__(self, chunking_strategy: str = 'sentence', 
-                 max_sentences_per_chunk: int = 50,
-                 chunk_size: int = 50, 
-                 overlap_size: int = 10,
-                 split_newlines: Optional[int] = None):
+    def __init__(
+        self,
+        chunking_strategy: str = 'sentence',
+        max_sentences_per_chunk: int = 5,
+        chunk_size: int = 50,
+        chunk_overlap: int = 10,
+        split_newlines: Optional[int] = None,
+        index_nlp_backend: str = 'nltk',
+        verbose: bool = False,
+        semantic_threshold: float = 0.5,
+        topic_threshold: float = 0.3
+    ):
         """
-        Initialize document processor with chunking strategy
+        Initialize document processor
         
         Args:
-            chunking_strategy: 'sentence', 'sliding', 'paragraph', or 'page'
-            max_sentences_per_chunk: For sentence strategy (default: 50)
+            chunking_strategy: Strategy for chunking documents ('sentence', 'sliding', 'paragraph', 'page', 'semantic', 'topic', 'qa')
+            max_sentences_per_chunk: For sentence strategy (default: 5)
             chunk_size: For sliding strategy - words per chunk (default: 50)
-            overlap_size: For sliding strategy - overlap in words (default: 10)
+            chunk_overlap: For sliding strategy - overlap in words (default: 10)
             split_newlines: For sentence strategy - split on multiple newlines (optional)
+            index_nlp_backend: NLP backend for indexing (default: 'nltk')
+            verbose: Whether to enable verbose logging (default: False)
+            semantic_threshold: Similarity threshold for semantic chunking (default: 0.5)
+            topic_threshold: Similarity threshold for topic chunking (default: 0.3)
         """
         self.chunking_strategy = chunking_strategy
         self.max_sentences_per_chunk = max_sentences_per_chunk
         self.chunk_size = chunk_size
-        self.overlap_size = overlap_size
+        self.chunk_overlap = chunk_overlap
         self.split_newlines = split_newlines
+        self.semantic_threshold = semantic_threshold
+        self.topic_threshold = topic_threshold
         
         # Legacy support for old character-based chunking
-        self.chunk_overlap = overlap_size
+        self.chunk_overlap = chunk_overlap
     
     def create_chunks(self, content: str, filename: str, 
                      file_type: str) -> List[Dict[str, Any]]:
@@ -121,6 +134,12 @@ class DocumentProcessor:
             return self._chunk_by_paragraphs(content, filename, file_type)
         elif self.chunking_strategy == 'page':
             return self._chunk_by_pages(content, filename, file_type)
+        elif self.chunking_strategy == 'semantic':
+            return self._chunk_by_semantic(content, filename, file_type)
+        elif self.chunking_strategy == 'topic':
+            return self._chunk_by_topics(content, filename, file_type)
+        elif self.chunking_strategy == 'qa':
+            return self._chunk_by_qa_optimization(content, filename, file_type)
         else:
             # Fallback to sentence-based chunking
             return self._chunk_by_sentences(content, filename, file_type)
@@ -674,7 +693,7 @@ class DocumentProcessor:
         chunk_index = 0
         
         # Create overlapping chunks
-        for i in range(0, len(words), self.chunk_size - self.overlap_size):
+        for i in range(0, len(words), self.chunk_size - self.chunk_overlap):
             chunk_words = words[i:i + self.chunk_size]
             if chunk_words:
                 chunk_content = ' '.join(chunk_words)
@@ -686,7 +705,7 @@ class DocumentProcessor:
                         'chunk_method': 'sliding_window',
                         'chunk_index': chunk_index,
                         'chunk_size_words': self.chunk_size,
-                        'overlap_size_words': self.overlap_size,
+                        'overlap_size_words': self.chunk_overlap,
                         'start_word': i,
                         'end_word': i + len(chunk_words)
                     }
@@ -761,4 +780,246 @@ class DocumentProcessor:
                     }
                 ))
         
-        return chunks 
+        return chunks
+    
+    def _chunk_by_semantic(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk based on semantic similarity between sentences"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        # Get sentences
+        if sent_tokenize:
+            sentences = sent_tokenize(content)
+        else:
+            sentences = content.split('. ')
+            sentences = [s.strip() + '.' for s in sentences if s.strip()]
+        
+        if len(sentences) <= 1:
+            return [self._create_chunk(content, filename, "Section 1", 
+                                     metadata={'chunk_method': 'semantic', 'chunk_index': 0})]
+        
+        # Generate embeddings for sentences (using the same model as the index)
+        try:
+            from sentence_transformers import SentenceTransformer
+            from sklearn.metrics.pairwise import cosine_similarity
+            import numpy as np
+            
+            model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
+            embeddings = model.encode(sentences, show_progress_bar=False)
+            
+            # Calculate similarity between adjacent sentences
+            similarities = []
+            for i in range(len(embeddings) - 1):
+                sim = cosine_similarity([embeddings[i]], [embeddings[i + 1]])[0][0]
+                similarities.append(sim)
+            
+            # Find split points where similarity drops below threshold
+            split_points = [0]
+            for i, sim in enumerate(similarities):
+                if sim < self.semantic_threshold:
+                    split_points.append(i + 1)
+            split_points.append(len(sentences))
+            
+            # Create chunks
+            chunks = []
+            for i in range(len(split_points) - 1):
+                start_idx = split_points[i]
+                end_idx = split_points[i + 1]
+                chunk_sentences = sentences[start_idx:end_idx]
+                
+                # Ensure minimum chunk size
+                if len(chunk_sentences) < 2 and i > 0:
+                    # Merge with previous chunk
+                    chunks[-1]['content'] += ' ' + ' '.join(chunk_sentences)
+                    continue
+                    
+                chunk_content = ' '.join(chunk_sentences)
+                chunks.append(self._create_chunk(
+                    content=chunk_content,
+                    filename=filename,
+                    section=f"Semantic Section {i+1}",
+                    metadata={
+                        'chunk_method': 'semantic',
+                        'chunk_index': i,
+                        'semantic_threshold': self.semantic_threshold,
+                        'sentence_count': len(chunk_sentences)
+                    }
+                ))
+            
+            return chunks if chunks else [self._create_chunk(content, filename, "Section 1",
+                                                           metadata={'chunk_method': 'semantic', 'chunk_index': 0})]
+            
+        except ImportError:
+            # Fallback to sentence-based chunking
+            return self._chunk_by_sentences(content, filename, file_type)
+
+    def _chunk_by_topics(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Chunk based on topic changes using keyword analysis"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        if sent_tokenize:
+            sentences = sent_tokenize(content)
+        else:
+            sentences = content.split('. ')
+            sentences = [s.strip() + '.' for s in sentences if s.strip()]
+            
+        if len(sentences) <= 3:
+            return [self._create_chunk(content, filename, "Topic 1",
+                                     metadata={'chunk_method': 'topic', 'chunk_index': 0})]
+        
+        try:
+            # Simple topic detection using keyword overlap
+            from collections import Counter
+            import re
+            
+            # Extract keywords from each sentence
+            sentence_keywords = []
+            for sentence in sentences:
+                # Simple keyword extraction (could be enhanced with NLP)
+                words = re.findall(r'\b[a-zA-Z]{3,}\b', sentence.lower())
+                # Filter common words (basic stopwords)
+                stopwords = {'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'day', 'get', 'has', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'two', 'who', 'boy', 'did', 'man', 'way', 'she', 'use', 'her', 'many', 'oil', 'sit', 'set', 'run', 'eat', 'far', 'sea', 'eye', 'ask', 'own', 'say', 'too', 'any', 'try', 'us', 'an', 'as', 'at', 'be', 'he', 'if', 'in', 'is', 'it', 'my', 'of', 'on', 'or', 'to', 'up', 'we', 'go', 'no', 'so', 'am', 'by', 'do', 'me'}
+                keywords = [w for w in words if w not in stopwords and len(w) > 3]
+                sentence_keywords.append(set(keywords))
+            
+            # Find topic boundaries based on keyword overlap
+            chunks = []
+            current_chunk = [sentences[0]]
+            current_keywords = sentence_keywords[0]
+            
+            for i in range(1, len(sentences)):
+                # Calculate keyword overlap with current chunk
+                overlap = len(current_keywords.intersection(sentence_keywords[i]))
+                total_keywords = len(current_keywords.union(sentence_keywords[i]))
+                
+                if total_keywords > 0:
+                    similarity = overlap / total_keywords
+                else:
+                    similarity = 0
+                
+                # If similarity is low, start new chunk
+                if similarity < self.topic_threshold and len(current_chunk) >= 2:
+                    chunk_content = ' '.join(current_chunk)
+                    chunks.append(self._create_chunk(
+                        content=chunk_content,
+                        filename=filename,
+                        section=f"Topic {len(chunks)+1}",
+                        metadata={
+                            'chunk_method': 'topic',
+                            'chunk_index': len(chunks),
+                            'topic_keywords': list(current_keywords)[:10],  # Top keywords
+                            'sentence_count': len(current_chunk),
+                            'topic_threshold': self.topic_threshold
+                        }
+                    ))
+                    current_chunk = [sentences[i]]
+                    current_keywords = sentence_keywords[i]
+                else:
+                    current_chunk.append(sentences[i])
+                    current_keywords = current_keywords.union(sentence_keywords[i])
+            
+            # Add final chunk
+            if current_chunk:
+                chunk_content = ' '.join(current_chunk)
+                chunks.append(self._create_chunk(
+                    content=chunk_content,
+                    filename=filename,
+                    section=f"Topic {len(chunks)+1}",
+                    metadata={
+                        'chunk_method': 'topic',
+                        'chunk_index': len(chunks),
+                        'topic_keywords': list(current_keywords)[:10],
+                        'sentence_count': len(current_chunk),
+                        'topic_threshold': self.topic_threshold
+                    }
+                ))
+            
+            return chunks if chunks else [self._create_chunk(content, filename, "Topic 1",
+                                                           metadata={'chunk_method': 'topic', 'chunk_index': 0})]
+            
+        except Exception:
+            # Fallback to sentence-based chunking
+            return self._chunk_by_sentences(content, filename, file_type)
+
+    def _chunk_by_qa_optimization(self, content: str, filename: str, file_type: str) -> List[Dict[str, Any]]:
+        """Create chunks optimized for question-answering"""
+        if isinstance(content, list):
+            content = '\n'.join(content)
+        
+        if sent_tokenize:
+            sentences = sent_tokenize(content)
+        else:
+            sentences = content.split('. ')
+            sentences = [s.strip() + '.' for s in sentences if s.strip()]
+        
+        # Patterns that indicate Q&A structure
+        question_patterns = [
+            r'\?',  # Questions
+            r'^(what|how|why|when|where|who|which|can|does|is|are|will|would|should)',
+            r'(step|steps|process|procedure|method|way to)',
+            r'(example|examples|instance|case)',
+            r'(definition|meaning|refers to|means)',
+        ]
+        
+        chunks = []
+        current_chunk = []
+        current_context = []
+        
+        for i, sentence in enumerate(sentences):
+            sentence_lower = sentence.lower().strip()
+            
+            # Check if this sentence contains Q&A indicators
+            is_qa_relevant = any(re.search(pattern, sentence_lower) for pattern in question_patterns)
+            
+            if is_qa_relevant or len(current_chunk) == 0:
+                current_chunk.append(sentence)
+                # Add surrounding context (previous and next sentences)
+                if i > 0 and sentences[i-1] not in current_chunk:
+                    current_context.append(sentences[i-1])
+                if i < len(sentences) - 1:
+                    current_context.append(sentences[i+1])
+            else:
+                current_chunk.append(sentence)
+            
+            # Create chunk when we have enough content or reach a natural break
+            if (len(current_chunk) >= 3 and 
+                (i == len(sentences) - 1 or  # Last sentence
+                 sentence.endswith('.') and len(current_chunk) >= 5)):  # Natural break
+                
+                # Combine chunk with context
+                full_content = current_context + current_chunk
+                chunk_content = ' '.join(full_content)
+                
+                chunks.append(self._create_chunk(
+                    content=chunk_content,
+                    filename=filename,
+                    section=f"QA Section {len(chunks)+1}",
+                    metadata={
+                        'chunk_method': 'qa_optimized',
+                        'chunk_index': len(chunks),
+                        'has_question': any('?' in s for s in current_chunk),
+                        'has_process': any(re.search(r'(step|process|method)', s.lower()) for s in current_chunk),
+                        'sentence_count': len(full_content)
+                    }
+                ))
+                
+                current_chunk = []
+                current_context = []
+        
+        # Handle remaining content
+        if current_chunk:
+            chunk_content = ' '.join(current_context + current_chunk)
+            chunks.append(self._create_chunk(
+                content=chunk_content,
+                filename=filename,
+                section=f"QA Section {len(chunks)+1}",
+                metadata={
+                    'chunk_method': 'qa_optimized',
+                    'chunk_index': len(chunks),
+                    'sentence_count': len(current_context + current_chunk)
+                }
+            ))
+        
+        return chunks if chunks else [self._create_chunk(content, filename, "QA Section 1",
+                                                       metadata={'chunk_method': 'qa_optimized', 'chunk_index': 0})] 

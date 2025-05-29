@@ -19,11 +19,13 @@ class TestDocumentProcessorInit:
         processor = DocumentProcessor()
         
         assert processor.chunking_strategy == 'sentence'
-        assert processor.max_sentences_per_chunk == 50
+        assert processor.max_sentences_per_chunk == 5
         assert processor.chunk_size == 50
         assert processor.overlap_size == 10
         assert processor.split_newlines is None
         assert processor.chunk_overlap == 10  # Legacy support
+        assert processor.semantic_threshold == 0.5
+        assert processor.topic_threshold == 0.3
     
     def test_custom_initialization(self):
         """Test initialization with custom parameters"""
@@ -41,6 +43,8 @@ class TestDocumentProcessorInit:
         assert processor.overlap_size == 20
         assert processor.split_newlines == 3
         assert processor.chunk_overlap == 20
+        assert processor.semantic_threshold == 0.5
+        assert processor.topic_threshold == 0.3
 
 
 class TestDocumentProcessorChunking:

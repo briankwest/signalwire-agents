@@ -2796,5 +2796,5 @@ sw-search ./knowledge \
     --output knowledge.swsearch \
     --file-types md,txt,pdf \
     --chunking-strategy sentence \
-    --max-sentences-per-chunk 50 \
+    --max-sentences-per-chunk 8 \
     --verbose

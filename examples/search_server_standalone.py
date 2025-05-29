@@ -75,7 +75,7 @@ def main():
         try:
             builder = IndexBuilder(
                 chunking_strategy='sentence',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 verbose=True
             )
             

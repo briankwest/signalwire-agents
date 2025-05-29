@@ -24,51 +24,11 @@ import types
 from typing import Dict, List, Any, Optional, Union, Callable, Tuple, Type
 from urllib.parse import urlparse
 
-# Import and configure structlog
-try:
-    import structlog
-    
-    # Only configure if not already configured
-    if not hasattr(structlog, "_configured") or not structlog._configured:
-        structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_logger_name,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.UnicodeDecoder(),
-                structlog.dev.ConsoleRenderer()
-            ],
-            context_class=dict,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
-        )
-        
-        # Set up root logger with structlog
-        logging.basicConfig(
-            format="%(message)s",
-            stream=sys.stdout,
-            level=logging.INFO,
-        )
-        
-        # Mark as configured to avoid duplicate configuration
-        structlog._configured = True
-    
-    # Create the module logger
-    logger = structlog.get_logger("swml_service")
-    
-except ImportError:
-    # Fallback to standard logging if structlog is not available
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        stream=sys.stdout
-    )
-    logger = logging.getLogger("swml_service")
+# Import centralized logging system
+from signalwire_agents.core.logging_config import get_logger
+
+# Create the module logger using centralized system
+logger = get_logger("swml_service")
 
 try:
     import fastapi

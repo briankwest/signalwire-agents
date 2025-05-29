@@ -46,8 +46,14 @@ Examples:
     swaig-test examples/my_agent.py --dump-swml --raw | jq '.sections.main[1].ai.SWAIG.functions'
 """
 
+# CRITICAL: Set environment variable BEFORE any imports to suppress logs for --raw
 import sys
 import os
+
+if "--raw" in sys.argv or "--dump-swml" in sys.argv:
+    os.environ["SIGNALWIRE_LOG_MODE"] = "off"
+
+import warnings
 import json
 import importlib.util
 import argparse
@@ -56,12 +62,17 @@ import time
 import hashlib
 import re
 import requests
-import warnings
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
 import inspect
+
+# Store original print function before any potential suppression
+original_print = print
+
+# Add the parent directory to the path so we can import signalwire_agents
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     # Try to import the AgentBase class
@@ -72,22 +83,15 @@ except ImportError:
     AgentBase = None
     SwaigFunctionResult = None
 
-# Early setup for raw mode using the central logging system
-if "--raw" in sys.argv:
-    # Use the central logging system's OFF mode for raw output
-    # This eliminates all logging output without complex suppression hacks
-    os.environ["SIGNALWIRE_LOG_MODE"] = "off"
-    warnings.filterwarnings("ignore")
-
-# Store original print function before any potential suppression
-original_print = print
-
-# Add the parent directory to the path so we can import signalwire_agents
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from signalwire_agents import AgentBase
-from signalwire_agents.core.function_result import SwaigFunctionResult
-
+# Reset logging configuration if --raw flag was set
+# This must happen AFTER signalwire_agents imports but BEFORE any logging is used
+if "--raw" in sys.argv or "--dump-swml" in sys.argv:
+    try:
+        from signalwire_agents.core.logging_config import reset_logging_configuration, configure_logging
+        reset_logging_configuration()
+        configure_logging()  # Reconfigure with the new environment variable
+    except ImportError:
+        pass
 
 # ===== MOCK REQUEST OBJECTS FOR DYNAMIC AGENT TESTING =====
 
@@ -666,7 +670,6 @@ def handle_dump_swml(agent: 'AgentBase', args: argparse.Namespace) -> int:
         Exit code (0 for success, 1 for error)
     """
     if not args.raw:
-        print("\nGenerating SWML document...")
         if args.verbose:
             print(f"Agent: {agent.get_name()}")
             print(f"Route: {agent.route}")
@@ -767,20 +770,13 @@ def handle_dump_swml(agent: 'AgentBase', args: argparse.Namespace) -> int:
             # Output only the raw JSON for piping to jq/yq
             print(swml_doc)
         else:
-            # Normal output with headers
-            print("SWML Document:")
-            print("=" * 50)
-            print(swml_doc)
-            print("=" * 50)
-            
-            if args.verbose:
-                # Parse and show formatted JSON for better readability
-                try:
-                    swml_parsed = json.loads(swml_doc)
-                    print("\nFormatted SWML:")
-                    print(json.dumps(swml_parsed, indent=2))
-                except json.JSONDecodeError:
-                    print("\nNote: SWML document is not valid JSON format")
+            # Output formatted JSON (like raw but pretty-printed)
+            try:
+                swml_parsed = json.loads(swml_doc)
+                print(json.dumps(swml_parsed, indent=2))
+            except json.JSONDecodeError:
+                # If not valid JSON, show raw
+                print(swml_doc)
         
         return 0
         
@@ -1373,6 +1369,94 @@ def execute_external_webhook_function(func: 'SWAIGFunction', function_name: str,
         if verbose:
             print(f"✗ {error_msg}")
         return {"error": error_msg}
+
+
+def display_agent_tools(agent: 'AgentBase', verbose: bool = False) -> None:
+    """
+    Display the available SWAIG functions for an agent
+    
+    Args:
+        agent: The agent instance
+        verbose: Whether to show verbose details
+    """
+    print("\nAvailable SWAIG functions:")
+    if hasattr(agent, '_swaig_functions') and agent._swaig_functions:
+        for name, func in agent._swaig_functions.items():
+            if isinstance(func, dict):
+                # DataMap function
+                description = func.get('description', 'DataMap function (serverless)')
+                print(f"  {name} - {description}")
+                
+                # Show parameters for DataMap functions
+                if 'parameters' in func and func['parameters']:
+                    params = func['parameters']
+                    # Handle both formats: direct properties dict or full schema
+                    if 'properties' in params:
+                        properties = params['properties']
+                        required_fields = params.get('required', [])
+                    else:
+                        properties = params
+                        required_fields = []
+                    
+                    if properties:
+                        print(f"    Parameters:")
+                        for param_name, param_def in properties.items():
+                            param_type = param_def.get('type', 'unknown')
+                            param_desc = param_def.get('description', 'No description')
+                            is_required = param_name in required_fields
+                            required_marker = " (required)" if is_required else ""
+                            print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
+                    else:
+                        print(f"    Parameters: None")
+                else:
+                    print(f"    Parameters: None")
+                    
+                if verbose:
+                    print(f"    Config: {json.dumps(func, indent=6)}")
+            else:
+                # Regular SWAIG function
+                func_type = ""
+                if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
+                    func_type = " (EXTERNAL webhook)"
+                elif hasattr(func, 'webhook_url') and func.webhook_url:
+                    func_type = " (webhook)"
+                else:
+                    func_type = " (LOCAL webhook)"
+                
+                print(f"  {name} - {func.description}{func_type}")
+                
+                # Show external URL if applicable
+                if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
+                    print(f"    External URL: {func.webhook_url}")
+                
+                # Show parameters
+                if hasattr(func, 'parameters') and func.parameters:
+                    params = func.parameters
+                    # Handle both formats: direct properties dict or full schema
+                    if 'properties' in params:
+                        properties = params['properties']
+                        required_fields = params.get('required', [])
+                    else:
+                        properties = params
+                        required_fields = []
+                    
+                    if properties:
+                        print(f"    Parameters:")
+                        for param_name, param_def in properties.items():
+                            param_type = param_def.get('type', 'unknown')
+                            param_desc = param_def.get('description', 'No description')
+                            is_required = param_name in required_fields
+                            required_marker = " (required)" if is_required else ""
+                            print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
+                    else:
+                        print(f"    Parameters: None")
+                else:
+                    print(f"    Parameters: None")
+                    
+                if verbose:
+                    print(f"    Function object: {func}")
+    else:
+        print("  No SWAIG functions registered")
 
 
 def discover_agents_in_file(agent_path: str) -> List[Dict[str, Any]]:
@@ -2315,7 +2399,29 @@ Examples:
                     
                     print()
                 
-                if len(agents) > 1:
+                # Show tools if there's only one agent or if --agent-class is specified
+                show_tools = False
+                selected_agent = None
+                
+                if len(agents) == 1:
+                    # Single agent - show tools automatically
+                    show_tools = True
+                    selected_agent = agents[0]['object']
+                    print("This file contains a single agent, no --agent-class needed.")
+                elif args.agent_class:
+                    # Specific agent class requested - show tools for that agent
+                    for agent_info in agents:
+                        if agent_info['class_name'] == args.agent_class:
+                            show_tools = True
+                            selected_agent = agent_info['object']
+                            break
+                    
+                    if not selected_agent:
+                        print(f"Error: Agent class '{args.agent_class}' not found.")
+                        print(f"Available agents: {[a['class_name'] for a in agents]}")
+                        return 1
+                else:
+                    # Multiple agents, no specific class - show usage examples
                     print("To use a specific agent with this tool:")
                     print(f"  swaig-test {args.agent_path} [tool_name] [args] --agent-class <AgentClassName>")
                     print()
@@ -2324,8 +2430,24 @@ Examples:
                         print(f"  swaig-test {args.agent_path} --list-tools --agent-class {agent_info['class_name']}")
                         print(f"  swaig-test {args.agent_path} --dump-swml --agent-class {agent_info['class_name']}")
                     print()
-                else:
-                    print("This file contains a single agent, no --agent-class needed.")
+                
+                # Show tools if we have a selected agent
+                if show_tools and selected_agent:
+                    try:
+                        # If it's a class, try to instantiate it
+                        if not isinstance(selected_agent, AgentBase):
+                            if isinstance(selected_agent, type) and issubclass(selected_agent, AgentBase):
+                                selected_agent = selected_agent()
+                            else:
+                                print(f"Warning: Cannot instantiate agent to show tools")
+                                return 0
+                        
+                        display_agent_tools(selected_agent, args.verbose)
+                    except Exception as e:
+                        print(f"Warning: Could not load agent tools: {e}")
+                        if args.verbose:
+                            import traceback
+                            traceback.print_exc()
                 
                 return 0
                 
@@ -2374,84 +2496,7 @@ Examples:
         
         # List tools if requested
         if args.list_tools:
-            print("\nAvailable SWAIG functions:")
-            if hasattr(agent, '_swaig_functions') and agent._swaig_functions:
-                for name, func in agent._swaig_functions.items():
-                    if isinstance(func, dict):
-                        # DataMap function
-                        description = func.get('description', 'DataMap function (serverless)')
-                        print(f"  {name} - {description}")
-                        
-                        # Show parameters for DataMap functions
-                        if 'parameters' in func and func['parameters']:
-                            params = func['parameters']
-                            # Handle both formats: direct properties dict or full schema
-                            if 'properties' in params:
-                                properties = params['properties']
-                                required_fields = params.get('required', [])
-                            else:
-                                properties = params
-                                required_fields = []
-                            
-                            if properties:
-                                print(f"    Parameters:")
-                                for param_name, param_def in properties.items():
-                                    param_type = param_def.get('type', 'unknown')
-                                    param_desc = param_def.get('description', 'No description')
-                                    is_required = param_name in required_fields
-                                    required_marker = " (required)" if is_required else ""
-                                    print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
-                            else:
-                                print(f"    Parameters: None")
-                        else:
-                            print(f"    Parameters: None")
-                            
-                        if args.verbose:
-                            print(f"    Config: {json.dumps(func, indent=6)}")
-                    else:
-                        # Regular SWAIG function
-                        func_type = ""
-                        if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
-                            func_type = " (EXTERNAL webhook)"
-                        elif hasattr(func, 'webhook_url') and func.webhook_url:
-                            func_type = " (webhook)"
-                        else:
-                            func_type = " (LOCAL webhook)"
-                        
-                        print(f"  {name} - {func.description}{func_type}")
-                        
-                        # Show external URL if applicable
-                        if hasattr(func, 'webhook_url') and func.webhook_url and func.is_external:
-                            print(f"    External URL: {func.webhook_url}")
-                        
-                        # Show parameters
-                        if hasattr(func, 'parameters') and func.parameters:
-                            params = func.parameters
-                            # Handle both formats: direct properties dict or full schema
-                            if 'properties' in params:
-                                properties = params['properties']
-                                required_fields = params.get('required', [])
-                            else:
-                                properties = params
-                                required_fields = []
-                            
-                            if properties:
-                                print(f"    Parameters:")
-                                for param_name, param_def in properties.items():
-                                    param_type = param_def.get('type', 'unknown')
-                                    param_desc = param_def.get('description', 'No description')
-                                    is_required = param_name in required_fields
-                                    required_marker = " (required)" if is_required else ""
-                                    print(f"      {param_name} ({param_type}){required_marker}: {param_desc}")
-                            else:
-                                print(f"    Parameters: None")
-                        else:
-                            print(f"    Parameters: None")
-                            
-                        if args.verbose:
-                            print(f"    Function object: {func}")
-            else:
-                print("  No SWAIG functions registered")
+            display_agent_tools(agent, args.verbose)
             return 0
         
         # Dump SWML if requested

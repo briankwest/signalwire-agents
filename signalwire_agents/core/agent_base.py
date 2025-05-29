@@ -44,31 +44,7 @@ except ImportError:
         "uvicorn is required. Install it with: pip install uvicorn"
     )
 
-try:
-    import structlog
-    # Configure structlog only if not already configured
-    if not structlog.is_configured():
-        structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_logger_name,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.UnicodeDecoder(),
-                structlog.dev.ConsoleRenderer()
-            ],
-            context_class=dict,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
-        )
-except ImportError:
-    raise ImportError(
-        "structlog is required. Install it with: pip install structlog"
-    )
+
 
 from signalwire_agents.core.pom_builder import PomBuilder
 from signalwire_agents.core.swaig_function import SWAIGFunction
@@ -82,8 +58,8 @@ from signalwire_agents.core.skill_manager import SkillManager
 from signalwire_agents.utils.schema_utils import SchemaUtils
 from signalwire_agents.core.logging_config import get_logger, get_execution_mode
 
-# Create a logger
-logger = structlog.get_logger("agent_base")
+# Create a logger using centralized system
+logger = get_logger("agent_base")
 
 class EphemeralAgentConfig:
     """
@@ -2053,8 +2029,6 @@ class AgentBase(SWMLService):
         Returns:
             Function execution result
         """
-        import structlog
-        
         # Use the existing logger
         req_log = self.log.bind(
             endpoint="serverless_swaig",

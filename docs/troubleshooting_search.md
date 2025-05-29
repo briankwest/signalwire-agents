@@ -52,12 +52,12 @@ The `sw-search` tool supports four different chunking strategies, each with diff
 **Best for:** Most use cases, balanced content quality
 
 ```bash
-sw-search ./docs --chunking-strategy sentence --max-sentences-per-chunk 50
+sw-search ./docs --chunking-strategy sentence --max-sentences-per-chunk 8
 ```
 
 **Characteristics:**
 - Groups content by sentences for natural boundaries
-- Default: 50 sentences per chunk
+- Default: 8 sentences per chunk
 - Good balance of context and searchability
 - Respects sentence boundaries for readability
 

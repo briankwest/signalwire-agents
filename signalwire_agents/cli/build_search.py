@@ -10,7 +10,6 @@ See LICENSE file in the project root for full license information.
 import argparse
 import sys
 from pathlib import Path
-from ..search.index_builder import IndexBuilder
 
 def main():
     """Main entry point for the build-search command"""
@@ -19,7 +18,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage with directory (defaults to sentence chunking with 50 sentences per chunk)
+  # Basic usage with directory (defaults to sentence chunking with 5 sentences per chunk)
   sw-search ./docs
 
   # Multiple directories
@@ -34,7 +33,7 @@ Examples:
   # Sentence-based chunking with custom parameters
   sw-search ./docs \\
     --chunking-strategy sentence \\
-    --max-sentences-per-chunk 30 \\
+    --max-sentences-per-chunk 10 \\
     --split-newlines 2
 
   # Sliding window chunking
@@ -53,11 +52,25 @@ Examples:
     --chunking-strategy page \\
     --file-types pdf
 
+  # Semantic chunking (groups semantically similar sentences)
+  sw-search ./docs \\
+    --chunking-strategy semantic \\
+    --semantic-threshold 0.6
+
+  # Topic-based chunking (groups by topic changes)
+  sw-search ./docs \\
+    --chunking-strategy topic \\
+    --topic-threshold 0.2
+
+  # QA-optimized chunking (optimized for question-answering)
+  sw-search ./docs \\
+    --chunking-strategy qa
+
   # Full configuration example
   sw-search ./docs ./examples README.md \\
     --output ./knowledge.swsearch \\
     --chunking-strategy sentence \\
-    --max-sentences-per-chunk 50 \\
+    --max-sentences-per-chunk 8 \\
     --file-types md,txt,rst,py \\
     --exclude "**/test/**,**/__pycache__/**" \\
     --languages en,es,fr \\
@@ -88,7 +101,7 @@ Examples:
     
     parser.add_argument(
         '--chunking-strategy',
-        choices=['sentence', 'sliding', 'paragraph', 'page'],
+        choices=['sentence', 'sliding', 'paragraph', 'page', 'semantic', 'topic', 'qa'],
         default='sentence',
         help='Chunking strategy to use (default: sentence)'
     )
@@ -96,8 +109,8 @@ Examples:
     parser.add_argument(
         '--max-sentences-per-chunk',
         type=int,
-        default=50,
-        help='Maximum sentences per chunk for sentence strategy (default: 50)'
+        default=5,
+        help='Maximum sentences per chunk for sentence strategy (default: 5)'
     )
     
     parser.add_argument(
@@ -117,7 +130,7 @@ Examples:
     parser.add_argument(
         '--split-newlines',
         type=int,
-        help='Split on multiple newlines for sentence strategy (optional)'
+        help='Split on multiple newlines (for sentence strategy)'
     )
     
     parser.add_argument(
@@ -149,6 +162,13 @@ Examples:
     )
     
     parser.add_argument(
+        '--index-nlp-backend',
+        choices=['nltk', 'spacy'],
+        default='nltk',
+        help='NLP backend for document processing: nltk (fast, default) or spacy (better quality, slower)'
+    )
+    
+    parser.add_argument(
         '--verbose', 
         action='store_true',
         help='Enable verbose output'
@@ -158,6 +178,20 @@ Examples:
         '--validate',
         action='store_true',
         help='Validate the created index after building'
+    )
+    
+    parser.add_argument(
+        '--semantic-threshold',
+        type=float,
+        default=0.5,
+        help='Similarity threshold for semantic chunking (default: 0.5)'
+    )
+    
+    parser.add_argument(
+        '--topic-threshold',
+        type=float,
+        default=0.3,
+        help='Similarity threshold for topic chunking (default: 0.3)'
     )
     
     args = parser.parse_args()
@@ -204,6 +238,7 @@ Examples:
         print(f"  Languages: {languages}")
         print(f"  Model: {args.model}")
         print(f"  Chunking strategy: {args.chunking_strategy}")
+        print(f"  Index NLP backend: {args.index_nlp_backend}")
         
         if args.chunking_strategy == 'sentence':
             print(f"  Max sentences per chunk: {args.max_sentences_per_chunk}")
@@ -216,12 +251,19 @@ Examples:
             print(f"  Chunking by paragraphs (double newlines)")
         elif args.chunking_strategy == 'page':
             print(f"  Chunking by pages")
+        elif args.chunking_strategy == 'semantic':
+            print(f"  Semantic chunking (similarity threshold: {args.semantic_threshold})")
+        elif args.chunking_strategy == 'topic':
+            print(f"  Topic-based chunking (similarity threshold: {args.topic_threshold})")
+        elif args.chunking_strategy == 'qa':
+            print(f"  QA-optimized chunking")
         
         print(f"  Tags: {tags}")
         print()
     
     try:
-        # Create index builder
+        # Create index builder - import only when actually needed
+        from ..search.index_builder import IndexBuilder
         builder = IndexBuilder(
             model_name=args.model,
             chunking_strategy=args.chunking_strategy,
@@ -229,7 +271,10 @@ Examples:
             chunk_size=args.chunk_size,
             chunk_overlap=args.overlap_size,
             split_newlines=args.split_newlines,
-            verbose=args.verbose
+            index_nlp_backend=args.index_nlp_backend,
+            verbose=args.verbose,
+            semantic_threshold=args.semantic_threshold,
+            topic_threshold=args.topic_threshold
         )
         
         # Build index with multiple sources
@@ -316,8 +361,8 @@ def search_command():
     parser.add_argument('--count', type=int, default=5, help='Number of results to return (default: 5)')
     parser.add_argument('--distance-threshold', type=float, default=0.0, help='Minimum similarity score (default: 0.0)')
     parser.add_argument('--tags', help='Comma-separated tags to filter by')
-    parser.add_argument('--nlp-backend', choices=['nltk', 'spacy'], default='nltk', 
-                       help='NLP backend to use: nltk (fast, default) or spacy (better quality, requires model download)')
+    parser.add_argument('--query-nlp-backend', choices=['nltk', 'spacy'], default='nltk', 
+                       help='NLP backend for query processing: nltk (fast, default) or spacy (better quality, slower)')
     parser.add_argument('--verbose', action='store_true', help='Show detailed information')
     parser.add_argument('--json', action='store_true', help='Output results as JSON')
     parser.add_argument('--no-content', action='store_true', help='Hide content in results (show only metadata)')
@@ -349,11 +394,11 @@ def search_command():
         if args.verbose:
             print(f"Index contains {stats['total_chunks']} chunks from {stats['total_files']} files")
             print(f"Searching for: '{args.query}'")
-            print(f"NLP Backend: {args.nlp_backend}")
+            print(f"Query NLP Backend: {args.query_nlp_backend}")
             print()
         
         # Preprocess query
-        enhanced = preprocess_query(args.query, vector=True, nlp_backend=args.nlp_backend)
+        enhanced = preprocess_query(args.query, vector=True, query_nlp_backend=args.query_nlp_backend)
         
         # Parse tags if provided
         tags = [tag.strip() for tag in args.tags.split(',')] if args.tags else None
@@ -436,6 +481,121 @@ def search_command():
 def console_entry_point():
     """Console script entry point for pip installation"""
     import sys
+    
+    # Fast help check - show help without importing heavy modules
+    if len(sys.argv) > 1 and sys.argv[1] in ['--help', '-h']:
+        print("""usage: sw-search [-h] [--output OUTPUT] [--chunking-strategy {sentence,sliding,paragraph,page,semantic,topic,qa}]
+                 [--max-sentences-per-chunk MAX_SENTENCES_PER_CHUNK] [--chunk-size CHUNK_SIZE]
+                 [--overlap-size OVERLAP_SIZE] [--split-newlines SPLIT_NEWLINES] [--file-types FILE_TYPES]
+                 [--exclude EXCLUDE] [--languages LANGUAGES] [--model MODEL] [--tags TAGS]
+                 [--index-nlp-backend {nltk,spacy}] [--verbose] [--validate]
+                 [--semantic-threshold SEMANTIC_THRESHOLD] [--topic-threshold TOPIC_THRESHOLD]
+                 sources [sources ...]
+
+Build local search index from documents
+
+positional arguments:
+  sources               Source files and/or directories to index
+
+options:
+  -h, --help            show this help message and exit
+  --output OUTPUT       Output .swsearch file (default: sources.swsearch)
+  --chunking-strategy {sentence,sliding,paragraph,page,semantic,topic,qa}
+                        Chunking strategy to use (default: sentence)
+  --max-sentences-per-chunk MAX_SENTENCES_PER_CHUNK
+                        Maximum sentences per chunk for sentence strategy (default: 5)
+  --chunk-size CHUNK_SIZE
+                        Chunk size in words for sliding window strategy (default: 50)
+  --overlap-size OVERLAP_SIZE
+                        Overlap size in words for sliding window strategy (default: 10)
+  --split-newlines SPLIT_NEWLINES
+                        Split on multiple newlines (for sentence strategy)
+  --file-types FILE_TYPES
+                        Comma-separated file extensions to include for directories (default: md,txt,rst)
+  --exclude EXCLUDE     Comma-separated glob patterns to exclude (e.g., "**/test/**,**/__pycache__/**")
+  --languages LANGUAGES
+                        Comma-separated language codes (default: en)
+  --model MODEL         Sentence transformer model name (default: sentence-transformers/all-mpnet-base-v2)
+  --tags TAGS           Comma-separated tags to add to all chunks
+  --index-nlp-backend {nltk,spacy}
+                        NLP backend for document processing: nltk (fast, default) or spacy (better quality, slower)
+  --verbose             Enable verbose output
+  --validate            Validate the created index after building
+  --semantic-threshold SEMANTIC_THRESHOLD
+                        Similarity threshold for semantic chunking (default: 0.5)
+  --topic-threshold TOPIC_THRESHOLD
+                        Similarity threshold for topic chunking (default: 0.3)
+
+Examples:
+  # Basic usage with directory (defaults to sentence chunking with 5 sentences per chunk)
+  sw-search ./docs
+
+  # Multiple directories
+  sw-search ./docs ./examples --file-types md,txt,py
+
+  # Individual files
+  sw-search README.md ./docs/guide.md ./src/main.py
+
+  # Mixed sources (directories and files)
+  sw-search ./docs README.md ./examples specific_file.txt --file-types md,txt,py
+
+  # Sentence-based chunking with custom parameters
+  sw-search ./docs \\
+    --chunking-strategy sentence \\
+    --max-sentences-per-chunk 10 \\
+    --split-newlines 2
+
+  # Sliding window chunking
+  sw-search ./docs \\
+    --chunking-strategy sliding \\
+    --chunk-size 100 \\
+    --overlap-size 20
+
+  # Paragraph-based chunking
+  sw-search ./docs \\
+    --chunking-strategy paragraph \\
+    --file-types md,txt,rst
+
+  # Page-based chunking (good for PDFs)
+  sw-search ./docs \\
+    --chunking-strategy page \\
+    --file-types pdf
+
+  # Semantic chunking (groups semantically similar sentences)
+  sw-search ./docs \\
+    --chunking-strategy semantic \\
+    --semantic-threshold 0.6
+
+  # Topic-based chunking (groups by topic changes)
+  sw-search ./docs \\
+    --chunking-strategy topic \\
+    --topic-threshold 0.2
+
+  # QA-optimized chunking (optimized for question-answering)
+  sw-search ./docs \\
+    --chunking-strategy qa
+
+  # Full configuration example
+  sw-search ./docs ./examples README.md \\
+    --output ./knowledge.swsearch \\
+    --chunking-strategy sentence \\
+    --max-sentences-per-chunk 8 \\
+    --file-types md,txt,rst,py \\
+    --exclude "**/test/**,**/__pycache__/**" \\
+    --languages en,es,fr \\
+    --model sentence-transformers/all-mpnet-base-v2 \\
+    --tags documentation,api \\
+    --verbose
+
+  # Validate an existing index
+  sw-search validate ./docs.swsearch
+
+  # Search within an index
+  sw-search search ./docs.swsearch "how to create an agent"
+  sw-search search ./docs.swsearch "API reference" --count 3 --verbose
+  sw-search search ./docs.swsearch "configuration" --tags documentation --json
+""")
+        return
     
     # Check for subcommands
     if len(sys.argv) > 1:

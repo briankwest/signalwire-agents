@@ -75,10 +75,25 @@ class NativeVectorSearchSkill(SkillBase):
         self.swaig_fields = self.params.get('swaig_fields', {})
         
         # NLP backend configuration
-        self.nlp_backend = self.params.get('nlp_backend', 'nltk')  # Default to faster NLTK
-        if self.nlp_backend not in ['nltk', 'spacy']:
-            self.logger.warning(f"Invalid nlp_backend '{self.nlp_backend}', using 'nltk'")
-            self.nlp_backend = 'nltk'
+        self.nlp_backend = self.params.get('nlp_backend')  # Backward compatibility
+        self.index_nlp_backend = self.params.get('index_nlp_backend', 'nltk')  # Default to fast NLTK for indexing
+        self.query_nlp_backend = self.params.get('query_nlp_backend', 'nltk')  # Default to fast NLTK for search
+        
+        # Handle backward compatibility
+        if self.nlp_backend is not None:
+            self.logger.warning("Parameter 'nlp_backend' is deprecated. Use 'index_nlp_backend' and 'query_nlp_backend' instead.")
+            # If old parameter is used, apply it to both
+            self.index_nlp_backend = self.nlp_backend
+            self.query_nlp_backend = self.nlp_backend
+        
+        # Validate parameters
+        if self.index_nlp_backend not in ['nltk', 'spacy']:
+            self.logger.warning(f"Invalid index_nlp_backend '{self.index_nlp_backend}', using 'nltk'")
+            self.index_nlp_backend = 'nltk'
+            
+        if self.query_nlp_backend not in ['nltk', 'spacy']:
+            self.logger.warning(f"Invalid query_nlp_backend '{self.query_nlp_backend}', using 'nltk'")
+            self.query_nlp_backend = 'nltk'
         
         # Auto-build index if requested and search is available
         if self.build_index and self.source_dir and self.search_available:
@@ -93,7 +108,10 @@ class NativeVectorSearchSkill(SkillBase):
                     self.logger.info(f"Building search index from {self.source_dir}...")
                     from signalwire_agents.search import IndexBuilder
                     
-                    builder = IndexBuilder(verbose=self.params.get('verbose', False))
+                    builder = IndexBuilder(
+                        verbose=self.params.get('verbose', False),
+                        index_nlp_backend=self.index_nlp_backend
+                    )
                     builder.build_index(
                         source_dir=self.source_dir,
                         output_file=self.index_file,
@@ -187,7 +205,7 @@ class NativeVectorSearchSkill(SkillBase):
         try:
             # Preprocess the query
             from signalwire_agents.search.query_processor import preprocess_query
-            enhanced = preprocess_query(query, language='en', vector=True, nlp_backend=self.nlp_backend)
+            enhanced = preprocess_query(query, language='en', vector=True, query_nlp_backend=self.query_nlp_backend)
             
             # Perform search (local or remote)
             if self.use_remote:

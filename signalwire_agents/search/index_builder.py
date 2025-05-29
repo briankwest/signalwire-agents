@@ -35,27 +35,61 @@ logger = logging.getLogger(__name__)
 class IndexBuilder:
     """Build searchable indexes from document directories"""
     
-    def __init__(self, model_name: str = 'sentence-transformers/all-mpnet-base-v2', 
-                 chunking_strategy: str = 'sentence',
-                 max_sentences_per_chunk: int = 50,
-                 chunk_size: int = 50, 
-                 chunk_overlap: int = 10,
-                 split_newlines: Optional[int] = None,
-                 verbose: bool = False):
+    def __init__(
+        self,
+        model_name: str = 'sentence-transformers/all-mpnet-base-v2',
+        chunking_strategy: str = 'sentence',
+        max_sentences_per_chunk: int = 5,
+        chunk_size: int = 50,
+        chunk_overlap: int = 10,
+        split_newlines: Optional[int] = None,
+        index_nlp_backend: str = 'nltk',
+        verbose: bool = False,
+        semantic_threshold: float = 0.5,
+        topic_threshold: float = 0.3
+    ):
+        """
+        Initialize the index builder
+        
+        Args:
+            model_name: Name of the sentence transformer model to use
+            chunking_strategy: Strategy for chunking documents ('sentence', 'sliding', 'paragraph', 'page', 'semantic', 'topic', 'qa')
+            max_sentences_per_chunk: For sentence strategy (default: 5)
+            chunk_size: For sliding strategy - words per chunk (default: 50)
+            chunk_overlap: For sliding strategy - overlap in words (default: 10)
+            split_newlines: For sentence strategy - split on multiple newlines (optional)
+            index_nlp_backend: NLP backend for indexing (default: 'nltk')
+            verbose: Whether to enable verbose logging (default: False)
+            semantic_threshold: Similarity threshold for semantic chunking (default: 0.5)
+            topic_threshold: Similarity threshold for topic chunking (default: 0.3)
+        """
         self.model_name = model_name
         self.chunking_strategy = chunking_strategy
         self.max_sentences_per_chunk = max_sentences_per_chunk
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.split_newlines = split_newlines
+        self.index_nlp_backend = index_nlp_backend
         self.verbose = verbose
+        self.semantic_threshold = semantic_threshold
+        self.topic_threshold = topic_threshold
         self.model = None
+        
+        # Validate NLP backend
+        if self.index_nlp_backend not in ['nltk', 'spacy']:
+            logger.warning(f"Invalid index_nlp_backend '{self.index_nlp_backend}', using 'nltk'")
+            self.index_nlp_backend = 'nltk'
+        
         self.doc_processor = DocumentProcessor(
             chunking_strategy=chunking_strategy,
             max_sentences_per_chunk=max_sentences_per_chunk,
             chunk_size=chunk_size,
-            overlap_size=chunk_overlap,
-            split_newlines=split_newlines
+            chunk_overlap=chunk_overlap,
+            split_newlines=split_newlines,
+            index_nlp_backend=self.index_nlp_backend,
+            verbose=self.verbose,
+            semantic_threshold=self.semantic_threshold,
+            topic_threshold=self.topic_threshold
         )
     
     def _load_model(self):
@@ -130,7 +164,8 @@ class IndexBuilder:
                 # Preprocess content for better search
                 processed = preprocess_document_content(
                     chunk['content'], 
-                    language=chunk.get('language', 'en')
+                    language=chunk.get('language', 'en'),
+                    index_nlp_backend=self.index_nlp_backend
                 )
                 
                 chunk['processed_content'] = processed['enhanced_text']

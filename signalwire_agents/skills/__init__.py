@@ -9,6 +9,6 @@ Skills are automatically discovered from subdirectories.
 from .registry import skill_registry
 
 # Trigger skill discovery on import
-skill_registry.discover_skills()
+# skill_registry.discover_skills()
 
 __all__ = ["skill_registry"] 

@@ -193,7 +193,7 @@ sw-search docs --exclude "**/test/**,**/__pycache__/**"
 sw-search docs/signalwire_agents_concepts_guide.md ./examples README.md \
     --output ./knowledge.swsearch \
     --chunking-strategy sentence \
-    --max-sentences-per-chunk 50 \
+    --max-sentences-per-chunk 8 \
     --file-types md,txt,rst,py \
     --exclude "**/test/**,**/__pycache__/**" \
     --model sentence-transformers/all-mpnet-base-v2 \
@@ -530,7 +530,7 @@ sw-search docs/signalwire_agents_concepts_guide.md examples README.md \
 sw-search ./documentation \
     --output knowledge.swsearch \
     --chunking-strategy sentence \
-    --max-sentences-per-chunk 75 \
+    --max-sentences-per-chunk 8 \
     --file-types md,rst,txt \
     --exclude "**/drafts/**" \
     --tags documentation,help \

@@ -8,7 +8,7 @@ See LICENSE file in the project root for full license information.
 """
 
 from typing import Dict, List, Type, Any, Optional
-import logging
+from signalwire_agents.core.logging_config import get_logger
 from signalwire_agents.core.skill_base import SkillBase
 
 class SkillManager:
@@ -17,7 +17,7 @@ class SkillManager:
     def __init__(self, agent):
         self.agent = agent
         self.loaded_skills: Dict[str, SkillBase] = {}
-        self.logger = logging.getLogger("skill_manager")
+        self.logger = get_logger("skill_manager")
         
     def load_skill(self, skill_name: str, skill_class: Type[SkillBase] = None, params: Optional[Dict[str, Any]] = None) -> tuple[bool, str]:
         """

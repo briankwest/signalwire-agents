@@ -22,13 +22,15 @@ class TestIndexBuilderInit:
         
         assert builder.model_name == 'sentence-transformers/all-mpnet-base-v2'
         assert builder.chunking_strategy == 'sentence'
-        assert builder.max_sentences_per_chunk == 50
+        assert builder.max_sentences_per_chunk == 5
         assert builder.chunk_size == 50
         assert builder.chunk_overlap == 10
         assert builder.split_newlines is None
         assert builder.verbose is False
         assert builder.model is None
         assert builder.doc_processor is not None
+        assert builder.semantic_threshold == 0.5
+        assert builder.topic_threshold == 0.3
     
     def test_custom_initialization(self):
         """Test initialization with custom parameters"""

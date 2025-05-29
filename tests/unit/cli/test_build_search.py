@@ -39,11 +39,14 @@ class TestBuildSearchMain:
             mock_builder_class.assert_called_once_with(
                 model_name='sentence-transformers/all-mpnet-base-v2',
                 chunking_strategy='sentence',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 chunk_size=50,
                 chunk_overlap=10,
                 split_newlines=None,
-                verbose=False
+                index_nlp_backend='nltk',
+                verbose=False,
+                semantic_threshold=0.5,
+                topic_threshold=0.3
             )
             
             # Verify build_index_from_sources was called
@@ -89,11 +92,14 @@ class TestBuildSearchMain:
             mock_builder_class.assert_called_once_with(
                 model_name='custom-model',
                 chunking_strategy='sliding',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 chunk_size=100,
                 chunk_overlap=20,
                 split_newlines=None,
-                verbose=True
+                index_nlp_backend='nltk',
+                verbose=True,
+                semantic_threshold=0.5,
+                topic_threshold=0.3
             )
             
             # Verify build_index_from_sources was called with custom parameters
@@ -510,11 +516,14 @@ class TestArgumentParsing:
             mock_builder_class.assert_called_once_with(
                 model_name='sentence-transformers/all-mpnet-base-v2',
                 chunking_strategy='sentence',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 chunk_size=50,
                 chunk_overlap=10,
                 split_newlines=2,
-                verbose=False
+                index_nlp_backend='nltk',
+                verbose=False,
+                semantic_threshold=0.5,
+                topic_threshold=0.3
             )
     
     @patch('signalwire_agents.cli.build_search.IndexBuilder')
@@ -533,11 +542,14 @@ class TestArgumentParsing:
             mock_builder_class.assert_called_once_with(
                 model_name='sentence-transformers/all-mpnet-base-v2',
                 chunking_strategy='paragraph',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 chunk_size=50,
                 chunk_overlap=10,
                 split_newlines=None,
-                verbose=False
+                index_nlp_backend='nltk',
+                verbose=False,
+                semantic_threshold=0.5,
+                topic_threshold=0.3
             )
     
     @patch('signalwire_agents.cli.build_search.IndexBuilder')
@@ -556,11 +568,14 @@ class TestArgumentParsing:
             mock_builder_class.assert_called_once_with(
                 model_name='sentence-transformers/all-mpnet-base-v2',
                 chunking_strategy='page',
-                max_sentences_per_chunk=50,
+                max_sentences_per_chunk=5,
                 chunk_size=50,
                 chunk_overlap=10,
                 split_newlines=None,
-                verbose=False
+                index_nlp_backend='nltk',
+                verbose=False,
+                semantic_threshold=0.5,
+                topic_threshold=0.3
             )
 
 
@@ -600,7 +615,7 @@ class TestVerboseOutput:
             main()
             
             # Check for sentence specific output
-            mock_print.assert_any_call("  Max sentences per chunk: 50")
+            mock_print.assert_any_call("  Max sentences per chunk: 5")
             mock_print.assert_any_call("  Split on newlines: 3")
 
 

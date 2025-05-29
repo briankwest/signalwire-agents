@@ -89,10 +89,42 @@ class StructuredLoggerWrapper:
     # Also support the 'warn' alias
     warn = warning
     
+    def bind(self, **kwargs) -> 'StructuredLoggerWrapper':
+        """
+        Create a new logger instance with bound context data
+        
+        This maintains compatibility with structlog's bind() method.
+        The bound data will be included in all subsequent log messages.
+        """
+        # Create a new wrapper that includes the bound context
+        return BoundStructuredLoggerWrapper(self._logger, kwargs)
+    
     # Support direct access to underlying logger attributes if needed
     def __getattr__(self, name: str) -> Any:
         """Delegate any unknown attributes to the underlying logger"""
         return getattr(self._logger, name)
+
+
+class BoundStructuredLoggerWrapper(StructuredLoggerWrapper):
+    """
+    A structured logger wrapper that includes bound context data in all messages
+    """
+    
+    def __init__(self, logger: logging.Logger, bound_data: Dict[str, Any]):
+        super().__init__(logger)
+        self._bound_data = bound_data
+    
+    def _format_structured_message(self, message: str, **kwargs) -> str:
+        """Format a message with both bound data and additional keyword arguments"""
+        # Combine bound data with additional kwargs
+        all_kwargs = {**self._bound_data, **kwargs}
+        return super()._format_structured_message(message, **all_kwargs)
+    
+    def bind(self, **kwargs) -> 'BoundStructuredLoggerWrapper':
+        """Create a new logger with additional bound context"""
+        # Combine existing bound data with new data
+        new_bound_data = {**self._bound_data, **kwargs}
+        return BoundStructuredLoggerWrapper(self._logger, new_bound_data)
 
 
 def get_execution_mode() -> str:
@@ -109,6 +141,16 @@ def get_execution_mode() -> str:
     if os.getenv('AWS_LAMBDA_FUNCTION_NAME') or os.getenv('LAMBDA_TASK_ROOT'):
         return 'lambda'
     return 'server'
+
+
+def reset_logging_configuration():
+    """
+    Reset the logging configuration flag to allow reconfiguration
+    
+    This is useful when environment variables change after initial configuration.
+    """
+    global _logging_configured
+    _logging_configured = False
 
 
 def configure_logging():
@@ -182,31 +224,39 @@ def _configure_off_mode():
 
 
 def _configure_stderr_mode(log_level: str):
-    """Configure logging to stderr"""
+    """Configure logging to stderr with colored formatting"""
     # Clear existing handlers
     logging.getLogger().handlers.clear()
     
     # Convert log level
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     
-    # Configure to stderr
-    logging.basicConfig(
-        stream=sys.stderr,
-        level=numeric_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Create handler with colored formatter
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(ColoredFormatter())
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
+    root_logger.addHandler(handler)
 
 
 def _configure_default_mode(log_level: str):
-    """Configure standard logging behavior"""
+    """Configure standard logging behavior with colored formatting"""
+    # Clear existing handlers
+    logging.getLogger().handlers.clear()
+    
     # Convert log level
     numeric_level = getattr(logging, log_level.upper(), logging.INFO)
     
-    # Configure standard logging
-    logging.basicConfig(
-        level=numeric_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Create handler with colored formatter
+    handler = logging.StreamHandler()
+    handler.setFormatter(ColoredFormatter())
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_level)
+    root_logger.addHandler(handler)
 
 
 def get_logger(name: str) -> StructuredLoggerWrapper:
@@ -229,4 +279,83 @@ def get_logger(name: str) -> StructuredLoggerWrapper:
     python_logger = logging.getLogger(name)
     
     # Wrap it with our structured logging interface
-    return StructuredLoggerWrapper(python_logger) 
+    return StructuredLoggerWrapper(python_logger)
+
+
+class ColoredFormatter(logging.Formatter):
+    """
+    A beautiful colored logging formatter that makes logs easy to read and visually appealing
+    """
+    
+    # ANSI color codes
+    COLORS = {
+        'DEBUG': '\033[36m',     # Cyan
+        'INFO': '\033[32m',      # Green  
+        'WARNING': '\033[33m',   # Yellow
+        'ERROR': '\033[31m',     # Red
+        'CRITICAL': '\033[35m',  # Magenta
+        'RESET': '\033[0m',      # Reset
+        'BOLD': '\033[1m',       # Bold
+        'DIM': '\033[2m',        # Dim
+        'WHITE': '\033[37m',     # White
+        'BLUE': '\033[34m',      # Blue
+        'BLACK': '\033[30m',     # Black (for brackets)
+    }
+    
+    def __init__(self):
+        super().__init__()
+    
+    def format(self, record):
+        # Check if we should use colors (not in raw mode, and stdout is a tty)
+        use_colors = (
+            hasattr(sys.stdout, 'isatty') and sys.stdout.isatty() and
+            os.getenv('SIGNALWIRE_LOG_MODE') != 'off' and
+            '--raw' not in sys.argv and '--dump-swml' not in sys.argv
+        )
+        
+        if use_colors:
+            # Get colors
+            level_color = self.COLORS.get(record.levelname, self.COLORS['WHITE'])
+            reset = self.COLORS['RESET']
+            dim = self.COLORS['DIM']
+            bold = self.COLORS['BOLD']
+            blue = self.COLORS['BLUE']
+            black = self.COLORS['BLACK']
+            
+            # Format timestamp in a compact, readable way
+            timestamp = self.formatTime(record, '%H:%M:%S')
+            
+            # Format level with appropriate color and consistent width
+            level_name = f"{level_color}{record.levelname:<8}{reset}"
+            
+            # Format logger name - keep it short and readable
+            logger_name = record.name
+            if len(logger_name) > 15:
+                # Truncate long logger names but keep the end (most specific part)
+                logger_name = "..." + logger_name[-12:]
+            
+            # Get function and line info if available
+            func_info = ""
+            if hasattr(record, 'funcName') and hasattr(record, 'lineno'):
+                func_name = getattr(record, 'funcName', '')
+                line_no = getattr(record, 'lineno', 0)
+                if func_name and func_name != '<module>':
+                    func_info = f" {dim}({func_name}:{line_no}){reset}"
+            
+            # Format the message
+            message = record.getMessage()
+            
+            # Create the final formatted message with a clean, readable layout
+            formatted = (
+                f"{black}[{reset}{dim}{timestamp}{reset}{black}]{reset} "
+                f"{level_name} "
+                f"{blue}{logger_name:<15}{reset}"
+                f"{func_info} "
+                f"{message}"
+            )
+            
+            return formatted
+        else:
+            # Non-colored format (fallback for files, pipes, etc.)
+            timestamp = self.formatTime(record, '%Y-%m-%d %H:%M:%S')
+            return f"{timestamp} {record.levelname:<8} {record.name} {record.getMessage()}" 
