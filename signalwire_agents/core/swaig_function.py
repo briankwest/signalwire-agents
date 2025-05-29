@@ -15,6 +15,8 @@ from typing import Dict, Any, Optional, Callable, List, Type, Union
 import inspect
 import logging
 
+# Import here to avoid circular imports
+from signalwire_agents.core.function_result import SwaigFunctionResult
 
 class SWAIGFunction:
     """
@@ -101,9 +103,6 @@ class SWAIGFunction:
             # Call the handler with both args and raw_data
             result = self.handler(args, raw_data)
                 
-            # Import here to avoid circular imports
-            from signalwire_agents.core.function_result import SwaigFunctionResult
-            
             # Handle different result types - everything must end up as a SwaigFunctionResult
             if isinstance(result, SwaigFunctionResult):
                 # Already a SwaigFunctionResult - just convert to dict

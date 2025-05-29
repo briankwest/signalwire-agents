@@ -269,6 +269,7 @@ class SwmlRenderer:
             
             # Return in requested format
             if format.lower() == "yaml":
+                import yaml
                 return yaml.dump(swml, sort_keys=False)
             else:
                 return json.dumps(swml, indent=2)
@@ -305,17 +306,24 @@ class SwmlRenderer:
             # Add any actions
             if actions:
                 for action in actions:
-                    if action["type"] == "play":
-                        service.add_verb("play", {
-                            "url": action["url"]
-                        })
-                    elif action["type"] == "transfer":
-                        service.add_verb("connect", [
-                            {"to": action["dest"]}
-                        ])
-                    elif action["type"] == "hang_up":
-                        service.add_verb("hangup", {})
-                    # Additional action types could be added here
+                    # Support both type-based actions and direct SWML verbs
+                    if "type" in action:
+                        # Type-based action format
+                        if action["type"] == "play":
+                            service.add_verb("play", {
+                                "url": action["url"]
+                            })
+                        elif action["type"] == "transfer":
+                            service.add_verb("connect", [
+                                {"to": action["dest"]}
+                            ])
+                        elif action["type"] == "hang_up":
+                            service.add_verb("hangup", {})
+                        # Additional action types could be added here
+                    else:
+                        # Direct SWML verb format
+                        for verb_name, verb_config in action.items():
+                            service.add_verb(verb_name, verb_config)
             
             # Return in requested format
             if format.lower() == "yaml":
@@ -343,26 +351,33 @@ class SwmlRenderer:
             # Add any actions
             if actions:
                 for action in actions:
-                    if action["type"] == "play":
-                        swml["sections"]["main"].append({
-                            "play": {
-                                "url": action["url"]
-                            }
-                        })
-                    elif action["type"] == "transfer":
-                        swml["sections"]["main"].append({
-                            "connect": [
-                                {"to": action["dest"]}
-                            ]
-                        })
-                    elif action["type"] == "hang_up":
-                        swml["sections"]["main"].append({
-                            "hangup": {}
-                        })
-                    # Additional action types could be added here
+                    # Support both type-based actions and direct SWML verbs
+                    if "type" in action:
+                        # Type-based action format
+                        if action["type"] == "play":
+                            swml["sections"]["main"].append({
+                                "play": {
+                                    "url": action["url"]
+                                }
+                            })
+                        elif action["type"] == "transfer":
+                            swml["sections"]["main"].append({
+                                "connect": [
+                                    {"to": action["dest"]}
+                                ]
+                            })
+                        elif action["type"] == "hang_up":
+                            swml["sections"]["main"].append({
+                                "hangup": {}
+                            })
+                        # Additional action types could be added here
+                    else:
+                        # Direct SWML verb format - add the action as-is
+                        swml["sections"]["main"].append(action)
                     
             # Return in requested format
             if format.lower() == "yaml":
+                import yaml
                 return yaml.dump(swml, sort_keys=False)
             else:
                 return json.dumps(swml)

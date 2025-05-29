@@ -232,3 +232,4 @@ Dockerfile.local
 # Kubernetes
 k8s-local/
 *.local.yaml
+test.db

@@ -1,0 +1,16 @@
+# Development and Testing Dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
+pytest-xdist>=3.3.0  # For parallel test execution
+pytest-html>=3.2.0   # For HTML test reports
+pytest-timeout>=2.1.0 # For test timeouts
+coverage>=7.2.0
+mock>=5.1.0
+responses>=0.23.0     # For mocking HTTP requests
+freezegun>=1.2.0      # For mocking datetime
+factory-boy>=3.3.0    # For test data factories
+faker>=19.0.0         # For generating fake data
+httpx>=0.24.0         # For async HTTP testing
+aiofiles>=23.0.0      # For async file operations in tests 

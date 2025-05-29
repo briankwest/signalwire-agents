@@ -2227,8 +2227,6 @@ class AgentBase(SWMLService):
                 
                 self.log.info("callback_endpoint_registered", path=callback_path)
     
-    @classmethod
-
     # ----------------------------------------------------------------------
     # AI Verb Configuration Methods
     # ----------------------------------------------------------------------
