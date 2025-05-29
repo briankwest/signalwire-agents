@@ -146,6 +146,8 @@ class PlayBackgroundFileSkill(SkillBase):
                 },
                 "required": ["action"]
             },
+            "wait_for_fillers": True,
+            "skip_fillers": True,
             "data_map": {
                 "expressions": self._build_expressions()
             }
@@ -183,8 +185,7 @@ class PlayBackgroundFileSkill(SkillBase):
         
         # Add stop expression
         stop_result = SwaigFunctionResult(
-            "Tell the user you have stopped the background file playback.",
-            post_process=True
+            "Tell the user you have stopped the background file playback."
         ).stop_background_file()
         
         expressions.append({
