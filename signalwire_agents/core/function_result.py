@@ -281,7 +281,7 @@ class SwaigFunctionResult:
         else:
             raise TypeError("swml_content must be string, dict, or SWML object")
         
-        action = {"SWML": swml_data}
+        action = swml_data
         if transfer:
             action["transfer"] = "true"
         
