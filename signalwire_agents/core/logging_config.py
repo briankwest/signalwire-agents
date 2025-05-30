@@ -127,19 +127,34 @@ class BoundStructuredLoggerWrapper(StructuredLoggerWrapper):
         return BoundStructuredLoggerWrapper(self._logger, new_bound_data)
 
 
-def get_execution_mode() -> str:
+def get_execution_mode():
     """
     Determine the execution mode based on environment variables
     
     Returns:
-        'cgi' if running in CGI mode
-        'lambda' if running in AWS Lambda 
-        'server' for normal server mode
+        str: 'server', 'cgi', 'lambda', 'google_cloud_function', 'azure_function', or 'unknown'
     """
+    # Check for CGI environment
     if os.getenv('GATEWAY_INTERFACE'):
         return 'cgi'
+    
+    # Check for AWS Lambda environment
     if os.getenv('AWS_LAMBDA_FUNCTION_NAME') or os.getenv('LAMBDA_TASK_ROOT'):
         return 'lambda'
+    
+    # Check for Google Cloud Functions environment
+    if (os.getenv('FUNCTION_TARGET') or 
+        os.getenv('K_SERVICE') or 
+        os.getenv('GOOGLE_CLOUD_PROJECT')):
+        return 'google_cloud_function'
+    
+    # Check for Azure Functions environment
+    if (os.getenv('AZURE_FUNCTIONS_ENVIRONMENT') or 
+        os.getenv('FUNCTIONS_WORKER_RUNTIME') or
+        os.getenv('AzureWebJobsStorage')):
+        return 'azure_function'
+    
+    # Default to server mode
     return 'server'
 
 

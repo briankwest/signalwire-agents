@@ -25,7 +25,7 @@ import re
 import signal
 import sys
 from typing import Optional, Union, List, Dict, Any, Tuple, Callable, Type
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlparse, urlencode, urlunparse
 
 try:
     import fastapi
@@ -1299,51 +1299,61 @@ class AgentBase(SWMLService):
             script_name = os.getenv('SCRIPT_NAME', '')
             base_url = f"{protocol}://{host}{script_name}"
         elif mode == 'lambda':
-            function_url = os.getenv('AWS_LAMBDA_FUNCTION_URL')
-            if function_url and ('amazonaws.com' in function_url or 'on.aws' in function_url):
-                base_url = function_url.rstrip('/')
+            # AWS Lambda Function URL format
+            lambda_url = os.getenv('AWS_LAMBDA_FUNCTION_URL')
+            if lambda_url:
+                base_url = lambda_url.rstrip('/')
             else:
-                api_id = os.getenv('AWS_API_GATEWAY_ID')
-                if api_id:
-                    region = os.getenv('AWS_REGION', 'us-east-1')
-                    stage = os.getenv('AWS_API_GATEWAY_STAGE', 'prod')
-                    base_url = f"https://{api_id}.execute-api.{region}.amazonaws.com/{stage}"
-                else:
-                    import logging
-                    logging.warning("Lambda mode detected but no URL configuration found")
-                    base_url = "https://lambda-url-not-configured"
-        elif mode == 'cloud_function':
-            function_url = os.getenv('FUNCTION_URL')
-            if function_url:
-                base_url = function_url
-            else:
-                project = os.getenv('GOOGLE_CLOUD_PROJECT')
-                if project:
-                    region = os.getenv('GOOGLE_CLOUD_REGION', 'us-central1')
-                    service = os.getenv('K_SERVICE', 'function')
-                    base_url = f"https://{region}-{project}.cloudfunctions.net/{service}"
-                else:
-                    import logging
-                    logging.warning("Cloud Function mode detected but no URL configuration found")
-                    base_url = "https://cloud-function-url-not-configured"
-        else:
-            # Server mode - preserve existing logic
-            if self._proxy_url_base:
-                proxy_base = self._proxy_url_base.rstrip('/')
-                route = self.route if self.route.startswith('/') else f"/{self.route}"
-                base_url = f"{proxy_base}{route}"
-            else:
-                if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
-                    host = "localhost"
-                else:
-                    host = self.host
-                base_url = f"http://{host}:{self.port}{self.route}"
+                # Fallback construction for Lambda
+                region = os.getenv('AWS_REGION', 'us-east-1')
+                function_name = os.getenv('AWS_LAMBDA_FUNCTION_NAME', 'unknown')
+                base_url = f"https://{function_name}.lambda-url.{region}.on.aws"
+        elif mode == 'google_cloud_function':
+            # Google Cloud Functions URL format
+            project_id = os.getenv('GOOGLE_CLOUD_PROJECT') or os.getenv('GCP_PROJECT')
+            region = os.getenv('FUNCTION_REGION') or os.getenv('GOOGLE_CLOUD_REGION', 'us-central1')
+            service_name = os.getenv('K_SERVICE') or os.getenv('FUNCTION_TARGET', 'unknown')
             
-        # Add auth if requested (applies to all modes now)
+            if project_id:
+                base_url = f"https://{region}-{project_id}.cloudfunctions.net/{service_name}"
+            else:
+                # Fallback for local testing or incomplete environment
+                base_url = f"https://localhost:8080"
+        elif mode == 'azure_function':
+            # Azure Functions URL format
+            function_app_name = os.getenv('WEBSITE_SITE_NAME') or os.getenv('AZURE_FUNCTIONS_APP_NAME')
+            function_name = os.getenv('AZURE_FUNCTION_NAME', 'unknown')
+            
+            if function_app_name:
+                base_url = f"https://{function_app_name}.azurewebsites.net/api/{function_name}"
+            else:
+                # Fallback for local testing
+                base_url = f"https://localhost:7071/api/{function_name}"
+        else:
+            # Server mode
+            protocol = 'https' if self.ssl_cert and self.ssl_key else 'http'
+            base_url = f"{protocol}://{self.host}:{self.port}"
+        
+        # Add route if not already included (for server mode)
+        if mode == 'server' and self.route and not base_url.endswith(self.route):
+            base_url = f"{base_url}/{self.route.lstrip('/')}"
+        
+        # Add authentication if requested
         if include_auth:
-            username, password = self._basic_auth
-            url = urlparse(base_url)
-            return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
+            username, password = self.get_basic_auth_credentials()
+            if username and password:
+                # Parse URL to insert auth
+                from urllib.parse import urlparse, urlunparse
+                parsed = urlparse(base_url)
+                # Reconstruct with auth
+                base_url = urlunparse((
+                    parsed.scheme,
+                    f"{username}:{password}@{parsed.netloc}",
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
         
         return base_url
         
@@ -2110,7 +2120,22 @@ class AgentBase(SWMLService):
                         "body": swml_response
                     }
             
-            elif mode in ['cloud_function', 'azure_function']:
+            elif mode == 'google_cloud_function':
+                # Check authentication in Google Cloud Functions mode
+                if not self._check_google_cloud_function_auth(event):
+                    return self._send_google_cloud_function_auth_challenge()
+                
+                return self._handle_google_cloud_function_request(event)
+            
+            elif mode == 'azure_function':
+                # Check authentication in Azure Functions mode
+                if not self._check_azure_function_auth(event):
+                    return self._send_azure_function_auth_challenge()
+                
+                return self._handle_azure_function_request(event)
+            
+            elif mode in ['cloud_function']:
+                # Legacy cloud function mode - deprecated
                 # Check authentication in Cloud Function mode
                 if not self._check_cloud_function_auth(event):
                     return self._send_cloud_function_auth_challenge()
@@ -3540,3 +3565,245 @@ class AgentBase(SWMLService):
     def has_skill(self, skill_name: str) -> bool:
         """Check if skill is loaded"""
         return self.skill_manager.has_skill(skill_name)
+
+    def _check_google_cloud_function_auth(self, request) -> bool:
+        """
+        Check basic auth in Google Cloud Functions mode using request headers
+        
+        Args:
+            request: Flask request object or similar containing headers
+            
+        Returns:
+            True if auth is valid, False otherwise
+        """
+        if not hasattr(request, 'headers'):
+            return False
+            
+        # Check for authorization header (case-insensitive)
+        auth_header = None
+        for key in request.headers:
+            if key.lower() == 'authorization':
+                auth_header = request.headers[key]
+                break
+                
+        if not auth_header or not auth_header.startswith('Basic '):
+            return False
+            
+        try:
+            import base64
+            encoded_credentials = auth_header[6:]  # Remove 'Basic '
+            decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
+            provided_username, provided_password = decoded_credentials.split(':', 1)
+            
+            expected_username, expected_password = self.get_basic_auth_credentials()
+            return (provided_username == expected_username and 
+                    provided_password == expected_password)
+        except Exception:
+            return False
+
+    def _check_azure_function_auth(self, req) -> bool:
+        """
+        Check basic auth in Azure Functions mode using request object
+        
+        Args:
+            req: Azure Functions request object containing headers
+            
+        Returns:
+            True if auth is valid, False otherwise
+        """
+        if not hasattr(req, 'headers'):
+            return False
+            
+        # Check for authorization header (case-insensitive)
+        auth_header = None
+        for key, value in req.headers.items():
+            if key.lower() == 'authorization':
+                auth_header = value
+                break
+                
+        if not auth_header or not auth_header.startswith('Basic '):
+            return False
+            
+        try:
+            import base64
+            encoded_credentials = auth_header[6:]  # Remove 'Basic '
+            decoded_credentials = base64.b64decode(encoded_credentials).decode('utf-8')
+            provided_username, provided_password = decoded_credentials.split(':', 1)
+            
+            expected_username, expected_password = self.get_basic_auth_credentials()
+            return (provided_username == expected_username and 
+                    provided_password == expected_password)
+        except Exception:
+            return False
+
+    def _send_google_cloud_function_auth_challenge(self):
+        """
+        Send authentication challenge in Google Cloud Functions mode
+        
+        Returns:
+            Flask-compatible response with 401 status and WWW-Authenticate header
+        """
+        from flask import Response
+        return Response(
+            response=json.dumps({"error": "Unauthorized"}),
+            status=401,
+            headers={
+                "WWW-Authenticate": "Basic realm=\"SignalWire Agent\"",
+                "Content-Type": "application/json"
+            }
+        )
+    
+    def _send_azure_function_auth_challenge(self):
+        """
+        Send authentication challenge in Azure Functions mode
+        
+        Returns:
+            Azure Functions response with 401 status and WWW-Authenticate header
+        """
+        import azure.functions as func
+        return func.HttpResponse(
+            body=json.dumps({"error": "Unauthorized"}),
+            status_code=401,
+            headers={
+                "WWW-Authenticate": "Basic realm=\"SignalWire Agent\"",
+                "Content-Type": "application/json"
+            }
+        )
+
+    def _handle_google_cloud_function_request(self, request):
+        """
+        Handle Google Cloud Functions specific requests
+        
+        Args:
+            request: Flask request object from Google Cloud Functions
+            
+        Returns:
+            Flask response object
+        """
+        try:
+            # Get the path from the request
+            path = request.path.strip('/')
+            
+            if not path:
+                # Root request - return SWML
+                swml_response = self._render_swml()
+                from flask import Response
+                return Response(
+                    response=swml_response,
+                    status=200,
+                    headers={"Content-Type": "application/json"}
+                )
+            else:
+                # SWAIG function call
+                args = {}
+                call_id = None
+                raw_data = None
+                
+                # Parse request data
+                if request.method == 'POST':
+                    try:
+                        if request.is_json:
+                            raw_data = request.get_json()
+                        else:
+                            raw_data = json.loads(request.get_data(as_text=True))
+                        
+                        call_id = raw_data.get("call_id")
+                        
+                        # Extract arguments like the FastAPI handler does
+                        if "argument" in raw_data and isinstance(raw_data["argument"], dict):
+                            if "parsed" in raw_data["argument"] and isinstance(raw_data["argument"]["parsed"], list) and raw_data["argument"]["parsed"]:
+                                args = raw_data["argument"]["parsed"][0]
+                            elif "raw" in raw_data["argument"]:
+                                try:
+                                    args = json.loads(raw_data["argument"]["raw"])
+                                except Exception:
+                                    pass
+                    except Exception:
+                        # If parsing fails, continue with empty args
+                        pass
+                
+                result = self._execute_swaig_function(path, args, call_id, raw_data)
+                from flask import Response
+                return Response(
+                    response=json.dumps(result) if isinstance(result, dict) else str(result),
+                    status=200,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error in Google Cloud Function request handler: {e}")
+            from flask import Response
+            return Response(
+                response=json.dumps({"error": str(e)}),
+                status=500,
+                headers={"Content-Type": "application/json"}
+            )
+
+    def _handle_azure_function_request(self, req):
+        """
+        Handle Azure Functions specific requests
+        
+        Args:
+            req: Azure Functions HttpRequest object
+            
+        Returns:
+            Azure Functions HttpResponse object
+        """
+        try:
+            import azure.functions as func
+            
+            # Get the path from the request
+            path = req.url.split('/')[-1] if req.url else ''
+            
+            if not path or path == 'api':
+                # Root request - return SWML
+                swml_response = self._render_swml()
+                return func.HttpResponse(
+                    body=swml_response,
+                    status_code=200,
+                    headers={"Content-Type": "application/json"}
+                )
+            else:
+                # SWAIG function call
+                args = {}
+                call_id = None
+                raw_data = None
+                
+                # Parse request data
+                if req.method == 'POST':
+                    try:
+                        body = req.get_body()
+                        if body:
+                            raw_data = json.loads(body.decode('utf-8'))
+                            call_id = raw_data.get("call_id")
+                            
+                            # Extract arguments like the FastAPI handler does
+                            if "argument" in raw_data and isinstance(raw_data["argument"], dict):
+                                if "parsed" in raw_data["argument"] and isinstance(raw_data["argument"]["parsed"], list) and raw_data["argument"]["parsed"]:
+                                    args = raw_data["argument"]["parsed"][0]
+                                elif "raw" in raw_data["argument"]:
+                                    try:
+                                        args = json.loads(raw_data["argument"]["raw"])
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        # If parsing fails, continue with empty args
+                        pass
+                
+                result = self._execute_swaig_function(path, args, call_id, raw_data)
+                return func.HttpResponse(
+                    body=json.dumps(result) if isinstance(result, dict) else str(result),
+                    status_code=200,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+        except Exception as e:
+            import logging
+            logging.error(f"Error in Azure Function request handler: {e}")
+            import azure.functions as func
+            return func.HttpResponse(
+                body=json.dumps({"error": str(e)}),
+                status_code=500,
+                headers={"Content-Type": "application/json"}
+            )
