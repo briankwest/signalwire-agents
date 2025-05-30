@@ -1878,6 +1878,124 @@ class AgentBase(SWMLService):
             else:
                 raise
 
+    def _check_cgi_auth(self) -> bool:
+        """
+        Check basic auth in CGI mode using environment variables
+        
+        Returns:
+            True if auth is valid, False otherwise
+        """
+        # Check for HTTP_AUTHORIZATION environment variable
+        auth_header = os.getenv('HTTP_AUTHORIZATION')
+        if not auth_header:
+            # Also check for REMOTE_USER (if web server handled auth)
+            remote_user = os.getenv('REMOTE_USER')
+            if remote_user:
+                # If web server handled auth, trust it
+                return True
+            return False
+        
+        if not auth_header.startswith('Basic '):
+            return False
+            
+        try:
+            # Decode the base64 credentials
+            credentials = base64.b64decode(auth_header[6:]).decode("utf-8")
+            username, password = credentials.split(":", 1)
+            return self.validate_basic_auth(username, password)
+        except Exception:
+            return False
+    
+    def _send_cgi_auth_challenge(self) -> str:
+        """
+        Send authentication challenge in CGI mode
+        
+        Returns:
+            HTTP response with 401 status and WWW-Authenticate header
+        """
+        # In CGI, we need to output the complete HTTP response
+        response = "Status: 401 Unauthorized\r\n"
+        response += "WWW-Authenticate: Basic realm=\"SignalWire Agent\"\r\n"
+        response += "Content-Type: application/json\r\n"
+        response += "\r\n"
+        response += json.dumps({"error": "Unauthorized"})
+        return response
+
+    def _check_lambda_auth(self, event) -> bool:
+        """
+        Check basic auth in Lambda mode using event headers
+        
+        Args:
+            event: Lambda event object containing headers
+            
+        Returns:
+            True if auth is valid, False otherwise
+        """
+        if not event or 'headers' not in event:
+            return False
+            
+        headers = event['headers']
+        
+        # Check for authorization header (case-insensitive)
+        auth_header = None
+        for key, value in headers.items():
+            if key.lower() == 'authorization':
+                auth_header = value
+                break
+                
+        if not auth_header or not auth_header.startswith('Basic '):
+            return False
+            
+        try:
+            # Decode the base64 credentials
+            credentials = base64.b64decode(auth_header[6:]).decode("utf-8")
+            username, password = credentials.split(":", 1)
+            return self.validate_basic_auth(username, password)
+        except Exception:
+            return False
+    
+    def _send_lambda_auth_challenge(self) -> dict:
+        """
+        Send authentication challenge in Lambda mode
+        
+        Returns:
+            Lambda response with 401 status and WWW-Authenticate header
+        """
+        return {
+            "statusCode": 401,
+            "headers": {
+                "WWW-Authenticate": "Basic realm=\"SignalWire Agent\"",
+                "Content-Type": "application/json"
+            },
+            "body": json.dumps({"error": "Unauthorized"})
+        }
+    
+    def _check_cloud_function_auth(self, request) -> bool:
+        """
+        Check basic auth in Cloud Function mode
+        
+        Args:
+            request: Cloud Function request object
+            
+        Returns:
+            True if auth is valid, False otherwise
+        """
+        # This would need to be implemented based on the specific
+        # cloud function framework being used (Flask, etc.)
+        # For now, return True to maintain existing behavior
+        return True
+    
+    def _send_cloud_function_auth_challenge(self):
+        """
+        Send authentication challenge in Cloud Function mode
+        
+        Returns:
+            Cloud Function response with 401 status
+        """
+        # This would need to be implemented based on the specific
+        # cloud function framework being used
+        return {"error": "Unauthorized", "status": 401}
+
     def handle_serverless_request(self, event=None, context=None, mode=None):
         """
         Handle serverless environment requests (CGI, Lambda, Cloud Functions)
@@ -1895,6 +2013,10 @@ class AgentBase(SWMLService):
         
         try:
             if mode == 'cgi':
+                # Check authentication in CGI mode
+                if not self._check_cgi_auth():
+                    return self._send_cgi_auth_challenge()
+                
                 path_info = os.getenv('PATH_INFO', '').strip('/')
                 if not path_info:
                     return self._render_swml()
@@ -1930,6 +2052,10 @@ class AgentBase(SWMLService):
                     return self._execute_swaig_function(path_info, args, call_id, raw_data)
             
             elif mode == 'lambda':
+                # Check authentication in Lambda mode
+                if not self._check_lambda_auth(event):
+                    return self._send_lambda_auth_challenge()
+                
                 if event:
                     path = event.get('pathParameters', {}).get('proxy', '') if event.get('pathParameters') else ''
                     if not path:
@@ -1985,6 +2111,10 @@ class AgentBase(SWMLService):
                     }
             
             elif mode in ['cloud_function', 'azure_function']:
+                # Check authentication in Cloud Function mode
+                if not self._check_cloud_function_auth(event):
+                    return self._send_cloud_function_auth_challenge()
+                
                 return self._handle_cloud_function_request(event)
                 
         except Exception as e:
