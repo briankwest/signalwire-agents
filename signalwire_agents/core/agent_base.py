@@ -1339,8 +1339,8 @@ class AgentBase(SWMLService):
                     host = self.host
                 base_url = f"http://{host}:{self.port}{self.route}"
             
-        # Add auth if requested (only for server mode)
-        if include_auth and mode == 'server':
+        # Add auth if requested (applies to all modes now)
+        if include_auth:
             username, password = self._basic_auth
             url = urlparse(base_url)
             return url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
@@ -1362,11 +1362,8 @@ class AgentBase(SWMLService):
         mode = get_execution_mode()
         
         if mode != 'server':
-            # In serverless mode, use the serverless-appropriate URL
-            base_url = self.get_full_url()
-            
-            # For serverless, we don't need auth in webhook URLs since auth is handled differently
-            # and we want to return the actual platform URL
+            # In serverless mode, use the serverless-appropriate URL with auth
+            base_url = self.get_full_url(include_auth=True)
             
             # Ensure the endpoint has a trailing slash to prevent redirects
             if endpoint in ["swaig", "post_prompt"]:
