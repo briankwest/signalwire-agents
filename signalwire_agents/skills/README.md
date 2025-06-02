@@ -227,7 +227,7 @@ packages = [
     "signalwire_agents.skills.math",
     "signalwire_agents.skills.joke",
     "signalwire_agents.skills.datasphere",
-    "signalwire_agents.skills.wikipedia",
+    "signalwire_agents.skills.wikipedia_search",
     "signalwire_agents.skills.your_skill_name"  # Add your skill here
 ]
 ```
