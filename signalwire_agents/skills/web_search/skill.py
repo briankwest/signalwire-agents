@@ -224,7 +224,7 @@ class WebSearchSkill(SkillBase):
                 formatted_message = self.no_results_message.format(query=query) if '{query}' in self.no_results_message else self.no_results_message
                 return SwaigFunctionResult(formatted_message)
             
-            response = f"I found {num_results} results for '{query}':\n\n{search_results}"
+            response = f"Here are {num_results} results for '{query}':\n\nReiterate them to the user in a concise summary format\n\n{search_results}"
             return SwaigFunctionResult(response)
             
         except Exception as e:
