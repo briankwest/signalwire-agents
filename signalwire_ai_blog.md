@@ -475,17 +475,77 @@ This includes all core functionality:
 
 **Installation with Search Features**
 
-For agents that need local document search capabilities:
+The SDK provides multiple search installation options to match your needs. Choose the option that balances features with installation size:
+
+### Basic Search (~500MB)
+For vector embeddings and keyword search with minimal dependencies:
 
 ```bash
 pip install "signalwire-agents[search]"
 ```
 
-This includes everything in the basic installation plus:
-- Local Search System with vector similarity search
-- Document indexing and CLI tools
+**Includes:**
+- Core search functionality with vector similarity
+- Document indexing and CLI tools  
 - SQLite-based search indexes
-- Hybrid search combining vector and keyword search
+- Basic document processing (text, markdown)
+
+### Full Document Processing (~600MB)
+For comprehensive document support including PDF, DOCX, Excel, PowerPoint:
+
+```bash
+pip install "signalwire-agents[search-full]"
+```
+
+**Adds:**
+- PDF processing capabilities
+- Microsoft Office document support (DOCX, Excel, PowerPoint)
+- HTML and additional file format processing
+
+### Advanced NLP Features (~700MB)
+For enhanced search quality with advanced natural language processing:
+
+```bash
+pip install "signalwire-agents[search-nlp]"
+```
+
+**Adds:**
+- spaCy for advanced text processing
+- Better query understanding and synonym expansion
+- Named entity recognition
+
+**⚠️ Additional Setup Required:**
+```bash
+python -m spacy download en_core_web_sm
+```
+
+**Performance Note:** Advanced NLP features provide significantly better search quality but are 2-3x slower than basic search.
+
+### All Search Features (~700MB)
+For complete search functionality:
+
+```bash
+pip install "signalwire-agents[search-all]"
+```
+
+**Includes:** All search features combined
+
+**⚠️ Additional Setup Required:**
+```bash
+python -m spacy download en_core_web_sm
+```
+
+### Feature Comparison
+
+| Feature | Basic | Full | NLP | All |
+|---------|-------|------|-----|-----|
+| Vector embeddings | ✅ | ✅ | ✅ | ✅ |
+| Keyword search | ✅ | ✅ | ✅ | ✅ |
+| Text files (txt, md) | ✅ | ✅ | ✅ | ✅ |
+| PDF processing | ❌ | ✅ | ❌ | ✅ |
+| DOCX processing | ❌ | ✅ | ❌ | ✅ |
+| Excel/PowerPoint | ❌ | ✅ | ❌ | ✅ |
+| Advanced NLP | ❌ | ❌ | ✅ | ✅ |
 
 **Development Installation**
 
@@ -497,21 +557,31 @@ cd signalwire-python
 pip install -e ".[search]"
 ```
 
-### Optional Dependencies
+### Installation Verification
 
-The SDK uses optional dependencies to keep the base installation lightweight while providing advanced features when needed:
+Check if search functionality is available:
 
-**Search Dependencies**
-- `sentence-transformers`: For generating document embeddings
-- `faiss-cpu`: Efficient vector similarity search
-- `python-docx`: Microsoft Word document support
-- `openpyxl`: Excel file support
-- `PyPDF2`: PDF document processing
+```python
+try:
+    from signalwire_agents.search import IndexBuilder, SearchEngine
+    print("✅ Search functionality is available")
+except ImportError as e:
+    print(f"❌ Search not available: {e}")
+    print("Install with: pip install signalwire-agents[search]")
+```
 
-These are automatically installed with the `[search]` extra but can be installed manually if needed:
+### Common Installation Issues
+
+**"Illegal instruction" Error**: On older server hardware, you may encounter CPU instruction set incompatibility. Set these environment variables:
 
 ```bash
-pip install sentence-transformers faiss-cpu python-docx openpyxl PyPDF2
+export PYTORCH_DISABLE_AVX2=1
+export PYTORCH_DISABLE_AVX512=1
+```
+
+Then run your installation or commands:
+```bash
+PYTORCH_DISABLE_AVX2=1 PYTORCH_DISABLE_AVX512=1 pip install signalwire-agents[search]
 ```
 
 **Development Dependencies**
