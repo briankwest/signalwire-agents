@@ -85,6 +85,10 @@ Examples:
   sw-search search ./docs.swsearch "how to create an agent"
   sw-search search ./docs.swsearch "API reference" --count 3 --verbose
   sw-search search ./docs.swsearch "configuration" --tags documentation --json
+
+  # Search via remote API
+  sw-search remote http://localhost:8001 "how to create an agent" --index-name docs
+  sw-search remote localhost:8001 "API reference" --index-name docs --count 3 --verbose
         """
     )
     
@@ -263,7 +267,7 @@ Examples:
     
     try:
         # Create index builder - import only when actually needed
-        from ..search.index_builder import IndexBuilder
+        from signalwire_agents.search.index_builder import IndexBuilder
         builder = IndexBuilder(
             model_name=args.model,
             chunking_strategy=args.chunking_strategy,
@@ -328,7 +332,7 @@ def validate_command():
         sys.exit(1)
     
     try:
-        from ..search.index_builder import IndexBuilder
+        from signalwire_agents.search.index_builder import IndexBuilder
         builder = IndexBuilder()
         
         validation = builder.validate_index(args.index_file)
@@ -376,8 +380,8 @@ def search_command():
     try:
         # Import search dependencies
         try:
-            from ..search.search_engine import SearchEngine
-            from ..search.query_processor import preprocess_query
+            from signalwire_agents.search.search_engine import SearchEngine
+            from signalwire_agents.search.query_processor import preprocess_query
         except ImportError as e:
             print(f"Error: Search functionality not available. Install with: pip install signalwire-agents[search]")
             print(f"Details: {e}")
@@ -473,6 +477,141 @@ def search_command():
         
     except Exception as e:
         print(f"Error searching index: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+def remote_command():
+    """Search via remote API endpoint"""
+    parser = argparse.ArgumentParser(description='Search via remote API endpoint')
+    parser.add_argument('endpoint', help='Remote API endpoint URL (e.g., http://localhost:8001)')
+    parser.add_argument('query', help='Search query')
+    parser.add_argument('--index-name', required=True, help='Name of the index to search')
+    parser.add_argument('--count', type=int, default=5, help='Number of results to return (default: 5)')
+    parser.add_argument('--distance-threshold', type=float, default=0.0, help='Minimum similarity score (default: 0.0)')
+    parser.add_argument('--tags', help='Comma-separated tags to filter by')
+    parser.add_argument('--verbose', action='store_true', help='Show detailed information')
+    parser.add_argument('--json', action='store_true', help='Output results as JSON')
+    parser.add_argument('--no-content', action='store_true', help='Hide content in results (show only metadata)')
+    parser.add_argument('--timeout', type=int, default=30, help='Request timeout in seconds (default: 30)')
+    
+    args = parser.parse_args()
+    
+    # Ensure endpoint starts with http:// or https://
+    endpoint = args.endpoint
+    if not endpoint.startswith(('http://', 'https://')):
+        endpoint = f"http://{endpoint}"
+    
+    # Ensure endpoint ends with /search
+    if not endpoint.endswith('/search'):
+        if endpoint.endswith('/'):
+            endpoint += 'search'
+        else:
+            endpoint += '/search'
+    
+    try:
+        import requests
+    except ImportError:
+        print("Error: requests library not available. Install with: pip install requests")
+        sys.exit(1)
+    
+    # Prepare request payload
+    payload = {
+        'query': args.query,
+        'index_name': args.index_name,
+        'count': args.count,
+        'distance_threshold': args.distance_threshold
+    }
+    
+    if args.tags:
+        payload['tags'] = [tag.strip() for tag in args.tags.split(',')]
+    
+    if args.verbose:
+        print(f"Searching remote endpoint: {endpoint}")
+        print(f"Payload: {payload}")
+        print()
+    
+    try:
+        # Make the API request
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=args.timeout
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if args.json:
+                # Output raw JSON response
+                import json
+                print(json.dumps(result, indent=2))
+            else:
+                # Human-readable output
+                results = result.get('results', [])
+                if not results:
+                    print(f"No results found for '{args.query}' in index '{args.index_name}'")
+                    sys.exit(0)
+                
+                print(f"Found {len(results)} result(s) for '{args.query}' in index '{args.index_name}':")
+                if result.get('enhanced_query') and result.get('enhanced_query') != args.query:
+                    print(f"Enhanced query: '{result.get('enhanced_query')}'")
+                print("=" * 80)
+                
+                for i, search_result in enumerate(results):
+                    print(f"\n[{i+1}] Score: {search_result.get('score', 0):.4f}")
+                    
+                    # Show metadata
+                    metadata = search_result.get('metadata', {})
+                    print(f"File: {metadata.get('filename', 'Unknown')}")
+                    if metadata.get('section'):
+                        print(f"Section: {metadata['section']}")
+                    if metadata.get('line_start'):
+                        print(f"Lines: {metadata['line_start']}-{metadata.get('line_end', metadata['line_start'])}")
+                    if metadata.get('tags'):
+                        print(f"Tags: {', '.join(metadata['tags'])}")
+                    
+                    # Show content unless suppressed
+                    if not args.no_content and 'content' in search_result:
+                        content = search_result['content']
+                        if len(content) > 500 and not args.verbose:
+                            content = content[:500] + "..."
+                        print(f"\nContent:\n{content}")
+                    
+                    if i < len(results) - 1:
+                        print("-" * 80)
+        
+        elif response.status_code == 404:
+            try:
+                error_detail = response.json()
+                error_msg = error_detail.get('detail', 'Index not found')
+            except:
+                error_msg = 'Index not found'
+            print(f"Error: {error_msg}")
+            sys.exit(1)
+        else:
+            try:
+                error_detail = response.json()
+                error_msg = error_detail.get('detail', f'HTTP {response.status_code}')
+            except:
+                error_msg = f'HTTP {response.status_code}: {response.text}'
+            print(f"Error: {error_msg}")
+            sys.exit(1)
+            
+    except requests.ConnectionError:
+        print(f"Error: Could not connect to {endpoint}")
+        print("Make sure the search server is running")
+        sys.exit(1)
+    except requests.Timeout:
+        print(f"Error: Request timed out after {args.timeout} seconds")
+        sys.exit(1)
+    except requests.RequestException as e:
+        print(f"Error making request: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
@@ -594,6 +733,10 @@ Examples:
   sw-search search ./docs.swsearch "how to create an agent"
   sw-search search ./docs.swsearch "API reference" --count 3 --verbose
   sw-search search ./docs.swsearch "configuration" --tags documentation --json
+
+  # Search via remote API
+  sw-search remote http://localhost:8001 "how to create an agent" --index-name docs
+  sw-search remote localhost:8001 "API reference" --index-name docs --count 3 --verbose
 """)
         return
     
@@ -608,6 +751,11 @@ Examples:
             # Remove 'search' from argv and call search_command
             sys.argv.pop(1)
             search_command()
+            return
+        elif sys.argv[1] == 'remote':
+            # Remove 'remote' from argv and call remote_command
+            sys.argv.pop(1)
+            remote_command()
             return
     
     # Regular build command
