@@ -52,7 +52,11 @@ The SignalWire AI Agents SDK offers several distinctive features that set it apa
 class MyAgent(AgentBase):
     def __init__(self):
         super().__init__(name="My Agent")
-        self.add_skill("web_search", {"num_results": 3})
+        self.add_skill("web_search", {
+            "api_key": "your-google-api-key",
+            "search_engine_id": "your-search-engine-id",
+            "num_results": 3
+        })
         self.add_skill("datetime")
         self.add_skill("math")
         self.add_skill("native_vector_search", {"index_file": "knowledge.swsearch"})
@@ -66,7 +70,7 @@ from signalwire_agents.core.function_result import SwaigFunctionResult
 
 weather_tool = (DataMap('get_weather')
     .parameter('location', 'string', 'City name', required=True)
-    .webhook('GET', 'https://api.weather.com/v1/current?key=API_KEY&q=${args.location}')
+    .webhook('GET', 'https://api.weather.com/v1/current?key=API_KEY&q=${location}')
     .output(SwaigFunctionResult('Weather: ${response.current.temp_f}°F'))
 )
 ```
@@ -125,26 +129,34 @@ The `AgentBase` class serves as the foundational abstraction that defines the co
 
 ```python
 class AgentBase:
-    def __init__(self, name: str, route: str):
-        # Core initialization that every agent requires
-        self.name = name
-        self.route = route
-        self.skills = {}
-        self.datamap_tools = []
-        self.swaig_functions = {}
+    def __init__(
+        self,
+        name: str,
+        route: str = "/",
+        host: str = "0.0.0.0", 
+        port: int = 3000,
+        basic_auth: Optional[Tuple[str, str]] = None,
+        use_pom: bool = True,
+        enable_state_tracking: bool = False,
+        **kwargs
+    ):
+        # Core initialization with all major parameters
         
     def set_prompt_text(self, prompt: str):
         # Define the agent's personality and capabilities
         
-    def add_skill(self, skill_name: str, config: dict = None):
+    def add_skill(self, skill_name: str, params: Optional[Dict[str, Any]] = None):
         # Register skills with optional configuration
         
-    def add_datamap_tool(self, datamap: DataMap):
-        # Register DataMap tools for API integration
+    def register_swaig_function(self, function_dict: Dict[str, Any]):
+        # Register SWAIG functions (including DataMap tools)
         
-    @tool(name="...", description="...", parameters={...})
-    def custom_function(self, args, raw_data):
+    @classmethod
+    def tool(cls, name=None, **kwargs):
         # SWAIG function decorator for custom business logic
+        def decorator(func):
+            # Function implementation
+            pass
 ```
 
 The base class establishes the common patterns for agent lifecycle management, skill integration, and conversation handling while allowing concrete implementations to focus on domain-specific functionality.
@@ -167,15 +179,18 @@ app.get("/health")      # Health check endpoint
 ```python
 # Skills can be added with specific configurations
 agent.add_skill("web_search", {
-    "num_results": 10,
-    "domain_filter": "example.com"
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
+    "num_results": 10
 })
 
-# Same skill, different configuration
+# Same skill, different configuration for news
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "news-engine-id", 
     "num_results": 3,
-    "search_type": "news"
-}, skill_name="news_search")
+    "tool_name": "news_search"
+})
 ```
 
 **DataMap Execution Engine**: DataMap tools are processed through a sophisticated execution engine that handles variable expansion, error recovery, and response transformation:
@@ -185,8 +200,7 @@ agent.add_skill("web_search", {
 # ${args.field}        - Function arguments
 # ${response.field}    - API response fields  
 # ${env.VAR}          - Environment variables
-# ${helper.function()} - Helper function calls
-# ${global.data}       - Global data access
+# ${global_data.key}   - Global data access
 ```
 
 #### Skills System Architecture
@@ -208,7 +222,7 @@ default_web_config = {
 # Specific instance overrides
 agent.add_skill("web_search", {
     **default_web_config,
-    "domain_filter": "documentation.signalwire.com",
+    "search_engine_id": "docs-engine-id",
     "max_results": 3  # Override global setting
 })
 ```
@@ -633,8 +647,10 @@ class EnhancedAssistant(AgentBase):
         
         # Add skills to enhance the agent's capabilities
         self.add_skill("web_search", {
+            "api_key": "your-google-api-key",
+            "search_engine_id": "your-search-engine-id",
             "num_results": 3,
-            "max_characters": 1000
+            "delay": 0.5
         })
         
         self.add_skill("datetime")
@@ -660,28 +676,21 @@ Each skill accepts configuration parameters to customize its behavior. Here are 
 **Web Search Configuration**:
 ```python
 agent.add_skill("web_search", {
-    "num_results": 5,           # Number of search results to retrieve
-    "max_characters": 2000,     # Maximum characters per result
-    "search_engine": "bing"     # Search engine to use
+    "api_key": "your-google-api-key",           # Google API key
+    "search_engine_id": "your-search-engine-id", # Google Search Engine ID
+    "num_results": 5,                    # Number of search results to retrieve
+    "delay": 0.5                         # Delay between requests
 })
 ```
 
 **Date/Time Configuration**:
 ```python
-agent.add_skill("datetime", {
-    "default_timezone": "US/Eastern",    # Default timezone for queries
-    "include_weather": True,             # Include weather in date responses
-    "format": "conversational"           # How to format date/time responses
-})
+agent.add_skill("datetime")  # Datetime skill uses simple configuration
 ```
 
 **Math Configuration**:
 ```python
-agent.add_skill("math", {
-    "precision": 4,              # Decimal places for results
-    "allow_complex": True,       # Enable complex number operations
-    "explain_steps": True        # Show calculation steps
-})
+agent.add_skill("math")  # Math skill works with default settings - no configuration needed
 ```
 
 ### Creating Multiple Skill Instances
@@ -691,23 +700,28 @@ You can add the same skill multiple times with different configurations for spec
 ```python
 # General web search
 agent.add_skill("web_search", {
-    "num_results": 3,
-    "max_characters": 500
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
+    "num_results": 3
 })
 
 # Detailed research search
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
     "num_results": 10,
-    "max_characters": 2000,
-    "search_engine": "academic"
-}, skill_name="research_search")
+    "max_content_length": 2000,
+    "tool_name": "research_search"
+})
 
 # Quick fact checking
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key", 
+    "search_engine_id": "your-search-engine-id",
     "num_results": 1,
-    "max_characters": 200,
-    "quick_facts": True
-}, skill_name="fact_check")
+    "max_content_length": 200,
+    "tool_name": "fact_check"
+})
 ```
 
 The AI will automatically choose the most appropriate search function based on the user's request.
@@ -811,13 +825,11 @@ agent.add_skill("web_search")
 **Advanced Configuration:**
 ```python
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",           # Google Custom Search API key
+    "search_engine_id": "your-search-engine-id", # Google Search Engine ID  
     "num_results": 5,                    # Number of search results (1-10)
-    "max_characters": 2000,              # Max characters per result
-    "search_engine": "bing",             # Search engine preference
-    "include_snippets": True,            # Include result snippets
-    "safe_search": "moderate",           # Safe search level
-    "freshness": "day",                  # How recent results should be
-    "market": "en-US"                    # Market/language code
+    "delay": 1.0,                        # Delay between requests in seconds
+    "no_results_message": "Sorry, I couldn't find information about '{query}'. Try a different search term."
 })
 ```
 
@@ -839,17 +851,7 @@ agent.add_skill("datetime")
 
 **Advanced Configuration:**
 ```python
-agent.add_skill("datetime", {
-    "default_timezone": "US/Eastern",    # Default timezone
-    "include_weather": False,            # Include weather in responses
-    "format": "conversational",          # Response format style
-    "business_hours": {                  # Define business hours
-        "monday": {"start": "09:00", "end": "17:00"},
-        "tuesday": {"start": "09:00", "end": "17:00"},
-        # ... other days
-    },
-    "holidays": ["2024-12-25", "2024-01-01"]  # Holiday dates
-})
+agent.add_skill("datetime")  # Datetime skill works with default settings
 ```
 
 **Capabilities:**
@@ -933,17 +935,11 @@ Skills accept configuration parameters that customize their behavior. Here are c
 Set default parameters that apply to all instances of a skill:
 
 ```python
-from signalwire_swaig.core import SkillConfig
+# Skills use configuration parameters passed to add_skill()
+# Global configuration can be set via environment variables
 
-# Configure global defaults for web search
-SkillConfig.set_defaults("web_search", {
-    "num_results": 3,
-    "max_characters": 1000,
-    "safe_search": "strict"
-})
-
-# Now all web search skills will use these defaults
-agent.add_skill("web_search")  # Uses global defaults
+# Basic web search with default parameters
+agent.add_skill("web_search")
 ```
 
 #### Instance-Specific Configuration
@@ -956,26 +952,26 @@ agent.add_skill("web_search")
 
 # News-focused search with custom config
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "news-search-engine-id",
     "num_results": 5,
-    "freshness": "hour",
-    "search_type": "news"
-}, skill_name="news_search")
+    "tool_name": "news_search"
+})
 ```
 
-#### Dynamic Configuration
+#### Multiple Configuration Examples
 
-Modify skill configuration at runtime:
+Skills can be configured with different parameters:
 
 ```python
-# Add skill with initial config
-agent.add_skill("datetime", {
-    "default_timezone": "UTC"
-})
+# Basic datetime skill
+agent.add_skill("datetime")
 
-# Update configuration later
-agent.update_skill_config("datetime", {
-    "default_timezone": "US/Pacific",
-    "include_weather": True
+# Web search with specific parameters
+agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "your-search-engine-id",
+    "num_results": 3
 })
 ```
 
@@ -986,24 +982,29 @@ You can add the same skill multiple times with different configurations for spec
 ```python
 # Quick search for immediate answers
 agent.add_skill("web_search", {
+    "api_key": "your-google-api-key",
+    "search_engine_id": "quick-search-engine-id",
     "num_results": 1,
-    "max_characters": 300,
-    "quick_mode": True
-}, skill_name="quick_search")
+    "delay": 0,
+    "tool_name": "quick_search"
+})
 
 # Research search for detailed information
 agent.add_skill("web_search", {
-    "num_results": 10,
-    "max_characters": 3000,
-    "include_related": True
-}, skill_name="research_search")
+    "api_key": "your-google-api-key",
+    "search_engine_id": "research-search-engine-id",
+    "num_results": 5,
+    "delay": 1.0,
+    "tool_name": "research_search"
+})
 
-# Local search for nearby businesses
+# Another web search instance for news
 agent.add_skill("web_search", {
-    "search_type": "local",
-    "include_map": True,
-    "radius": "10km"
-}, skill_name="local_search")
+    "api_key": "your-google-api-key",
+    "search_engine_id": "news-engine-id", 
+    "num_results": 5,
+    "tool_name": "news_search"
+})
 ```
 
 The AI will automatically choose the most appropriate search function based on the user's request and context.
@@ -1015,37 +1016,59 @@ You can create custom skills to extend the SDK's capabilities:
 #### Basic Custom Skill
 
 ```python
-from signalwire_swaig.core import Skill, SkillParameter
+from signalwire_agents.core.skill_base import SkillBase
 
-class DatabaseLookupSkill(Skill):
+class DatabaseLookupSkill(SkillBase):
     """Custom skill for database queries"""
     
-    skill_name = "database_lookup"
-    description = "Look up information in the company database"
+    SKILL_NAME = "database_lookup"
+    SKILL_DESCRIPTION = "Look up information in the company database"
+    SKILL_VERSION = "1.0.0"
+    REQUIRED_PACKAGES = []
+    REQUIRED_ENV_VARS = []
     
-    parameters = [
-        SkillParameter("table", "string", "Database table to query", required=True),
-        SkillParameter("criteria", "object", "Search criteria", required=True),
-        SkillParameter("limit", "integer", "Maximum results", default=10)
-    ]
+    def setup(self) -> bool:
+        """Setup the skill"""
+        return True
+        
+    def register_tools(self) -> None:
+        """Register database lookup tool"""
+        self.agent.define_tool(
+            name="lookup_database",
+            description="Look up information in the company database",
+            parameters={
+                "table": {
+                    "type": "string",
+                    "description": "Database table to query"
+                },
+                "criteria": {
+                    "type": "object", 
+                    "description": "Search criteria"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results",
+                    "default": 10
+                }
+            },
+            handler=self._database_handler
+        )
     
-    def execute(self, args, agent):
-        table = args["table"]
-        criteria = args["criteria"]
+    def _database_handler(self, args, raw_data):
+        """Handle database lookup requests"""
+        table = args.get("table")
+        criteria = args.get("criteria", {})
         limit = args.get("limit", 10)
         
         # Your database query logic here
         results = self.query_database(table, criteria, limit)
         
-        return {
-            "success": True,
-            "data": results,
-            "message": f"Found {len(results)} records in {table}"
-        }
+        from signalwire_agents.core.function_result import SwaigFunctionResult
+        return SwaigFunctionResult(f"Found {len(results)} records in {table}")
     
     def query_database(self, table, criteria, limit):
         # Implement your database query logic
-        pass
+        return []
 
 # Register and use the custom skill
 agent.register_skill(DatabaseLookupSkill)
@@ -1240,50 +1263,36 @@ weather_tool = (DataMap('get_weather')
     .output(SwaigFunctionResult('Weather in ${args.location}: ${response.current.temp_f}°F'))
 )
 
-# Add to agent
-agent.add_datamap_tool(weather_tool)
+# Register with agent
+agent.register_swaig_function(weather_tool.to_swaig_function())
 ```
 
 #### Advanced Configuration Example
 
 ```python
-# Complex API integration with full configuration
+# Complex API integration with correct configuration
 user_lookup_tool = (DataMap('lookup_user')
     .parameter('user_id', 'string', 'User identifier', required=True)
-    .parameter('include_history', 'boolean', 'Include order history', default=False)
-    .parameter('format', 'string', 'Response format', enum=['summary', 'detailed'], default='summary')
+    .parameter('include_history', 'boolean', 'Include order history', required=False)
+    .parameter('format', 'string', 'Response format', enum=['summary', 'detailed'], required=False)
     
-    # Pre-processing step
-    .pre_process('validate_user_id', '${args.user_id}')
+    # Main API call with headers defined in webhook
+    .webhook('GET', 'https://api.company.com/users/${user_id}', 
+             headers={
+                 'Authorization': 'Bearer ${env.API_TOKEN}',
+                 'Content-Type': 'application/json',
+                 'X-Include-History': '${include_history}'
+             })
     
-    # Main API call with dynamic headers
-    .webhook('GET', 'https://api.company.com/users/${args.user_id}')
-    .header('Authorization', 'Bearer ${env.API_TOKEN}')
-    .header('Content-Type', 'application/json')
-    .header('X-Include-History', '${args.include_history}')
-    
-    # Conditional logic
-    .condition('${response.status} == "active"')
-    
-    # Response transformation
-    .transform('format_user_data', {
-        'user_id': '${response.id}',
-        'name': '${response.full_name}',
-        'status': '${response.account_status}',
-        'last_login': '${helper.format_date(response.last_login)}'
-    })
-    
-    # Output with conditional formatting
+    # Output with response data
     .output(SwaigFunctionResult("""
-        User: ${transformed.name} (ID: ${transformed.user_id})
-        Status: ${transformed.status}
-        Last Login: ${transformed.last_login}
-        ${if args.include_history}Order History: ${response.order_count} orders${endif}
+        User: ${response.full_name} (ID: ${response.id})
+        Status: ${response.account_status}
+        Last Login: ${response.last_activity.login_time}
     """))
     
-    # Error handling
-    .on_error(404, SwaigFunctionResult('User not found'))
-    .on_error('default', SwaigFunctionResult('Error looking up user: ${error.message}'))
+    # Error handling via error_keys
+    .error_keys(['error', 'message', 'status'])
 )
 ```
 
@@ -1294,45 +1303,47 @@ DataMap tools support comprehensive REST API integration patterns:
 #### HTTP Methods and Parameters
 
 ```python
-# GET request with query parameters
+# GET request with query parameters in URL
 get_tool = (DataMap('search_products')
-    .parameter('query', 'string', 'Search term')
-    .parameter('category', 'string', 'Product category', default='all')
-    .parameter('limit', 'integer', 'Results limit', default=10)
-    .webhook('GET', 'https://api.shop.com/products?q=${args.query}&cat=${args.category}&limit=${args.limit}')
+    .parameter('query', 'string', 'Search term', required=True)
+    .parameter('category', 'string', 'Product category', required=False)
+    .parameter('limit', 'integer', 'Results limit', required=False)
+    .webhook('GET', 'https://api.shop.com/products?q=${query}&cat=${category}&limit=${limit}')
+    .output(SwaigFunctionResult('Found products: ${response.count} results'))
 )
 
 # POST request with JSON body
 create_tool = (DataMap('create_ticket')
     .parameter('title', 'string', 'Ticket title', required=True)
     .parameter('description', 'string', 'Ticket description', required=True)
-    .parameter('priority', 'string', 'Priority level', enum=['low', 'medium', 'high'], default='medium')
-    .webhook('POST', 'https://api.support.com/tickets')
-    .header('Content-Type', 'application/json')
+    .parameter('priority', 'string', 'Priority level', enum=['low', 'medium', 'high'], required=False)
+    .webhook('POST', 'https://api.support.com/tickets',
+             headers={'Content-Type': 'application/json'})
     .body({
-        'title': '${args.title}',
-        'description': '${args.description}',
-        'priority': '${args.priority}',
-        'created_by': 'ai_agent',
-        'timestamp': '${helper.now()}'
+        'title': '${title}',
+        'description': '${description}',
+        'priority': '${priority}',
+        'created_by': 'ai_agent'
     })
+    .output(SwaigFunctionResult('Created ticket #${response.id}: ${response.title}'))
 )
 
-# PUT request for updates
+# PUT request for updates  
 update_tool = (DataMap('update_status')
     .parameter('ticket_id', 'string', 'Ticket ID', required=True)
     .parameter('status', 'string', 'New status', enum=['open', 'in_progress', 'resolved'], required=True)
-    .webhook('PUT', 'https://api.support.com/tickets/${args.ticket_id}')
-    .header('Authorization', 'Bearer ${env.SUPPORT_API_KEY}')
-    .body({'status': '${args.status}', 'updated_by': 'ai_agent'})
+    .webhook('PUT', 'https://api.support.com/tickets/${ticket_id}',
+             headers={'Authorization': 'Bearer ${env.SUPPORT_API_KEY}'})
+    .body({'status': '${status}', 'updated_by': 'ai_agent'})
+    .output(SwaigFunctionResult('Updated ticket ${ticket_id} to ${status}'))
 )
 
 # DELETE request
 delete_tool = (DataMap('delete_item')
     .parameter('item_id', 'string', 'Item to delete', required=True)
-    .webhook('DELETE', 'https://api.inventory.com/items/${args.item_id}')
-    .header('Authorization', 'API-Key ${env.INVENTORY_KEY}')
-    .on_success(SwaigFunctionResult('Item ${args.item_id} deleted successfully'))
+    .webhook('DELETE', 'https://api.inventory.com/items/${item_id}',
+             headers={'Authorization': 'API-Key ${env.INVENTORY_KEY}'})
+    .output(SwaigFunctionResult('Item ${item_id} deleted successfully'))
 )
 ```
 
@@ -1341,28 +1352,29 @@ delete_tool = (DataMap('delete_item')
 ```python
 # Bearer token authentication
 auth_tool = (DataMap('secure_action')
-    .header('Authorization', 'Bearer ${env.AUTH_TOKEN}')
-    .webhook('GET', 'https://api.secure.com/data')
+    .webhook('GET', 'https://api.secure.com/data', 
+             headers={'Authorization': 'Bearer ${env.AUTH_TOKEN}'})
 )
 
-# API key in header
+# API key in header  
 api_key_tool = (DataMap('api_call')
-    .header('X-API-Key', '${env.API_KEY}')
-    .header('X-Client-ID', '${env.CLIENT_ID}')
-    .webhook('GET', 'https://api.service.com/endpoint')
+    .webhook('GET', 'https://api.service.com/endpoint',
+             headers={
+                 'X-API-Key': '${env.API_KEY}',
+                 'X-Client-ID': '${env.CLIENT_ID}'
+             })
 )
 
-# Basic authentication
+# Basic authentication (you would need to base64 encode credentials beforehand)
 basic_auth_tool = (DataMap('basic_auth_call')
-    .header('Authorization', 'Basic ${helper.base64_encode(env.USERNAME + ":" + env.PASSWORD)}')
-    .webhook('GET', 'https://api.legacy.com/data')
+    .webhook('GET', 'https://api.legacy.com/data',
+             headers={'Authorization': 'Basic ${env.BASIC_AUTH_ENCODED}'})
 )
 
-# OAuth2 with dynamic token refresh
-oauth_tool = (DataMap('oauth_call')
-    .pre_process('refresh_token_if_needed')
-    .header('Authorization', 'Bearer ${oauth.access_token}')
-    .webhook('GET', 'https://api.oauth.com/data')
+# OAuth2 token
+oauth_tool = (DataMap('oauth_call') 
+    .webhook('GET', 'https://api.oauth.com/data',
+             headers={'Authorization': 'Bearer ${env.OAUTH_TOKEN}'})
 )
 ```
 
@@ -1382,178 +1394,65 @@ DataMap tools use a powerful variable expansion system that allows dynamic subst
 # Response data from API calls
 .output(SwaigFunctionResult('Status: ${response.status}, Message: ${response.data.message}'))
 
-# Transformed data
-.output(SwaigFunctionResult('Processed: ${transformed.result}'))
-
-# Helper function results
-.body({'timestamp': '${helper.now()}', 'uuid': '${helper.uuid()}'})
+# Environment and response variables
+.body({'created_by': 'agent', 'api_version': '${env.API_VERSION}'})
 ```
 
-#### Advanced Variable Operations
+#### Response Data Access
 
 ```python
-# Conditional expansion
-.output(SwaigFunctionResult("""
-    ${if response.success}
-        Operation completed successfully!
-        Result: ${response.data.result}
-    ${else}
-        Operation failed: ${response.error.message}
-    ${endif}
-"""))
+# Access nested response data
+.output(SwaigFunctionResult('Status: ${response.status}, Message: ${response.data.message}'))
 
-# Array operations
-.transform('process_items', {
-    'item_count': '${helper.length(response.items)}',
-    'item_names': '${helper.map(response.items, "name")}',
-    'total_value': '${helper.sum(response.items, "price")}'
-})
+# Use response arrays (with foreach processing)
+.foreach('${response.results}')
+.output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
 
-# String operations
-.header('X-Processed-Name', '${helper.uppercase(args.name)}')
-.body({
-    'slug': '${helper.slugify(args.title)}',
-    'excerpt': '${helper.truncate(args.description, 100)}'
-})
-
-# Date/time operations
-.body({
-    'created_at': '${helper.now()}',
-    'expires_at': '${helper.add_hours(helper.now(), 24)}',
-    'formatted_date': '${helper.format_date(response.timestamp, "YYYY-MM-DD")}'
-})
+# Static values and simple variable substitution
+'${env.TIMESTAMP}'                         # Environment variables
+'${response.created_at}'                   # Response fields
+'${user_id}'                              # Function arguments
 ```
 
-### Helper Functions and Best Practices
-
-DataMap tools include built-in helper functions for common operations:
-
-#### Built-in Helpers
+#### Simple DataMap Example
 
 ```python
-# String manipulation
-'${helper.uppercase(args.name)}'           # Convert to uppercase
-'${helper.lowercase(args.email)}'          # Convert to lowercase
-'${helper.slugify(args.title)}'            # Create URL-friendly slug
-'${helper.truncate(args.text, 50)}'        # Truncate to 50 characters
-'${helper.replace(args.text, "old", "new")}' # Replace text
-
-# Date/time operations
-'${helper.now()}'                          # Current timestamp
-'${helper.format_date(date, "YYYY-MM-DD")}' # Format date
-'${helper.add_days(date, 7)}'              # Add 7 days
-'${helper.parse_date(args.date_string)}'   # Parse date string
-
-# Data operations
-'${helper.length(response.items)}'         # Array length
-'${helper.map(array, "field")}'            # Extract field from each item
-'${helper.filter(array, "active", true)}'  # Filter array by field value
-'${helper.sum(array, "amount")}'           # Sum numeric field
-'${helper.join(array, ", ")}'              # Join array with separator
-
-# Encoding/decoding
-'${helper.base64_encode(text)}'            # Base64 encoding
-'${helper.url_encode(text)}'               # URL encoding
-'${helper.json_encode(object)}'            # JSON encoding
-'${helper.hash_md5(text)}'                 # MD5 hash
-
-# Utilities
-'${helper.uuid()}'                         # Generate UUID
-'${helper.random(1, 100)}'                 # Random number
-'${helper.coalesce(val1, val2, "default")}' # First non-null value
-```
-
-#### Custom Helper Functions
-
-You can register custom helper functions for specific use cases:
-
-```python
-from signalwire_swaig.core import DataMapHelper
-
-# Register custom helper
-@DataMapHelper.register('calculate_tax')
-def calculate_tax(amount, rate=0.08):
-    """Calculate tax amount"""
-    return float(amount) * float(rate)
-
-@DataMapHelper.register('format_currency')
-def format_currency(amount, currency='USD'):
-    """Format currency display"""
-    return f"${float(amount):.2f} {currency}"
-
-# Use in DataMap
-pricing_tool = (DataMap('calculate_pricing')
-    .parameter('base_amount', 'number', 'Base price', required=True)
-    .parameter('tax_rate', 'number', 'Tax rate', default=0.08)
-    .transform('pricing', {
-        'base': '${args.base_amount}',
-        'tax': '${helper.calculate_tax(args.base_amount, args.tax_rate)}',
-        'total': '${args.base_amount + helper.calculate_tax(args.base_amount, args.tax_rate)}'
-    })
+# Basic API integration that actually works
+pricing_tool = (DataMap('get_product_price')
+    .parameter('product_id', 'string', 'Product ID', required=True)
+    .webhook('GET', 'https://api.example.com/products/${product_id}', 
+             headers={'Authorization': 'Bearer ${env.API_TOKEN}'})
     .output(SwaigFunctionResult("""
-        Base: ${helper.format_currency(transformed.base)}
-        Tax: ${helper.format_currency(transformed.tax)}
-        Total: ${helper.format_currency(transformed.total)}
+        Product: ${response.name}
+        Price: $${response.price}
+        In Stock: ${response.in_stock}
     """))
+    .error_keys(['error', 'message'])
 )
-```
 
-#### Error Handling Best Practices
+### Error Handling
 
 ```python
-# Comprehensive error handling
+# Simple error handling with error_keys
 robust_tool = (DataMap('robust_api_call')
     .parameter('id', 'string', 'Resource ID', required=True)
     
-    # Pre-validation
-    .pre_process('validate_id_format', '${args.id}')
-    
-    # Main API call with timeout
+    # Main API call
     .webhook('GET', 'https://api.service.com/resource/${args.id}')
-    .timeout(30)  # 30 second timeout
-    .retry(3)     # Retry 3 times on failure
     
-    # Specific error responses
-    .on_error(400, SwaigFunctionResult('Invalid request: Please check the ID format'))
-    .on_error(401, SwaigFunctionResult('Authentication failed: Please check API credentials'))
-    .on_error(404, SwaigFunctionResult('Resource not found: ID ${args.id} does not exist'))
-    .on_error(429, SwaigFunctionResult('Rate limit exceeded: Please try again later'))
-    .on_error(500, SwaigFunctionResult('Server error: The service is temporarily unavailable'))
-    
-    # Default error handler
-    .on_error('default', SwaigFunctionResult('Unexpected error: ${error.message} (Code: ${error.code})'))
-    
-    # Success response
+    # Handle standard response
     .output(SwaigFunctionResult('Successfully retrieved: ${response.name} (Status: ${response.status})'))
 )
 ```
 
-#### Performance Optimization
+#### Simple DataMap Example
 
 ```python
-# Optimized DataMap with caching and conditional logic
-optimized_tool = (DataMap('optimized_lookup')
+# Simple, working DataMap tool
+basic_tool = (DataMap('lookup_user')
     .parameter('user_id', 'string', 'User ID', required=True)
-    .parameter('force_refresh', 'boolean', 'Force cache refresh', default=False)
-    
-    # Check cache first (unless force refresh)
-    .condition('${not args.force_refresh}')
-    .pre_process('check_cache', '${args.user_id}')
-    .condition('${cache.exists}')
-    .output(SwaigFunctionResult('${cache.data}'))
-    
-    # If not in cache, make API call
     .webhook('GET', 'https://api.users.com/users/${args.user_id}')
     .header('Accept', 'application/json')
-    .header('Accept-Encoding', 'gzip')  # Enable compression
-    
-    # Cache the result
-    .post_process('cache_result', {
-        'key': '${args.user_id}',
-        'data': '${response}',
-        'ttl': 300  # 5 minutes
-    })
-    
     .output(SwaigFunctionResult('${response.name} (${response.email})'))
 )
 ```
@@ -1590,10 +1489,10 @@ agent.add_skill("web_search")  # Built-in web search
 # DataMap for business-specific API
 customer_tool = (DataMap('get_customer')
     .parameter('customer_id', 'string', 'Customer ID', required=True)
-    .webhook('GET', 'https://api.crm.com/customers/${args.customer_id}')
+    .webhook('GET', 'https://api.crm.com/customers/${customer_id}')
     .output(SwaigFunctionResult('Customer: ${response.name}, Status: ${response.status}'))
 )
-agent.add_datamap_tool(customer_tool)
+agent.register_swaig_function(customer_tool.to_swaig_function())
 
 # Custom SWAIG function for complex logic
 @agent.swaig_function
@@ -3769,7 +3668,11 @@ class TelecomConcierge(ConciergeAgent):
 class TelecomSalesAgent(Agent):
     def __init__(self):
         super().__init__(name="telecom-sales", route="/telecom/sales")
-        self.add_skill("web_search", {"domain_filter": "company.com/plans"})
+        self.add_skill("web_search", {
+            "api_key": "your-google-api-key", 
+            "search_engine_id": "company-plans-engine-id",
+            "num_results": 3
+        })
         # Sales-specific functions and configuration
         
 class TelecomSupportAgent(Agent):
@@ -3913,23 +3816,13 @@ class EcommerceServiceAgent(AgentBase):
         
         # Add skills for enhanced capabilities
         self.add_skill("web_search", {
+            "api_key": "your-google-api-key",
+            "search_engine_id": "greentech-products-engine-id",
             "num_results": 3,
-            "domain_filter": "greentech-electronics.com",
-            "search_type": "product_info"
+            "tool_name": "product_search"
         })
         
-        self.add_skill("datetime", {
-            "default_timezone": "US/Eastern",
-            "business_hours": {
-                "monday": {"start": "08:00", "end": "20:00"},
-                "tuesday": {"start": "08:00", "end": "20:00"},
-                "wednesday": {"start": "08:00", "end": "20:00"},
-                "thursday": {"start": "08:00", "end": "20:00"},
-                "friday": {"start": "08:00", "end": "20:00"},
-                "saturday": {"start": "10:00", "end": "18:00"},
-                "sunday": {"start": "12:00", "end": "17:00"}
-            }
-        })
+        self.add_skill("datetime")
         
         # Add knowledge base search
         self.add_skill("native_vector_search", {
@@ -3956,74 +3849,37 @@ class EcommerceServiceAgent(AgentBase):
         # Order lookup tool
         order_lookup = (DataMap('lookup_order')
             .parameter('order_number', 'string', 'Customer order number', required=True)
-            .webhook('GET', 'https://api.greentech-electronics.com/orders/${args.order_number}')
-            .header('Authorization', 'Bearer ${env.ECOMMERCE_API_TOKEN}')
-            .header('Content-Type', 'application/json')
-            .transform('format_order_data', {
-                'order_id': '${response.id}',
-                'status': '${response.status}',
-                'total': '${response.total_amount}',
-                'items': '${response.line_items}',
-                'shipping': '${response.shipping_info}',
-                'tracking': '${response.tracking_number}'
-            })
+            .webhook('GET', 'https://api.greentech-electronics.com/orders/${order_number}',
+                     headers={
+                         'Authorization': 'Bearer ${env.ECOMMERCE_API_TOKEN}',
+                         'Content-Type': 'application/json'
+                     })
             .output(SwaigFunctionResult("""
-                I found your order ${transformed.order_id}. 
-                Status: ${transformed.status}
-                Total: $${transformed.total}
-                ${if transformed.status == "shipped"}
-                    Great news! Your order has shipped. 
-                    Tracking number: ${transformed.tracking}
-                    ${if transformed.shipping.estimated_delivery}
-                        Expected delivery: ${transformed.shipping.estimated_delivery}
-                    ${endif}
-                ${elif transformed.status == "processing"}
-                    Your order is currently being prepared for shipment. 
-                    You should receive tracking information within 24 hours.
-                ${elif transformed.status == "pending"}
-                    Your order is pending payment confirmation. 
-                    Please check your email for payment instructions.
-                ${endif}
+                I found your order ${response.id}. 
+                Status: ${response.status}
+                Total: $${response.total_amount}
+                Tracking: ${response.tracking_number}
             """))
-            .on_error(404, SwaigFunctionResult("I couldn't find an order with that number. Could you please double-check the order number?"))
-            .on_error('default', SwaigFunctionResult("I'm having trouble accessing our order system right now. Let me connect you with a specialist who can help."))
+            .error_keys(['error', 'message'])
         )
         
         # Inventory check tool
         inventory_check = (DataMap('check_inventory')
             .parameter('product_sku', 'string', 'Product SKU or model number', required=True)
-            .parameter('location', 'string', 'Store location or zip code', default='online')
-            .webhook('GET', 'https://api.greentech-electronics.com/inventory/${args.product_sku}')
-            .header('Authorization', 'Bearer ${env.ECOMMERCE_API_TOKEN}')
-            .query_param('location', '${args.location}')
-            .transform('format_inventory', {
-                'sku': '${response.sku}',
-                'name': '${response.product_name}',
-                'available': '${response.quantity_available}',
-                'price': '${response.current_price}',
-                'locations': '${response.store_availability}'
-            })
+            .parameter('location', 'string', 'Store location or zip code', required=False)
+            .webhook('GET', 'https://api.greentech-electronics.com/inventory/${product_sku}?location=${location}',
+                     headers={'Authorization': 'Bearer ${env.ECOMMERCE_API_TOKEN}'})
             .output(SwaigFunctionResult("""
-                ${transformed.name} (SKU: ${transformed.sku})
-                ${if transformed.available > 0}
-                    ✓ In stock! We have ${transformed.available} units available.
-                    Current price: $${transformed.price}
-                    ${if args.location != "online" && transformed.locations}
-                        Store availability: ${helper.format_store_list(transformed.locations)}
-                    ${endif}
-                ${else}
-                    This item is currently out of stock online.
-                    ${if transformed.locations && helper.length(transformed.locations) > 0}
-                        However, it may be available at our retail locations: ${helper.format_store_list(transformed.locations)}
-                    ${endif}
-                    Would you like me to notify you when it's back in stock?
-                ${endif}
+                ${response.product_name} (SKU: ${response.sku})
+                Available: ${response.quantity_available} units
+                Current price: $${response.current_price}
             """))
+            .error_keys(['error', 'message'])
         )
         
         # Add the tools to the agent
-        self.add_datamap_tool(order_lookup)
-        self.add_datamap_tool(inventory_check)
+        self.register_swaig_function(order_lookup.to_swaig_function())
+        self.register_swaig_function(inventory_check.to_swaig_function())
     
     @AgentBase.tool(
         name="initiate_return_request",
