@@ -135,7 +135,18 @@ agent.set_post_prompt("Always be polite and professional.")
 
 #### Structured Prompts (POM)
 
-##### `prompt_add_section(title: str, body: str = "", bullets: Optional[List[str]] = None, numbered: bool = False, numbered_bullets: bool = False, subsections: Optional[List[Dict[str, Any]]] = None) -> AgentBase`
+##### `prompt_add_section`
+
+```python
+def prompt_add_section(
+    title: str, 
+    body: str = "", 
+    bullets: Optional[List[str]] = None, 
+    numbered: bool = False, 
+    numbered_bullets: bool = False, 
+    subsections: Optional[List[Dict[str, Any]]] = None
+) -> AgentBase
+```
 Add a structured section to the prompt using Prompt Object Model.
 
 **Parameters:**
@@ -167,7 +178,16 @@ agent.prompt_add_section(
 )
 ```
 
-##### `prompt_add_to_section(title: str, body: Optional[str] = None, bullet: Optional[str] = None, bullets: Optional[List[str]] = None) -> AgentBase`
+##### `prompt_add_to_section`
+
+```python
+def prompt_add_to_section(
+    title: str, 
+    body: Optional[str] = None, 
+    bullet: Optional[str] = None, 
+    bullets: Optional[List[str]] = None
+) -> AgentBase
+```
 Add content to an existing prompt section.
 
 **Parameters:**
@@ -188,7 +208,16 @@ agent.prompt_add_to_section("Process", bullet="Document the interaction")
 agent.prompt_add_to_section("Process", bullets=["Follow up", "Close ticket"])
 ```
 
-##### `prompt_add_subsection(parent_title: str, title: str, body: str = "", bullets: Optional[List[str]] = None) -> AgentBase`
+##### `prompt_add_subsection`
+
+```python
+def prompt_add_subsection(
+    parent_title: str, 
+    title: str, 
+    body: str = "", 
+    bullets: Optional[List[str]] = None
+) -> AgentBase
+```
 Add a subsection to an existing prompt section.
 
 **Parameters:**
@@ -209,7 +238,19 @@ agent.prompt_add_subsection(
 
 ### Voice and Language Configuration
 
-##### `add_language(name: str, code: str, voice: str, speech_fillers: Optional[List[str]] = None, function_fillers: Optional[List[str]] = None, engine: Optional[str] = None, model: Optional[str] = None) -> AgentBase`
+##### `add_language`
+
+```python
+def add_language(
+    name: str, 
+    code: str, 
+    voice: str, 
+    speech_fillers: Optional[List[str]] = None, 
+    function_fillers: Optional[List[str]] = None, 
+    engine: Optional[str] = None, 
+    model: Optional[str] = None
+) -> AgentBase
+```
 Configure voice and language settings for the agent.
 
 **Parameters:**
@@ -274,7 +315,16 @@ Add multiple speech recognition hints.
 agent.add_hints(["SignalWire", "SWML", "API", "webhook", "SIP"])
 ```
 
-##### `add_pattern_hint(hint: str, pattern: str, replace: str, ignore_case: bool = False) -> AgentBase`
+##### `add_pattern_hint`
+
+```python
+def add_pattern_hint(
+    hint: str, 
+    pattern: str, 
+    replace: str, 
+    ignore_case: bool = False
+) -> AgentBase
+```
 Add a pattern-based hint for speech recognition.
 
 **Parameters:**
@@ -292,7 +342,15 @@ agent.add_pattern_hint(
 )
 ```
 
-##### `add_pronunciation(replace: str, with_text: str, ignore_case: bool = False) -> AgentBase`
+##### `add_pronunciation`
+
+```python
+def add_pronunciation(
+    replace: str, 
+    with_text: str, 
+    ignore_case: bool = False
+) -> AgentBase
+```
 Add pronunciation rules for text-to-speech.
 
 **Parameters:**
@@ -306,7 +364,13 @@ agent.add_pronunciation("API", "A P I")
 agent.add_pronunciation("SWML", "swim-el")
 ```
 
-##### `set_pronunciations(pronunciations: List[Dict[str, Any]]) -> AgentBase`
+##### `set_pronunciations`
+
+```python
+def set_pronunciations(
+    pronunciations: List[Dict[str, Any]]
+) -> AgentBase
+```
 Set multiple pronunciation rules at once.
 
 **Parameters:**
@@ -394,7 +458,20 @@ agent.update_global_data({
 
 ### Function Definition
 
-##### `define_tool(name: str, description: str, parameters: Dict[str, Any], handler: Callable, secure: bool = True, fillers: Optional[Dict[str, List[str]]] = None, webhook_url: Optional[str] = None, **swaig_fields) -> AgentBase`
+##### `define_tool`
+
+```python
+def define_tool(
+    name: str, 
+    description: str, 
+    parameters: Dict[str, Any], 
+    handler: Callable, 
+    secure: bool = True, 
+    fillers: Optional[Dict[str, List[str]]] = None, 
+    webhook_url: Optional[str] = None, 
+    **swaig_fields
+) -> AgentBase
+```
 Define a custom SWAIG function/tool.
 
 **Parameters:**
@@ -450,7 +527,13 @@ class MyAgent(AgentBase):
         return SwaigFunctionResult(f"Current time: {datetime.datetime.now()}")
 ```
 
-##### `register_swaig_function(function_dict: Dict[str, Any]) -> AgentBase`
+##### `register_swaig_function`
+
+```python
+def register_swaig_function(
+    function_dict: Dict[str, Any]
+) -> AgentBase
+```
 Register a pre-built SWAIG function dictionary.
 
 **Parameters:**
@@ -465,7 +548,14 @@ agent.register_swaig_function(weather_tool.to_swaig_function())
 
 ### Skills System
 
-##### `add_skill(skill_name: str, params: Optional[Dict[str, Any]] = None) -> AgentBase`
+##### `add_skill`
+
+```python
+def add_skill(
+    skill_name: str, 
+    params: Optional[Dict[str, Any]] = None
+) -> AgentBase
+```
 Add a modular skill to the agent.
 
 **Parameters:**
@@ -546,7 +636,13 @@ if agent.has_skill("web_search"):
 
 ### Native Functions
 
-##### `set_native_functions(function_names: List[str]) -> AgentBase`
+##### `set_native_functions`
+
+```python
+def set_native_functions(
+    function_names: List[str]
+) -> AgentBase
+```
 Enable specific native SWML functions.
 
 **Parameters:**
@@ -566,7 +662,15 @@ agent.set_native_functions(["transfer", "hangup", "send_sms"])
 
 ### Function Includes
 
-##### `add_function_include(url: str, functions: List[str], meta_data: Optional[Dict[str, Any]] = None) -> AgentBase`
+##### `add_function_include`
+
+```python
+def add_function_include(
+    url: str, 
+    functions: List[str], 
+    meta_data: Optional[Dict[str, Any]] = None
+) -> AgentBase
+```
 Include external SWAIG functions from another service.
 
 **Parameters:**
@@ -583,7 +687,13 @@ agent.add_function_include(
 )
 ```
 
-##### `set_function_includes(includes: List[Dict[str, Any]]) -> AgentBase`
+##### `set_function_includes`
+
+```python
+def set_function_includes(
+    includes: List[Dict[str, Any]]
+) -> AgentBase
+```
 Set multiple function includes at once.
 
 **Parameters:**
@@ -630,7 +740,13 @@ agent.set_post_prompt_url("https://myserver.com/post-prompt")
 
 ### Dynamic Configuration
 
-##### `set_dynamic_config_callback(callback: Callable[[dict, dict, dict, EphemeralAgentConfig], None]) -> AgentBase`
+##### `set_dynamic_config_callback`
+
+```python
+def set_dynamic_config_callback(
+    callback: Callable[[dict, dict, dict, EphemeralAgentConfig], None]
+) -> AgentBase
+```
 Set callback for per-request dynamic configuration.
 
 **Parameters:**
@@ -653,7 +769,14 @@ agent.set_dynamic_config_callback(configure_agent)
 
 ### SIP Integration
 
-##### `enable_sip_routing(auto_map: bool = True, path: str = "/sip") -> AgentBase`
+##### `enable_sip_routing`
+
+```python
+def enable_sip_routing(
+    auto_map: bool = True, 
+    path: str = "/sip"
+) -> AgentBase
+```
 Enable SIP-based routing for voice calls.
 
 **Parameters:**
@@ -677,7 +800,14 @@ agent.register_sip_username("support")
 agent.register_sip_username("sales")
 ```
 
-##### `register_routing_callback(callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], path: str = "/sip") -> None`
+##### `register_routing_callback`
+
+```python
+def register_routing_callback(
+    callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], 
+    path: str = "/sip"
+) -> None
+```
 Register custom routing logic for SIP calls.
 
 **Parameters:**
@@ -727,7 +857,14 @@ main_app.include_router(agent_router, prefix="/agent")
 
 ### Event Handlers
 
-##### `on_summary(summary: Optional[Dict[str, Any]], raw_data: Optional[Dict[str, Any]] = None) -> None`
+##### `on_summary`
+
+```python
+def on_summary(
+    summary: Optional[Dict[str, Any]], 
+    raw_data: Optional[Dict[str, Any]] = None
+) -> None
+```
 Override to handle conversation summaries.
 
 **Parameters:**
@@ -742,7 +879,15 @@ class MyAgent(AgentBase):
         # Save to database, send notification, etc.
 ```
 
-##### `on_function_call(name: str, args: Dict[str, Any], raw_data: Optional[Dict[str, Any]] = None) -> Any`
+##### `on_function_call`
+
+```python
+def on_function_call(
+    name: str, 
+    args: Dict[str, Any], 
+    raw_data: Optional[Dict[str, Any]] = None
+) -> Any
+```
 Override to handle function calls with custom logic.
 
 **Parameters:**
@@ -764,7 +909,14 @@ class MyAgent(AgentBase):
         return super().on_function_call(name, args, raw_data)
 ```
 
-##### `on_request(request_data: Optional[dict] = None, callback_path: Optional[str] = None) -> Optional[dict]`
+##### `on_request`
+
+```python
+def on_request(
+    request_data: Optional[dict] = None, 
+    callback_path: Optional[str] = None
+) -> Optional[dict]
+```
 Override to handle general requests.
 
 **Parameters:**
@@ -774,7 +926,15 @@ Override to handle general requests.
 **Returns:**
 - Optional[dict]: Response modifications
 
-##### `on_swml_request(request_data: Optional[dict] = None, callback_path: Optional[str] = None, request: Optional[Request] = None) -> Optional[dict]`
+##### `on_swml_request`
+
+```python
+def on_swml_request(
+    request_data: Optional[dict] = None, 
+    callback_path: Optional[str] = None, 
+    request: Optional[Request] = None
+) -> Optional[dict]
+```
 Override to handle SWML generation requests.
 
 **Parameters:**
@@ -805,7 +965,13 @@ class MyAgent(AgentBase):
         return username == "admin" and password == "secret"
 ```
 
-##### `get_basic_auth_credentials(include_source: bool = False) -> Union[Tuple[str, str], Tuple[str, str, str]]`
+##### `get_basic_auth_credentials`
+
+```python
+def get_basic_auth_credentials(
+    include_source: bool = False
+) -> Union[Tuple[str, str], Tuple[str, str, str]]
+```
 Get basic auth credentials from environment or constructor.
 
 **Parameters:**
