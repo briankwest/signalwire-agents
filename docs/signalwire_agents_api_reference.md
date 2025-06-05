@@ -1693,8 +1693,8 @@ Configure an HTTP API call.
 
 **Variable Substitution in URLs:**
 - `${args.parameter_name}`: Function argument values
-- `${global_data.key}`: Global data values
-- `${meta_data.call_id}`: Metadata values
+- `${global_data.key}`: Call-wide data store (user info, call state - NOT credentials)
+- `${meta_data.call_id}`: Call and function metadata
 
 **Usage:**
 ```python
@@ -1718,10 +1718,11 @@ data_map.webhook(
     require_args=['customer_id']
 )
 
-# Use global data in URL
+# Use global data for call-related info (NOT credentials)
 data_map.webhook(
     'GET',
-    'https://api.service.com/customer/${global_data.customer_id}/orders'
+    'https://api.service.com/customer/${global_data.customer_id}/orders',
+    headers={'Authorization': 'Bearer YOUR_API_TOKEN'}  # Use static credentials
 )
 ```
 
@@ -1743,7 +1744,7 @@ data_map.body({
     }
 })
 
-# Body with global data
+# Body with call-related data (NOT sensitive info)
 data_map.body({
     'customer_id': '${global_data.customer_id}',
     'request_id': '${meta_data.call_id}',
@@ -1806,7 +1807,7 @@ Set the response template for successful API calls.
 - `${response.nested.field}`: Nested response fields
 - `${response.array[0].field}`: Array element fields
 - `${args.parameter}`: Original function arguments
-- `${global_data.key}`: Global data values
+- `${global_data.key}`: Call-wide data store (user info, call state)
 
 **Usage:**
 ```python

@@ -120,6 +120,22 @@ tool = (DataMap('search_with_fallback')
 
 DataMap supports powerful variable substitution using `${variable}` syntax:
 
+### Data Store Usage
+
+**global_data** - Call-wide data store that persists throughout the entire call:
+- **Purpose**: Store user information, call state, preferences collected during conversation
+- **Examples**: `${global_data.customer_name}`, `${global_data.account_type}`, `${global_data.preferred_language}`
+- **Seeded by**: Initial SWML configuration, SWAIG actions during the call
+- **Shared by**: All functions in the same call
+- **NEVER use for**: API keys, passwords, secrets, or sensitive configuration
+
+**meta_data** - Function-scoped data store:
+- **Purpose**: Function-specific state and metadata
+- **Examples**: `${meta_data.call_id}`, `${meta_data.session_id}`, `${meta_data.retry_count}`
+- **Seeded by**: Function definition, SWAIG actions
+- **Shared by**: Functions with the same meta_data_token
+- **NEVER use for**: Credentials, API keys, or sensitive data
+
 ### Available Variables
 
 | Variable | Description | Example |

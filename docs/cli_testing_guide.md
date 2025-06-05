@@ -1054,7 +1054,7 @@ The tool supports all DataMap template syntax with both `${}` and `%{}` variatio
 | `${response.field}` / `%{response.field}` | API response object | `${response.temperature}` |
 | `${array[0].field}` / `%{array[0].field}` | API response array | `${array[0].joke}`, `%{array[0].text}` |
 | `${this.property}` / `%{this.property}` | Current foreach item | `${this.title}`, `%{this.content}` |
-| `${global_data.key}` / `%{global_data.key}` | Agent global data | `${global_data.api_key}` |
+| `${global_data.key}` / `%{global_data.key}` | Call-wide data store | `${global_data.customer_name}` |
 
 **Array Response Handling**: When a webhook returns a nameless array (like `[{"joke": "..."}]`), it's automatically stored as the `array` key, making it accessible via `${array[0].property}` syntax.
 

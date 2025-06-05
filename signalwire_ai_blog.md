@@ -138,9 +138,21 @@ class AgentBase:
         basic_auth: Optional[Tuple[str, str]] = None,
         use_pom: bool = True,
         enable_state_tracking: bool = False,
-        **kwargs
+        token_expiry_secs: int = 3600,
+        auto_answer: bool = True,
+        record_call: bool = False,
+        record_format: str = "mp4",
+        record_stereo: bool = True,
+        state_manager: Optional[StateManager] = None,
+        default_webhook_url: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        native_functions: Optional[List[str]] = None,
+        schema_path: Optional[str] = None,
+        suppress_logs: bool = False,
+        enable_post_prompt_override: bool = False,
+        check_for_input_override: bool = False
     ):
-        # Core initialization with all major parameters
+        # Core initialization with all parameters
         
     def set_prompt_text(self, prompt: str):
         # Define the agent's personality and capabilities
@@ -161,20 +173,24 @@ class AgentBase:
 
 The base class establishes the common patterns for agent lifecycle management, skill integration, and conversation handling while allowing concrete implementations to focus on domain-specific functionality.
 
-#### Agent Class: Full-Featured Implementation
+#### AgentBase: Full-Featured Implementation
 
-The primary `Agent` class extends `AgentBase` with complete implementations of all SDK capabilities. Understanding its internal architecture helps developers make informed decisions about customization and optimization.
+The `AgentBase` class provides the complete implementation of all SDK capabilities. Understanding its internal architecture helps developers make informed decisions about customization and optimization.
 
 **HTTP Server Integration**: Built on FastAPI for production-ready performance and ecosystem compatibility. The agent automatically configures endpoints, request validation, and response formatting:
 
 ```python
 # Automatic endpoint creation
-app.post("/")           # Main conversation endpoint
-app.post("/swaig")      # SWAIG function call endpoint
-app.get("/health")      # Health check endpoint
+router.get("/") and router.post("/")                    # Main conversation endpoint
+router.get("/debug") and router.post("/debug")          # Debug endpoint
+router.get("/swaig") and router.post("/swaig")          # SWAIG function call endpoint
+router.get("/post_prompt") and router.post("/post_prompt")  # Post-prompt endpoint
+router.get("/check_for_input") and router.post("/check_for_input")  # Input check endpoint
+app.get("/health") and app.post("/health")              # Health check endpoint
+app.get("/ready") and app.post("/ready")                # Readiness check endpoint
 ```
 
-**Skills Registry**: The agent maintains a dynamic registry of available skills, enabling runtime configuration and multiple skill instances:
+**Skills Registry**: AgentBase maintains a dynamic registry of available skills, enabling runtime configuration and multiple skill instances:
 
 ```python
 # Skills can be added with specific configurations
@@ -197,10 +213,7 @@ agent.add_skill("web_search", {
 
 ```python
 # Variable expansion patterns supported:
-# ${args.field}        - Function arguments
-# ${response.field}    - API response fields  
-# ${env.VAR}          - Environment variables
-# ${global_data.key}   - Global data access
+# ${field}             - Direct parameter access from function arguments
 ```
 
 #### Skills System Architecture
@@ -238,45 +251,29 @@ DataMap tools transform API integration from an imperative programming exercise 
 ```python
 user_lookup = (DataMap('lookup_user')
     .parameter('user_id', 'string', 'User identifier', required=True)
-    .parameter('include_history', 'boolean', 'Include user history', default=False)
-    .webhook('GET', 'https://api.example.com/users/${args.user_id}')
-    .header('Authorization', 'Bearer ${env.API_TOKEN}')
-    .query_param('history', '${args.include_history}')
-    .transform('user_data', {
-        'id': '${response.user_id}',
-        'name': '${response.full_name}',
-        'email': '${response.email_address}',
-        'last_login': '${response.last_activity.login_time}'
-    })
+    .parameter('include_history', 'boolean', 'Include user history')
+    .webhook('GET', 'https://api.example.com/users/${args.user_id}?history=${args.include_history}',
+             headers={'Authorization': 'Bearer ${global_data.API_TOKEN}'})
     .output(SwaigFunctionResult("""
         User Information:
-        Name: ${transformed.name}
-        Email: ${transformed.email}
-        Last Login: ${helper.format_date(transformed.last_login)}
+        Name: ${response.full_name}
+        Email: ${response.email_address}
+        Last Login: ${response.last_activity.login_time}
     """))
-    .on_error(404, SwaigFunctionResult("User not found."))
-    .on_error('default', SwaigFunctionResult("Unable to retrieve user information."))
+    .error_keys(['error', 'message'])
+    .fallback_output(SwaigFunctionResult("Unable to retrieve user information."))
 )
 ```
 
 **Variable Expansion Engine**: The platform's variable expansion engine supports sophisticated data transformations and conditional logic:
 
 ```python
-# Conditional output based on response data
-.output(SwaigFunctionResult("""
-    ${if response.status == "active"}
-        ✅ Account Status: Active
-        ${if response.subscription.expires}
-            Subscription expires: ${helper.format_date(response.subscription.expires)}
-        ${endif}
-    ${else}
-        ⚠️ Account Status: ${response.status}
-        ${if response.status == "suspended"}
-            Reason: ${response.suspension_reason}
-            Contact support to reactivate.
-        ${endif}
-    ${endif}
-"""))
+# Expression-based conditional responses
+.expression('${response.status}', r'active', 
+    SwaigFunctionResult('✅ Account Status: Active. Subscription expires: ${response.subscription.expires}'))
+.expression('${response.status}', r'suspended',
+    SwaigFunctionResult('⚠️ Account Status: Suspended. Reason: ${response.suspension_reason}. Contact support to reactivate.'))
+.output(SwaigFunctionResult('⚠️ Account Status: ${response.status}'))
 ```
 
 **Error Handling and Resilience**: DataMap tools include comprehensive error handling that maintains conversational flow while providing meaningful feedback to users.
@@ -556,7 +553,7 @@ export FLASK_DEBUG="1"
 Test your installation:
 
 ```bash
-python -c "import signalwire_swaig; print('SDK installed successfully')"
+python -c "import signalwire_agents; print('SDK installed successfully')"
 ```
 
 For search features:
@@ -738,8 +735,8 @@ For agents that need to search through specific documents or knowledge bases, yo
 # Then add the search skill to your agent
 agent.add_skill("native_vector_search", {
     "index_file": "knowledge.swsearch",
-    "max_results": 5,
-    "similarity_threshold": 0.7
+    "count": 5,
+    "distance_threshold": 0.7
 })
 ```
 
@@ -864,32 +861,20 @@ agent.add_skill("datetime")  # Datetime skill works with default settings
 
 #### Math Skill (`math`)
 
-Performs mathematical calculations from basic arithmetic to complex operations.
+Performs basic mathematical calculations using a simple expression evaluator.
 
-**Basic Usage:**
+**Usage:**
 ```python
-agent.add_skill("math")
-```
-
-**Advanced Configuration:**
-```python
-agent.add_skill("math", {
-    "precision": 6,                      # Decimal places
-    "allow_complex": True,               # Complex number operations
-    "explain_steps": True,               # Show calculation steps
-    "unit_conversion": True,             # Enable unit conversions
-    "financial_mode": False,             # Special handling for currency
-    "max_iterations": 1000               # Limit for iterative calculations
-})
+agent.add_skill("math")  # No configuration parameters needed
 ```
 
 **Capabilities:**
-- Basic arithmetic operations
-- Advanced mathematical functions (trigonometry, logarithms, etc.)
-- Unit conversions (length, weight, temperature, etc.)
-- Statistical calculations
-- Financial calculations (compound interest, payments, etc.)
-- Complex number operations
+- Basic arithmetic operations: +, -, *, /, %, ** (power)
+- Parentheses for complex expressions
+- Decimal number support
+- Expression validation for security
+
+**Note:** This skill provides a single `calculate` function that safely evaluates mathematical expressions. It does not support advanced features like trigonometry, unit conversions, or financial calculations.
 
 #### Native Vector Search Skill (`native_vector_search`)
 
@@ -1254,7 +1239,8 @@ DataMap tools use a fluent builder pattern that makes configuration intuitive an
 #### Basic DataMap Structure
 
 ```python
-from signalwire_swaig.core import DataMap, SwaigFunctionResult
+from signalwire_agents.core.data_map import DataMap
+from signalwire_agents.core.function_result import SwaigFunctionResult
 
 # Simple API call example
 weather_tool = (DataMap('get_weather')
@@ -1277,11 +1263,11 @@ user_lookup_tool = (DataMap('lookup_user')
     .parameter('format', 'string', 'Response format', enum=['summary', 'detailed'], required=False)
     
     # Main API call with headers defined in webhook
-    .webhook('GET', 'https://api.company.com/users/${user_id}', 
+    .webhook('GET', 'https://api.company.com/users/${args.user_id}', 
              headers={
-                 'Authorization': 'Bearer ${env.API_TOKEN}',
+                 'Authorization': 'Bearer YOUR_API_TOKEN',
                  'Content-Type': 'application/json',
-                 'X-Include-History': '${include_history}'
+                 'X-Include-History': '${args.include_history}'
              })
     
     # Output with response data
@@ -1308,7 +1294,7 @@ get_tool = (DataMap('search_products')
     .parameter('query', 'string', 'Search term', required=True)
     .parameter('category', 'string', 'Product category', required=False)
     .parameter('limit', 'integer', 'Results limit', required=False)
-    .webhook('GET', 'https://api.shop.com/products?q=${query}&cat=${category}&limit=${limit}')
+    .webhook('GET', 'https://api.shop.com/products?q=${args.query}&cat=${args.category}&limit=${args.limit}')
     .output(SwaigFunctionResult('Found products: ${response.count} results'))
 )
 
@@ -1320,9 +1306,9 @@ create_tool = (DataMap('create_ticket')
     .webhook('POST', 'https://api.support.com/tickets',
              headers={'Content-Type': 'application/json'})
     .body({
-        'title': '${title}',
-        'description': '${description}',
-        'priority': '${priority}',
+        'title': '${args.title}',
+        'description': '${args.description}',
+        'priority': '${args.priority}',
         'created_by': 'ai_agent'
     })
     .output(SwaigFunctionResult('Created ticket #${response.id}: ${response.title}'))
@@ -1332,18 +1318,18 @@ create_tool = (DataMap('create_ticket')
 update_tool = (DataMap('update_status')
     .parameter('ticket_id', 'string', 'Ticket ID', required=True)
     .parameter('status', 'string', 'New status', enum=['open', 'in_progress', 'resolved'], required=True)
-    .webhook('PUT', 'https://api.support.com/tickets/${ticket_id}',
-             headers={'Authorization': 'Bearer ${env.SUPPORT_API_KEY}'})
-    .body({'status': '${status}', 'updated_by': 'ai_agent'})
-    .output(SwaigFunctionResult('Updated ticket ${ticket_id} to ${status}'))
+    .webhook('PUT', 'https://api.support.com/tickets/${args.ticket_id}',
+             headers={'Authorization': 'Bearer YOUR_API_KEY'})
+    .body({'status': '${args.status}', 'updated_by': 'ai_agent'})
+    .output(SwaigFunctionResult('Updated ticket ${args.ticket_id} to ${args.status}'))
 )
 
 # DELETE request
 delete_tool = (DataMap('delete_item')
     .parameter('item_id', 'string', 'Item to delete', required=True)
-    .webhook('DELETE', 'https://api.inventory.com/items/${item_id}',
-             headers={'Authorization': 'API-Key ${env.INVENTORY_KEY}'})
-    .output(SwaigFunctionResult('Item ${item_id} deleted successfully'))
+    .webhook('DELETE', 'https://api.inventory.com/items/${args.item_id}',
+             headers={'Authorization': 'API-Key YOUR_API_KEY'})
+    .output(SwaigFunctionResult('Item ${args.item_id} deleted successfully'))
 )
 ```
 
@@ -1353,28 +1339,28 @@ delete_tool = (DataMap('delete_item')
 # Bearer token authentication
 auth_tool = (DataMap('secure_action')
     .webhook('GET', 'https://api.secure.com/data', 
-             headers={'Authorization': 'Bearer ${env.AUTH_TOKEN}'})
+             headers={'Authorization': 'Bearer YOUR_AUTH_TOKEN'})
 )
 
 # API key in header  
 api_key_tool = (DataMap('api_call')
     .webhook('GET', 'https://api.service.com/endpoint',
              headers={
-                 'X-API-Key': '${env.API_KEY}',
-                 'X-Client-ID': '${env.CLIENT_ID}'
+                 'X-API-Key': 'YOUR_API_KEY',
+                 'X-Client-ID': 'YOUR_CLIENT_ID'
              })
 )
 
 # Basic authentication (you would need to base64 encode credentials beforehand)
 basic_auth_tool = (DataMap('basic_auth_call')
     .webhook('GET', 'https://api.legacy.com/data',
-             headers={'Authorization': 'Basic ${env.BASIC_AUTH_ENCODED}'})
+             headers={'Authorization': 'Basic YOUR_ENCODED_CREDENTIALS'})
 )
 
 # OAuth2 token
 oauth_tool = (DataMap('oauth_call') 
     .webhook('GET', 'https://api.oauth.com/data',
-             headers={'Authorization': 'Bearer ${env.OAUTH_TOKEN}'})
+             headers={'Authorization': 'Bearer YOUR_OAUTH_TOKEN'})
 )
 ```
 
@@ -1382,20 +1368,32 @@ oauth_tool = (DataMap('oauth_call')
 
 DataMap tools use a powerful variable expansion system that allows dynamic substitution of values:
 
+#### Data Store Usage Guidelines
+
+**global_data** - Call-wide data store:
+- User information collected during the call: `${global_data.customer_name}`, `${global_data.account_type}`
+- Call state and preferences: `${global_data.preferred_language}`, `${global_data.call_reason}`
+- **NEVER** API keys, passwords, or credentials
+
+**meta_data** - Function-scoped data store:
+- Function-specific state: `${meta_data.session_id}`, `${meta_data.retry_count}`
+- Shared between functions with same meta_data_token
+- **NEVER** sensitive configuration or secrets
+
 #### Variable Types
 
 ```python
 # Function arguments
 .webhook('GET', 'https://api.example.com/users/${args.user_id}')
 
-# Environment variables
-.header('Authorization', 'Bearer ${env.API_TOKEN}')
+# Authentication headers
+.header('Authorization', 'Bearer YOUR_API_TOKEN')
 
 # Response data from API calls
 .output(SwaigFunctionResult('Status: ${response.status}, Message: ${response.data.message}'))
 
-# Environment and response variables
-.body({'created_by': 'agent', 'api_version': '${env.API_VERSION}'})
+# Static values and response variables
+.body({'created_by': 'agent', 'api_version': '1.0'})
 ```
 
 #### Response Data Access
@@ -1409,9 +1407,9 @@ DataMap tools use a powerful variable expansion system that allows dynamic subst
 .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
 
 # Static values and simple variable substitution
-'${env.TIMESTAMP}'                         # Environment variables
+'2024-01-01T00:00:00Z'                     # Static timestamp values
 '${response.created_at}'                   # Response fields
-'${user_id}'                              # Function arguments
+'${args.user_id}'                          # Function arguments
 ```
 
 #### Simple DataMap Example
@@ -1420,8 +1418,8 @@ DataMap tools use a powerful variable expansion system that allows dynamic subst
 # Basic API integration that actually works
 pricing_tool = (DataMap('get_product_price')
     .parameter('product_id', 'string', 'Product ID', required=True)
-    .webhook('GET', 'https://api.example.com/products/${product_id}', 
-             headers={'Authorization': 'Bearer ${env.API_TOKEN}'})
+    .webhook('GET', 'https://api.example.com/products/${args.product_id}', 
+             headers={'Authorization': 'Bearer YOUR_API_TOKEN'})
     .output(SwaigFunctionResult("""
         Product: ${response.name}
         Price: $${response.price}
@@ -1622,22 +1620,11 @@ sw-search docs/ --include "*.md,*.pdf,*.docx,*.txt"
 You can also build indexes programmatically:
 
 ```python
-from signalwire_swaig.search import IndexBuilder
+from signalwire_agents.cli.search import IndexBuilder
 
-# Create index builder
-builder = IndexBuilder(
-    chunk_size=1000,
-    overlap=200,
-    model_name="all-MiniLM-L6-v2"
-)
-
-# Add documents
-builder.add_directory("docs/", include_patterns=["*.md", "*.txt"])
-builder.add_file("important_doc.pdf")
-builder.add_text("Custom content", metadata={"source": "manual"})
-
-# Build and save index
-builder.build_index("knowledge.swsearch")
+# Create index builder - Note: This is currently CLI-only functionality
+# For programmatic use, use the sw-search command line tool
+# Example: sw-search docs/ --output knowledge.swsearch
 ```
 
 ### Using the Search Skill
@@ -1647,14 +1634,10 @@ builder.build_index("knowledge.swsearch")
 Add the search skill to your agent:
 
 ```python
-from signalwire_swaig.core import Agent, Assistant
+from signalwire_agents import AgentBase
 
-agent = Agent(
-    assistant=Assistant(
-        name="Knowledge Assistant",
-        purpose="I help answer questions using our knowledge base and can search the web for additional information."
-    )
-)
+agent = AgentBase("Knowledge Assistant")
+agent.set_prompt_text("I help answer questions using our knowledge base and can search the web for additional information.")
 
 # Add search capability
 agent.add_skill("native_vector_search", {
@@ -1676,15 +1659,14 @@ if __name__ == "__main__":
 # Comprehensive search configuration
 agent.add_skill("native_vector_search", {
     "index_file": "knowledge.swsearch",
-    "max_results": 10,                    # Maximum search results
-    "similarity_threshold": 0.7,          # Minimum similarity score (0.0-1.0)
-    "hybrid_search": True,                # Enable vector + keyword search
-    "boost_keywords": True,               # Boost exact keyword matches
-    "search_fields": ["content", "title"], # Fields to search in
-    "result_format": "detailed",          # How to format results
-    "include_metadata": True,             # Include source file information
-    "snippet_length": 200,                # Length of result snippets
-    "rerank_results": True                # Re-rank results for relevance
+    "count": 10,                          # Maximum search results
+    "distance_threshold": 0.7,            # Minimum similarity score (0.0-1.0)
+    "tool_name": "search_knowledge",      # Custom tool name
+    "description": "Search the knowledge base",  # Tool description
+    "no_results_message": "No information found for '{query}'",  # Custom no results message
+    "response_prefix": "",                # Text to add before results
+    "response_postfix": "",               # Text to add after results
+    "tags": []                            # Filter by tags
 })
 ```
 
@@ -1696,22 +1678,24 @@ You can add multiple search skills for different knowledge domains:
 # General company knowledge
 agent.add_skill("native_vector_search", {
     "index_file": "general_knowledge.swsearch",
-    "max_results": 5
-}, skill_name="search_general")
+    "count": 5,
+    "tool_name": "search_general"
+})
 
 # Technical documentation
 agent.add_skill("native_vector_search", {
     "index_file": "tech_docs.swsearch",
-    "similarity_threshold": 0.8,
-    "max_results": 3
-}, skill_name="search_technical")
+    "distance_threshold": 0.8,
+    "count": 3,
+    "tool_name": "search_technical"
+})
 
 # FAQ and support content
 agent.add_skill("native_vector_search", {
     "index_file": "support_faq.swsearch",
-    "boost_keywords": True,
-    "max_results": 5
-}, skill_name="search_support")
+    "count": 5,
+    "tool_name": "search_support"
+})
 ```
 
 The AI will automatically choose the most appropriate search function based on the user's question and context.
@@ -1794,7 +1778,7 @@ sw-search technical_docs/ --model "sentence-transformers/allenai-specter" --outp
 Add rich metadata to enable filtered searches:
 
 ```python
-from signalwire_swaig.search import IndexBuilder
+from signalwire_agents.search import IndexBuilder
 
 builder = IndexBuilder()
 
@@ -1834,7 +1818,7 @@ agent.add_skill("native_vector_search", {
 Keep indexes current with automatic updates:
 
 ```python
-from signalwire_swaig.search import IndexWatcher
+from signalwire_agents.search import IndexWatcher
 import asyncio
 
 async def maintain_search_index():
@@ -1856,7 +1840,7 @@ asyncio.create_task(maintain_search_index())
 Track search performance and user queries:
 
 ```python
-from signalwire_swaig.search import SearchAnalytics
+from signalwire_agents.search import SearchAnalytics
 
 # Enable search analytics
 agent.add_skill("native_vector_search", {
@@ -2222,7 +2206,7 @@ The SignalWire AI Agents SDK follows a **stateless-first design philosophy**. By
 The stateless-first approach means:
 
 ```python
-from signalwire_swaig.core import Agent, Assistant
+from signalwire_agents import AgentBase
 
 # This agent is stateless by default
 agent = Agent(

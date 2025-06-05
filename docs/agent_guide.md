@@ -458,7 +458,7 @@ You can include functions from remote sources:
 self.add_function_include(
     url="https://api.example.com/functions",
     functions=["get_weather", "get_news"],
-    meta_data={"api_key": "your-api-key"}
+    meta_data={"session_id": "unique-session-123"}  # Use for session tracking, NOT credentials
 )
 ```
 
@@ -1659,11 +1659,15 @@ def configure_agent(self, query_params, body_params, headers, agent):
     # Don't expose internal configuration via parameters
     # Bad: agent.set_global_data({"api_key": query_params.get('api_key')})
     
-    # Good: Use internal mapping
+    # Good: Use internal mapping for call-related data only
     customer_id = query_params.get('customer_id')
     if customer_id and self.is_valid_customer(customer_id):
-        api_key = self.get_customer_api_key(customer_id)  # Internal lookup
-        agent.set_global_data({"api_key": api_key})
+        # Store call-related customer info, NOT sensitive credentials
+        agent.set_global_data({
+            "customer_id": customer_id,
+            "customer_tier": self.get_customer_tier(customer_id),
+            "account_type": "premium"
+        })
 ```
 
 3. **Rate Limiting for Complex Configurations**
