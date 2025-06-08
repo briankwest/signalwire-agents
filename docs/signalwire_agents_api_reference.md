@@ -3240,8 +3240,8 @@ class ComprehensiveAgent(AgentBase):
             .set_valid_steps(["next"])
         
         greeting.add_step("categorize") \
-            .add_section("Task", "Categorize the customer's request") \
-            .add_bullets("Options", [
+            .add_section("Current Task", "Categorize the customer's request") \
+            .add_bullets("Categories", [
                 "Technical issue - use diagnostic tools",
                 "Billing question - transfer to billing",
                 "General inquiry - handle directly"
@@ -3255,7 +3255,7 @@ class ComprehensiveAgent(AgentBase):
             .set_text("Let me run some diagnostics to identify the issue.") \
             .set_functions(["run_diagnostics", "check_system_status"]) \
             .set_step_criteria("Diagnostics completed") \
-            .set_valid_steps(["next"])
+            .set_valid_steps(["resolve"])
         
         tech.add_step("resolve") \
             .set_text("Based on the diagnostics, here's how we'll fix this.") \

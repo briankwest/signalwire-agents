@@ -134,12 +134,11 @@ class CustomerServiceAgent(AgentBase):
         # Main triage context
         triage = contexts.create_context("triage")
         triage.create_step("greeting") \
-            .add_section("Role", "You are a customer service representative") \
-            .add_section("Goal", "Understand the customer's need and route appropriately") \
-            .add_bullets([
-                "Be friendly and professional",
-                "Ask clarifying questions",
-                "Determine the type of assistance needed"
+            .add_section("Current Task", "Understand the customer's need and route appropriately") \
+            .add_bullets("Required Information", [
+                "Type of issue they're experiencing",
+                "Urgency level of the problem", 
+                "Previous troubleshooting attempts"
             ]) \
             .set_step_criteria("Customer's need has been identified") \
             .set_valid_contexts(["technical", "billing", "general"])
@@ -147,8 +146,8 @@ class CustomerServiceAgent(AgentBase):
         # Technical support context
         tech = contexts.create_context("technical")
         tech.create_step("technical_help") \
-            .add_section("Role", "You are a technical support specialist") \
-            .add_section("Instructions", "Help diagnose and resolve technical issues") \
+            .add_section("Current Task", "Help diagnose and resolve technical issues") \
+            .add_section("Available Tools", "Use web search and datetime functions for technical solutions") \
             .set_functions(["web_search", "datetime"]) \
             .set_step_criteria("Issue is resolved or escalated") \
             .set_valid_contexts(["triage"])
@@ -443,12 +442,12 @@ class TechnicalSupportAgent(AgentBase):
         # Initial triage
         triage = contexts.create_context("triage")
         triage.create_step("problem_identification") \
-            .add_section("Role", "You are a technical support specialist") \
-            .add_section("Goal", "Identify the type of technical issue") \
-            .add_bullets([
-                "Ask about the specific problem",
-                "Determine the severity level",
-                "Classify the issue type"
+            .add_section("Current Task", "Identify the type of technical issue") \
+            .add_bullets("Information to Gather", [
+                "Description of the specific problem",
+                "When did the issue start occurring?",
+                "What steps has the customer already tried?",
+                "Rate the severity level (critical/high/medium/low)"
             ]) \
             .set_step_criteria("Issue type and severity determined") \
             .set_valid_contexts(["hardware", "software", "network"])
@@ -456,8 +455,8 @@ class TechnicalSupportAgent(AgentBase):
         # Hardware troubleshooting
         hardware = contexts.create_context("hardware")
         hardware.create_step("hardware_diagnosis") \
-            .add_section("Role", "Hardware troubleshooting specialist") \
-            .add_section("Instructions", "Guide user through hardware diagnostics") \
+            .add_section("Current Task", "Guide user through hardware diagnostics") \
+            .add_section("Available Tools", "Use web search to find hardware specifications and troubleshooting guides") \
             .set_functions(["web_search"])  # Can search for hardware info \
             .set_step_criteria("Hardware issue diagnosed") \
             .set_valid_steps(["hardware_solution"])
@@ -470,8 +469,8 @@ class TechnicalSupportAgent(AgentBase):
         # Software troubleshooting
         software = contexts.create_context("software")
         software.create_step("software_diagnosis") \
-            .add_section("Role", "Software troubleshooting specialist") \
-            .add_section("Instructions", "Diagnose software-related issues") \
+            .add_section("Current Task", "Diagnose software-related issues") \
+            .add_section("Available Tools", "Use web search for software updates and datetime to check for recent changes") \
             .set_functions(["web_search", "datetime"])  # Can check for updates \
             .set_step_criteria("Software issue identified") \
             .set_valid_steps(["software_fix", "escalation"])
@@ -494,8 +493,8 @@ class TechnicalSupportAgent(AgentBase):
         # Network troubleshooting
         network = contexts.create_context("network")
         network.create_step("network_diagnosis") \
-            .add_section("Role", "Network connectivity specialist") \
-            .add_section("Instructions", "Diagnose network and connectivity issues") \
+            .add_section("Current Task", "Diagnose network and connectivity issues") \
+            .add_section("Available Tools", "Use web search to check service status and datetime for outage windows") \
             .set_functions(["web_search", "datetime"])  # Check service status \
             .set_step_criteria("Network issue diagnosed") \
             .set_valid_steps(["network_fix"])
@@ -529,12 +528,11 @@ class LoanApplicationAgent(AgentBase):
         
         # Step 1: Introduction and eligibility
         application.create_step("introduction") \
-            .add_section("Role", "You are a loan application assistant") \
-            .add_section("Goal", "Guide customers through the loan application process") \
-            .add_bullets([
+            .add_section("Current Task", "Guide customers through the loan application process") \
+            .add_bullets("Information to Provide", [
                 "Explain the process clearly",
-                "Ensure all required information is collected",
-                "Maintain professional and helpful tone"
+                "Outline what information will be needed",
+                "Set expectations for timeline and next steps"
             ]) \
             .set_step_criteria("Customer understands process and wants to continue") \
             .set_valid_steps(["personal_info"])
@@ -606,12 +604,12 @@ class EcommerceServiceAgent(AgentBase):
         # Main service menu
         main = contexts.create_context("main")
         main.create_step("service_menu") \
-            .add_section("Role", "You are an e-commerce customer service representative") \
-            .add_section("Goal", "Help customers with their orders and questions") \
-            .add_bullets([
-                "Identify the type of assistance needed",
-                "Route to the appropriate service area",
-                "Maintain friendly and professional tone"
+            .add_section("Current Task", "Help customers with their orders and questions") \
+            .add_bullets("Service Areas Available", [
+                "Order status, modifications, and tracking",
+                "Returns and refunds",
+                "Product information and specifications",
+                "Account-related questions"
             ]) \
             .set_step_criteria("Customer's need has been identified") \
             .set_valid_contexts(["orders", "returns", "products", "account"])
@@ -619,8 +617,8 @@ class EcommerceServiceAgent(AgentBase):
         # Order management context
         orders = contexts.create_context("orders")
         orders.create_step("order_assistance") \
-            .add_section("Role", "Order management specialist") \
-            .add_section("Instructions", "Help with order status, modifications, and tracking") \
+            .add_section("Current Task", "Help with order status, modifications, and tracking") \
+            .add_section("Available Tools", "Use datetime to check delivery dates and processing times") \
             .set_functions(["datetime"])  # Can check delivery dates \
             .set_step_criteria("Order issue resolved or escalated") \
             .set_valid_contexts(["main"])
@@ -628,9 +626,8 @@ class EcommerceServiceAgent(AgentBase):
         # Returns and refunds context
         returns = contexts.create_context("returns")
         returns.create_step("return_process") \
-            .add_section("Role", "Returns and refunds specialist") \
-            .add_section("Instructions", "Guide customers through return process") \
-            .add_bullets([
+            .add_section("Current Task", "Guide customers through return process") \
+            .add_bullets("Return Process Steps", [
                 "Verify return eligibility",
                 "Explain return policy", 
                 "Provide return instructions",
@@ -643,8 +640,8 @@ class EcommerceServiceAgent(AgentBase):
         # Product information context
         products = contexts.create_context("products")
         products.create_step("product_help") \
-            .add_section("Role", "Product information specialist") \
-            .add_section("Instructions", "Help customers with product questions") \
+            .add_section("Current Task", "Help customers with product questions") \
+            .add_section("Available Tools", "Use web search to find detailed product information and specifications") \
             .set_functions(["web_search"])  # Can search for product info \
             .set_step_criteria("Product question answered") \
             .set_valid_contexts(["main"])

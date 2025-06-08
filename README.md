@@ -363,17 +363,16 @@ class SupportAgent(AgentBase):
         # Triage context
         triage = contexts.add_context("triage")
         triage.add_step("initial_greeting") \
-            .add_section("Role", "You are a helpful customer support agent") \
-            .add_section("Goal", "Understand the customer's issue and route them appropriately") \
-            .add_bullets(["Be empathetic and professional", "Ask clarifying questions", "Categorize the issue"]) \
+            .add_section("Current Task", "Understand the customer's issue and route them appropriately") \
+            .add_bullets("Questions to Ask", ["What problem are you experiencing?", "How urgent is this issue?", "Have you tried any troubleshooting steps?"]) \
             .set_step_criteria("Issue type has been identified") \
             .set_valid_contexts(["technical_support", "billing_support", "general_inquiry"])
         
         # Technical support context
         tech = contexts.add_context("technical_support")
         tech.add_step("technical_diagnosis") \
-            .add_section("Role", "You are a technical support specialist") \
-            .add_section("Instructions", "Help diagnose and resolve technical issues") \
+            .add_section("Current Task", "Help diagnose and resolve technical issues") \
+            .add_section("Available Tools", "Use web search to find solutions and datetime to check service windows") \
             .set_functions(["web_search", "datetime"])  # Can search for solutions and check times \
             .set_step_criteria("Technical issue is resolved or escalated") \
             .set_valid_contexts(["triage"])  # Can return to triage
