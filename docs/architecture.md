@@ -764,7 +764,7 @@ The POM (Prompt Object Model) represents a structured approach to prompt constru
 
 ### Contexts and Steps Architecture
 
-The Contexts and Steps system provides an alternative to traditional POM prompts for building structured, workflow-driven AI interactions. This system represents a fundamental shift from unstructured conversation to guided workflow execution.
+The Contexts and Steps system enhances traditional POM prompts by adding structured, workflow-driven guidance on top of the base prompt. This system adds guided workflow execution while maintaining the foundational prompt structure.
 
 #### Core Architecture
 

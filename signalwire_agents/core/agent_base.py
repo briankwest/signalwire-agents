@@ -1496,6 +1496,10 @@ class AgentBase(SWMLService):
         if self._function_includes:
             swaig_obj["includes"] = self._function_includes
         
+        # Add internal_fillers if any are defined
+        if hasattr(self, '_internal_fillers') and self._internal_fillers:
+            swaig_obj["internal_fillers"] = self._internal_fillers
+        
         # Create functions array
         functions = []
         
@@ -1577,13 +1581,25 @@ class AgentBase(SWMLService):
             try:
                 # Check if we're in contexts mode
                 if self._contexts_defined and self._contexts_builder:
-                    # Generate contexts instead of prompt
+                    # Generate contexts and combine with base prompt
                     contexts_dict = self._contexts_builder.to_dict()
                     
-                    # Build AI config with contexts
+                    # Determine base prompt (required when using contexts)
+                    base_prompt_text = None
+                    base_prompt_pom = None
+                    
+                    if prompt_is_pom:
+                        base_prompt_pom = prompt
+                    elif prompt:
+                        base_prompt_text = prompt
+                    else:
+                        # Provide default base prompt if none exists
+                        base_prompt_text = f"You are {self.name}, a helpful AI assistant that follows structured workflows."
+                    
+                    # Build AI config with base prompt + contexts
                     ai_config = ai_handler.build_config(
-                        prompt_text=None,
-                        prompt_pom=None,
+                        prompt_text=base_prompt_text,
+                        prompt_pom=base_prompt_pom,
                         contexts=contexts_dict,
                         post_prompt=post_prompt,
                         post_prompt_url=post_prompt_url,
@@ -2611,6 +2627,63 @@ class AgentBase(SWMLService):
         """
         if function_names and isinstance(function_names, list):
             self.native_functions = [name for name in function_names if isinstance(name, str)]
+        return self
+
+    def set_internal_fillers(self, internal_fillers: Dict[str, Dict[str, List[str]]]) -> 'AgentBase':
+        """
+        Set internal fillers for native SWAIG functions
+        
+        Internal fillers provide custom phrases the AI says while executing
+        internal/native functions like check_time, wait_for_user, next_step, etc.
+        
+        Args:
+            internal_fillers: Dictionary mapping function names to language-specific filler phrases
+                            Format: {"function_name": {"language_code": ["phrase1", "phrase2"]}}
+                            Example: {"next_step": {"en-US": ["Moving to the next step...", "Great, let's continue..."]}}
+            
+        Returns:
+            Self for method chaining
+            
+        Example:
+            agent.set_internal_fillers({
+                "next_step": {
+                    "en-US": ["Moving to the next step...", "Great, let's continue..."],
+                    "es": ["Pasando al siguiente paso...", "Excelente, continuemos..."]
+                },
+                "check_time": {
+                    "en-US": ["Let me check the time...", "Getting the current time..."]
+                }
+            })
+        """
+        if internal_fillers and isinstance(internal_fillers, dict):
+            if not hasattr(self, '_internal_fillers'):
+                self._internal_fillers = {}
+            self._internal_fillers.update(internal_fillers)
+        return self
+
+    def add_internal_filler(self, function_name: str, language_code: str, fillers: List[str]) -> 'AgentBase':
+        """
+        Add internal fillers for a specific function and language
+        
+        Args:
+            function_name: Name of the internal function (e.g., 'next_step', 'check_time')
+            language_code: Language code (e.g., 'en-US', 'es', 'fr')
+            fillers: List of filler phrases for this function and language
+            
+        Returns:
+            Self for method chaining
+            
+        Example:
+            agent.add_internal_filler("next_step", "en-US", ["Moving to the next step...", "Great, let's continue..."])
+        """
+        if function_name and language_code and fillers and isinstance(fillers, list):
+            if not hasattr(self, '_internal_fillers'):
+                self._internal_fillers = {}
+            
+            if function_name not in self._internal_fillers:
+                self._internal_fillers[function_name] = {}
+                
+            self._internal_fillers[function_name][language_code] = fillers
         return self
 
     def add_function_include(self, url: str, functions: List[str], meta_data: Optional[Dict[str, Any]] = None) -> 'AgentBase':

@@ -221,7 +221,7 @@ For detailed documentation, see [DataMap Guide](docs/datamap_guide.md).
 
 ## Contexts and Steps
 
-The SignalWire Agents SDK provides a powerful alternative to traditional Prompt Object Model (POM) prompts through the **Contexts and Steps** system. This feature allows you to create structured, workflow-driven AI interactions with explicit navigation control and step-by-step guidance.
+The SignalWire Agents SDK provides a powerful enhancement to traditional prompts through the **Contexts and Steps** system. This feature allows you to add structured, workflow-driven AI interactions on top of your base prompt, with explicit navigation control and step-by-step guidance.
 
 ### Why Use Contexts and Steps?
 
@@ -230,7 +230,7 @@ The SignalWire Agents SDK provides a powerful alternative to traditional Prompt 
 - **Completion Criteria**: Set specific criteria for step completion and progression  
 - **Function Restrictions**: Limit which AI tools are available in each step
 - **Workflow Isolation**: Create separate contexts for different conversation flows
-- **Backward Compatibility**: Works alongside traditional prompts and all existing AgentBase features
+- **Enhanced Base Prompts**: Adds structured workflows on top of your existing prompt foundation
 
 ### Basic Usage
 
@@ -241,30 +241,34 @@ class WorkflowAgent(AgentBase):
     def __init__(self):
         super().__init__(name="Workflow Assistant", route="/workflow")
         
-        # Define contexts and steps (alternative to traditional prompts)
+        # Set base prompt (required even when using contexts)
+        self.prompt_add_section("Role", "You are a helpful workflow assistant.")
+        self.prompt_add_section("Instructions", "Guide users through structured processes step by step.")
+        
+        # Define contexts and steps (adds structured workflow to base prompt)
         contexts = self.define_contexts()
         
         # Create a single context named "default" (required for single context)
-        context = contexts.create_context("default")
+        context = contexts.add_context("default")
         
         # Add step-by-step workflow
-        context.create_step("greeting") \
+        context.add_step("greeting") \
             .set_text("Welcome! I'm here to help you complete your application. Let's start with your personal information.") \
             .set_step_criteria("User has provided their name and confirmed they want to continue") \
             .set_valid_steps(["personal_info"])  # Can only go to personal_info step
         
-        context.create_step("personal_info") \
+        context.add_step("personal_info") \
             .add_section("Instructions", "Collect the user's personal information") \
             .add_bullets(["Ask for full name", "Ask for email address", "Ask for phone number"]) \
             .set_step_criteria("All personal information has been collected and confirmed") \
             .set_valid_steps(["review", "personal_info"])  # Can stay or move to review
         
-        context.create_step("review") \
+        context.add_step("review") \
             .set_text("Let me review the information you've provided. Please confirm if everything is correct.") \
             .set_step_criteria("User has confirmed or requested changes") \
             .set_valid_steps(["personal_info", "complete"])  # Can go back or complete
         
-        context.create_step("complete") \
+        context.add_step("complete") \
             .set_text("Thank you! Your application has been submitted successfully.") \
             .set_step_criteria("Application processing is complete")
             # No valid_steps = end of workflow
@@ -280,22 +284,27 @@ class MultiContextAgent(AgentBase):
     def __init__(self):
         super().__init__(name="Multi-Context Agent", route="/multi-context")
         
-        # Add skills first
+        # Set base prompt (required)
+        self.prompt_add_section("Role", "You are a versatile AI assistant.")
+        self.prompt_add_section("Capabilities", "You can help with calculations and provide time information.")
+        
+        # Add skills
         self.add_skill("datetime")
         self.add_skill("math")
         
+        # Define contexts for different service modes
         contexts = self.define_contexts()
         
         # Main conversation context
-        main_context = contexts.create_context("main")
-        main_context.create_step("welcome") \
+        main_context = contexts.add_context("main")
+        main_context.add_step("welcome") \
             .set_text("Welcome! I can help with calculations or provide date/time info. What would you like to do?") \
             .set_step_criteria("User has chosen a service type") \
             .set_valid_contexts(["calculator", "datetime_info"])  # Can switch contexts
         
         # Calculator context with function restrictions
-        calc_context = contexts.create_context("calculator")
-        calc_context.create_step("math_mode") \
+        calc_context = contexts.add_context("calculator")
+        calc_context.add_step("math_mode") \
             .add_section("Role", "You are a mathematical assistant") \
             .add_section("Instructions", "Help users with calculations") \
             .set_functions(["math"])  # Only math function available \
@@ -303,8 +312,8 @@ class MultiContextAgent(AgentBase):
             .set_valid_contexts(["main"])  # Can return to main
         
         # DateTime context
-        datetime_context = contexts.create_context("datetime_info")
-        datetime_context.create_step("time_mode") \
+        datetime_context = contexts.add_context("datetime_info")
+        datetime_context.add_step("time_mode") \
             .set_text("I can provide current date and time information. What would you like to know?") \
             .set_functions(["datetime"])  # Only datetime function available \
             .set_step_criteria("Date/time information has been provided") \
@@ -314,7 +323,7 @@ class MultiContextAgent(AgentBase):
 ### Context and Step Methods
 
 #### Context Methods
-- `create_step(name)`: Create a new step in this context
+- `add_step(name)`: Create a new step in this context
 - `set_valid_contexts(contexts)`: Control which contexts can be accessed from this context
 
 #### Step Methods
@@ -340,15 +349,20 @@ class SupportAgent(AgentBase):
     def __init__(self):
         super().__init__(name="Customer Support", route="/support")
         
+        # Set base prompt (required)
+        self.prompt_add_section("Role", "You are a professional customer support representative.")
+        self.prompt_add_section("Goal", "Provide excellent customer service using structured workflows.")
+        
         # Add skills for enhanced capabilities
         self.add_skill("datetime")
         self.add_skill("web_search", {"api_key": "your-key", "search_engine_id": "your-id"})
         
+        # Define support workflow contexts
         contexts = self.define_contexts()
         
         # Triage context
-        triage = contexts.create_context("triage")
-        triage.create_step("initial_greeting") \
+        triage = contexts.add_context("triage")
+        triage.add_step("initial_greeting") \
             .add_section("Role", "You are a helpful customer support agent") \
             .add_section("Goal", "Understand the customer's issue and route them appropriately") \
             .add_bullets(["Be empathetic and professional", "Ask clarifying questions", "Categorize the issue"]) \
@@ -356,8 +370,8 @@ class SupportAgent(AgentBase):
             .set_valid_contexts(["technical_support", "billing_support", "general_inquiry"])
         
         # Technical support context
-        tech = contexts.create_context("technical_support")
-        tech.create_step("technical_diagnosis") \
+        tech = contexts.add_context("technical_support")
+        tech.add_step("technical_diagnosis") \
             .add_section("Role", "You are a technical support specialist") \
             .add_section("Instructions", "Help diagnose and resolve technical issues") \
             .set_functions(["web_search", "datetime"])  # Can search for solutions and check times \
@@ -365,16 +379,16 @@ class SupportAgent(AgentBase):
             .set_valid_contexts(["triage"])  # Can return to triage
         
         # Billing support context  
-        billing = contexts.create_context("billing_support")
-        billing.create_step("billing_assistance") \
+        billing = contexts.add_context("billing_support")
+        billing.add_step("billing_assistance") \
             .set_text("I'll help you with your billing inquiry. Please provide your account details.") \
             .set_functions("none")  # No external tools for sensitive billing info \
             .set_step_criteria("Billing issue is addressed") \
             .set_valid_contexts(["triage"])
         
         # General inquiry context
-        general = contexts.create_context("general_inquiry")
-        general.create_step("general_help") \
+        general = contexts.add_context("general_inquiry")
+        general.add_step("general_help") \
             .set_text("I'm here to help with general questions. What can I assist you with?") \
             .set_functions(["web_search", "datetime"])  # Full access to search and time \
             .set_step_criteria("Inquiry has been answered") \

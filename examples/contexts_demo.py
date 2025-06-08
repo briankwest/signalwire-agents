@@ -11,79 +11,112 @@ from signalwire_agents import AgentBase
 
 
 class ContextsDemoAgent(AgentBase):
-    """Agent demonstrating contexts and steps system"""
+    """Computer Sales Agent demonstrating contexts and steps system"""
     
     def __init__(self):
         super().__init__(
-            name="Contexts Demo Agent",
+            name="Computer Sales Agent",
             route="/contexts-demo"
         )
         
-        # Define contexts and steps BEFORE adding skills
-        # Skills might add prompt sections which would trigger validation error
+        # Set base prompt (required even when using contexts)
+        self.prompt_add_section(
+            "Role", 
+            "You are a knowledgeable computer sales consultant helping customers find the perfect computer."
+        )
+        self.prompt_add_section(
+            "Instructions",
+            "Follow the structured sales workflow to guide customers through their computer purchase decision.",
+            bullets=[
+                "Complete each step's specific criteria before advancing",
+                "Ask focused questions to gather the exact information needed",
+                "Be helpful and consultative, not pushy"
+            ]
+        )
+        
+        # Define contexts and steps AFTER setting base prompt
+        # Contexts add structured workflow on top of the base prompt
         contexts = self.define_contexts()
         
         # Create a single context named "default" (required for single context)
         context = contexts.add_context("default")
         
-        # Step 1: Greeting with direct text
-        context.add_step("greeting") \
-            .set_text("Greet the customer warmly and ask how you can help them today. Be friendly and professional.") \
-            .set_step_criteria("Customer has been greeted and has stated their need or question") \
-            .set_functions("none")  # No functions needed for greeting
-        
-        # Step 2: Information gathering with POM-style sections
-        context.add_step("gather_info") \
-            .add_section("Current Task", "Gather detailed information about the customer's request") \
-            .add_bullets("Instructions", [
-                "Ask clarifying questions to understand their needs",
-                "Be patient and thorough in collecting information", 
-                "Confirm your understanding before proceeding"
+        # Step 1: Determine use case - Gaming, Work, or Balanced
+        context.add_step("determine_use_case") \
+            .add_section("Current Task", "Identify the customer's primary computer use case") \
+            .add_bullets("Required Information to Collect", [
+                "What will they primarily use the computer for?",
+                "Do they play video games? If so, what types and how often?",
+                "Do they need it for work? What kind of work applications?",
+                "Do they do creative work like video editing, design, or programming?",
+                "Help them categorize as: GAMING, WORK, or BALANCED"
             ]) \
-            .add_section("Available Tools", "You have access to helpful functions") \
-            .add_bullets("Functions Available", [
-                "datetime - for current date/time information",
-                "math - for mathematical calculations"
+            .set_step_criteria("Customer has clearly stated their use case as one of: GAMING (high-performance games), WORK (business/productivity), or BALANCED (mix of both)") \
+            .set_functions("none")
+        
+        # Step 2: Laptop vs Desktop preference
+        context.add_step("determine_form_factor") \
+            .add_section("Current Task", "Determine if customer wants a laptop or desktop computer") \
+            .add_bullets("Decision-Making Questions", [
+                "Ask directly: 'Are you looking for a laptop or desktop computer or if they need help deciding?'",
+                "If they're unsure, help them decide by asking:",
+                "  - Do you need to take it with you places, or will it stay in one location?",
+                "  - Do you already have a monitor, keyboard, and mouse at home?",
+                "  - Is desk space limited?",
+                "  - What's more important: portability or maximum performance for your budget?"
             ]) \
-            .set_step_criteria("You have all the information needed to help the customer") \
-            .set_functions(["datetime", "math"])  # Only specific functions for this step
+            .add_section("Important", "If customer explicitly says 'laptop' or 'desktop', immediately acknowledge their choice and move to the next step. Do NOT ask additional form factor questions.") \
+            .set_step_criteria("Customer has explicitly stated they want either a LAPTOP or DESKTOP (exact words matter)") \
+            .set_functions("none")
         
-        # Step 3: Problem resolution with navigation control
-        context.add_step("resolve") \
-            .set_text("Now resolve the customer's issue using the information gathered. Provide a clear, helpful solution.") \
-            .set_step_criteria("Customer's issue has been fully resolved to their satisfaction") \
-            .set_valid_steps(["follow_up", "greeting"])  # Can go to follow-up or start over
-        
-        # Step 4: Follow-up
-        context.add_step("follow_up") \
-            .add_section("Current Task", "Follow up to ensure customer satisfaction") \
-            .add_bullets("Follow-up Actions", [
-                "Ask if they need any additional help",
-                "Confirm they are satisfied with the solution",
-                "Offer to assist with related questions"
+        # Step 3: Final recommendation
+        context.add_step("make_recommendation") \
+            .add_section("Current Task", "Provide specific computer recommendation based on gathered information") \
+            .add_bullets("Recommendation Requirements", [
+                "Recommend a specific computer type based on their use case and form factor",
+                "Explain why this recommendation fits their needs",
+                "Mention key specs that matter for their use case",
+                "Provide a rough price range they should expect"
             ]) \
-            .set_step_criteria("Customer confirms they are satisfied and has no additional questions") \
-            .set_valid_steps(["greeting"])  # Can start over with new customer
+            .set_step_criteria("Customer has received a specific recommendation with explanation and pricing guidance, and acknowledges understanding the recommendation") \
+            .set_valid_steps(["determine_use_case"])  # Can start over with new customer
         
-        # Now add skills after contexts are defined
-        self.add_skill("datetime")
-        self.add_skill("math")
+        # Add language support
+        self.add_language(
+            name="English",
+            code="en-US",
+            voice="rime.spore"
+        )
+        
+        # Add internal fillers for the next_step function (used by contexts system)
+        self.add_internal_filler("next_step", "en-US", [
+            "Great! Let's move to the next step...",
+            "Perfect! Moving forward in our conversation...",
+            "Excellent! Let's continue to the next part...",
+            "Wonderful! Progressing to the next step..."
+        ])
+        
+        # No additional skills needed for this sales workflow
 
 
 def main():
-    """Main function to run the contexts demo agent"""
+    """Main function to run the computer sales agent"""
     print("=" * 60)
-    print("CONTEXTS AND STEPS DEMO AGENT")
+    print("COMPUTER SALES AGENT - CONTEXTS DEMO")
     print("=" * 60)
     print()
-    print("This agent demonstrates the new contexts and steps system!")
+    print("This agent demonstrates structured sales workflow using contexts and steps!")
+    print()
+    print("Sales workflow:")
+    print("  1. Determine use case (Gaming/Work/Balanced)")
+    print("  2. Choose form factor (Laptop/Desktop)")
+    print("  3. Receive personalized recommendation")
     print()
     print("Features demonstrated:")
-    print("  • Single 'default' context")
-    print("  • Mix of direct text and POM-style steps")
-    print("  • Step-specific function restrictions")
-    print("  • Custom step navigation")
-    print("  • Step completion criteria")
+    print("  • Specific, measurable step criteria")
+    print("  • Focused question guidance")
+    print("  • Sequential workflow progression")
+    print("  • Structured sales process")
     print()
     print("Test the agent at: http://localhost:3000/contexts-demo")
     print()
@@ -93,8 +126,7 @@ def main():
     print("Agent configuration:")
     print(f"  Name: {agent.get_name()}")
     print(f"  Route: /contexts-demo")
-    print(f"  Skills: datetime, math")
-    print(f"  Mode: Contexts & Steps")
+    print(f"  Mode: Computer Sales with Contexts & Steps")
     print()
     
     try:

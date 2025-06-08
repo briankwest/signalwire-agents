@@ -660,6 +660,63 @@ Enable specific native SWML functions.
 agent.set_native_functions(["transfer", "hangup", "send_sms"])
 ```
 
+##### `set_internal_fillers`
+
+```python
+def set_internal_fillers(
+    internal_fillers: Dict[str, Dict[str, List[str]]]
+) -> AgentBase
+```
+Set custom filler phrases for internal/native SWAIG functions.
+
+**Parameters:**
+- `internal_fillers` (Dict[str, Dict[str, List[str]]]): Function name → language code → filler phrases
+
+**Available Internal Functions:**
+- `next_step`: Moving between workflow steps (contexts system)
+- `change_context`: Switching contexts in workflows  
+- `check_time`: Getting current time
+- `wait_for_user`: Waiting for user input
+- `wait_seconds`: Pausing for specified duration
+- `get_visual_input`: Processing visual data
+
+**Usage:**
+```python
+agent.set_internal_fillers({
+    "next_step": {
+        "en-US": ["Moving to the next step...", "Let's continue..."],
+        "es": ["Pasando al siguiente paso...", "Continuemos..."]
+    },
+    "check_time": {
+        "en-US": ["Let me check the time...", "Getting current time..."]
+    }
+})
+```
+
+##### `add_internal_filler`
+
+```python
+def add_internal_filler(
+    function_name: str, 
+    language_code: str, 
+    fillers: List[str]
+) -> AgentBase
+```
+Add internal fillers for a specific function and language.
+
+**Parameters:**
+- `function_name` (str): Name of the internal function
+- `language_code` (str): Language code (e.g., "en-US", "es", "fr")
+- `fillers` (List[str]): List of filler phrases
+
+**Usage:**
+```python
+agent.add_internal_filler("next_step", "en-US", [
+    "Great! Let's move to the next step...",
+    "Perfect! Moving forward..."
+])
+```
+
 ### Function Includes
 
 ##### `add_function_include`
@@ -2340,7 +2397,7 @@ This concludes Part 3 of the API reference covering the DataMap class. The docum
 
 ## Context System
 
-The Context System provides an alternative to traditional prompt-based agents by allowing structured workflows with sequential steps. Each step contains its own prompt, completion criteria, and function restrictions.
+The Context System enhances traditional prompt-based agents by adding structured workflows with sequential steps on top of a base prompt. Each step contains its own guidance, completion criteria, and function restrictions while building upon the agent's foundational prompt.
 
 ### ContextBuilder Class
 

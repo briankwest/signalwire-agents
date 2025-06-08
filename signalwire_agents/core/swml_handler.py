@@ -103,19 +103,19 @@ class AIVerbHandler(SWMLVerbHandler):
             errors.append("'prompt' must be an object")
             return False, errors
         
-        # Check that prompt contains one of: text, pom, or contexts
+        # Check that prompt contains either text or pom (required)
         has_text = "text" in prompt
         has_pom = "pom" in prompt
         has_contexts = "contexts" in prompt
         
-        options_count = sum([has_text, has_pom, has_contexts])
+        # Require either text or pom (mutually exclusive)
+        base_prompt_count = sum([has_text, has_pom])
+        if base_prompt_count == 0:
+            errors.append("'prompt' must contain either 'text' or 'pom' as base prompt")
+        elif base_prompt_count > 1:
+            errors.append("'prompt' can only contain one of: 'text' or 'pom' (mutually exclusive)")
         
-        if options_count == 0:
-            errors.append("'prompt' must contain one of: 'text', 'pom', or 'contexts'")
-        elif options_count > 1:
-            errors.append("'prompt' can only contain one of: 'text', 'pom', or 'contexts'")
-        
-        # Validate contexts structure if present
+        # Contexts are optional and can be combined with text or pom
         if has_contexts:
             contexts = prompt["contexts"]
             if not isinstance(contexts, dict):
@@ -141,9 +141,9 @@ class AIVerbHandler(SWMLVerbHandler):
         Build a configuration for the AI verb
         
         Args:
-            prompt_text: Text prompt for the AI (mutually exclusive with prompt_pom and contexts)
-            prompt_pom: POM structure for the AI prompt (mutually exclusive with prompt_text and contexts)
-            contexts: Contexts and steps configuration (mutually exclusive with prompt_text and prompt_pom)
+            prompt_text: Text prompt for the AI (mutually exclusive with prompt_pom)
+            prompt_pom: POM structure for the AI prompt (mutually exclusive with prompt_text)
+            contexts: Optional contexts and steps configuration (can be combined with text or pom)
             post_prompt: Optional post-prompt text
             post_prompt_url: Optional URL for post-prompt processing
             swaig: Optional SWAIG configuration
@@ -154,19 +154,25 @@ class AIVerbHandler(SWMLVerbHandler):
         """
         config = {}
         
-        # Add prompt (either text, POM, or contexts - mutually exclusive)
-        prompt_options_count = sum(x is not None for x in [prompt_text, prompt_pom, contexts])
-        if prompt_options_count == 0:
-            raise ValueError("One of prompt_text, prompt_pom, or contexts must be provided")
-        elif prompt_options_count > 1:
-            raise ValueError("prompt_text, prompt_pom, and contexts are mutually exclusive")
+        # Require either text or pom as base prompt (mutually exclusive)
+        base_prompt_count = sum(x is not None for x in [prompt_text, prompt_pom])
+        if base_prompt_count == 0:
+            raise ValueError("Either prompt_text or prompt_pom must be provided as base prompt")
+        elif base_prompt_count > 1:
+            raise ValueError("prompt_text and prompt_pom are mutually exclusive")
         
+        # Build prompt object with base prompt
+        prompt_config = {}
         if prompt_text is not None:
-            config["prompt"] = {"text": prompt_text}
+            prompt_config["text"] = prompt_text
         elif prompt_pom is not None:
-            config["prompt"] = {"pom": prompt_pom}
-        elif contexts is not None:
-            config["prompt"] = {"contexts": contexts}
+            prompt_config["pom"] = prompt_pom
+            
+        # Add contexts if provided (optional, activates steps feature)
+        if contexts is not None:
+            prompt_config["contexts"] = contexts
+            
+        config["prompt"] = prompt_config
         
         # Add post-prompt if provided
         if post_prompt is not None:

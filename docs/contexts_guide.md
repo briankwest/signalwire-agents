@@ -15,7 +15,7 @@
 
 ## Overview
 
-The **Contexts and Steps** system provides a structured alternative to traditional Prompt Object Model (POM) prompts in SignalWire AI agents. Instead of defining a single prompt, you create workflows with explicit steps, navigation rules, and completion criteria.
+The **Contexts and Steps** system enhances traditional Prompt Object Model (POM) prompts in SignalWire AI agents by adding structured workflows on top of your base prompt. Instead of just defining a single prompt, you create workflows with explicit steps, navigation rules, and completion criteria.
 
 ### Key Benefits
 
