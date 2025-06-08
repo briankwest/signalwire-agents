@@ -69,17 +69,18 @@ class ContextsDemoAgent(AgentBase):
             .set_step_criteria("Customer has explicitly stated they want either a LAPTOP or DESKTOP (exact words matter)") \
             .set_functions("none")
         
-        # Step 3: Final recommendation
+        # Step 3: Final recommendation  
         context.add_step("make_recommendation") \
             .add_section("Current Task", "Provide specific computer recommendation based on gathered information") \
             .add_bullets("Recommendation Requirements", [
                 "Recommend a specific computer type based on their use case and form factor",
                 "Explain why this recommendation fits their needs",
                 "Mention key specs that matter for their use case",
-                "Provide a rough price range they should expect"
+                "Provide a rough price range they should expect",
+                "Thank them for their time and let them know they can reach out with any follow-up questions and see if its ok to end the call, otherwise they can continue to ask questions"
             ]) \
-            .set_step_criteria("Customer has received a specific recommendation with explanation and pricing guidance, and acknowledges understanding the recommendation") \
-            .set_valid_steps(["determine_use_case"])  # Can start over with new customer
+            .set_step_criteria("Customer has received a specific recommendation with explanation and pricing guidance, and acknowledges understanding the recommendation")
+            # No valid_steps = conversation ends naturally after recommendation
         
         # Add language support
         self.add_language(
