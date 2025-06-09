@@ -2436,204 +2436,70 @@ support_context = contexts.add_context("support")
 
 ### Context Class
 
-Represents a single context containing multiple sequential steps.
+The Context class represents a conversation context containing multiple steps with enhanced features:
 
-#### Step Management
-
-##### `add_step(name: str) -> Step`
-Add a new step to this context.
-
-**Parameters:**
-- `name` (str): Unique step name within this context
-
-**Returns:**
-- Step: Step object for method chaining
-
-**Usage:**
 ```python
-context = contexts.add_context("customer_service")
-
-# Add multiple steps
-welcome_step = context.add_step("welcome")
-identify_step = context.add_step("identify_need")
-resolve_step = context.add_step("resolve_issue")
+class Context:
+    def add_step(self, name: str) -> Step
+        """Create a new step in this context"""
+    
+    def set_valid_contexts(self, contexts: List[str]) -> Context
+        """Set which contexts can be accessed from this context"""
+        
+    # Context entry parameters (for context switching behavior)
+    def set_post_prompt(self, post_prompt: str) -> Context
+        """Override agent's post prompt when this context is active"""
+    
+    def set_system_prompt(self, system_prompt: str) -> Context
+        """Trigger context switch with new system instructions (makes this a Context Switch Context)"""
+        
+    def set_consolidate(self, consolidate: bool) -> Context
+        """Whether to consolidate conversation history when entering this context"""
+        
+    def set_full_reset(self, full_reset: bool) -> Context
+        """Whether to do complete system prompt replacement vs injection"""
+        
+    def set_user_prompt(self, user_prompt: str) -> Context
+        """User message to inject when entering this context for AI context"""
+    
+    # Context prompts (guidance for all steps in context)
+    def set_prompt(self, prompt: str) -> Context
+        """Set simple string prompt that applies to all steps in this context"""
+        
+    def add_section(self, title: str, body: str) -> Context
+        """Add POM-style section to context prompt"""
+        
+    def add_bullets(self, title: str, bullets: List[str]) -> Context
+        """Add POM-style bullet section to context prompt"""
 ```
 
-##### `set_valid_contexts(contexts: List[str]) -> Context`
-Set which contexts can be navigated to from this context.
+**Context Types:**
 
-**Parameters:**
-- `contexts` (List[str]): List of valid context names
+1. **Workflow Container Context** (no `system_prompt`): Organizes steps without conversation state changes
+2. **Context Switch Context** (has `system_prompt`): Triggers conversation state changes when entered, processing entry parameters like a `context_switch` SWAIG action
 
-**Usage:**
-```python
-# Allow navigation to specific contexts
-context.set_valid_contexts(["main_menu", "escalation", "end_call"])
+**Prompt Hierarchy:** Base Agent Prompt → Context Prompt → Step Prompt
 
-# Allow navigation to any context
-context.set_valid_contexts(["*"])
-```
-
-### Step Class
-
-Represents a single step within a context with its own prompt and behavior.
-
-#### Prompt Configuration
-
-##### `set_text(text: str) -> Step`
-Set the step's prompt as raw text.
-
-**Parameters:**
-- `text` (str): Complete prompt text for this step
-
-**Usage:**
-```python
-step.set_text("Please provide your account number so I can look up your information.")
-```
-
-##### `add_section(title: str, body: str) -> Step`
-Add a structured prompt section (POM-style).
-
-**Parameters:**
-- `title` (str): Section title
-- `body` (str): Section content
-
-**Usage:**
-```python
-step.add_section("Your Role", "You are a technical support specialist")
-step.add_section("Current Task", "Help the customer troubleshoot their connection issue")
-```
-
-##### `add_bullets(title: str, bullets: List[str]) -> Step`
-Add a section with bullet points.
-
-**Parameters:**
-- `title` (str): Section title
-- `bullets` (List[str]): List of bullet points
-
-**Usage:**
-```python
-step.add_bullets("Available Actions", [
-    "Transfer to billing department",
-    "Schedule a callback",
-    "Escalate to supervisor",
-    "End the call"
-])
-```
-
-**Note:** You cannot mix `set_text()` with `add_section()`/`add_bullets()`. Choose one approach per step.
-
-#### Step Behavior
-
-##### `set_step_criteria(criteria: str) -> Step`
-Define when this step is considered complete.
-
-**Parameters:**
-- `criteria` (str): Description of completion criteria
-
-**Usage:**
-```python
-step.set_step_criteria("Customer has provided their account number and it has been verified")
-step.set_step_criteria("Issue has been resolved or escalated appropriately")
-```
-
-##### `set_functions(functions: Union[str, List[str]]) -> Step`
-Control which functions are available in this step.
-
-**Parameters:**
-- `functions` (Union[str, List[str]]): "none" to disable all functions, or list of function names
-
-**Usage:**
-```python
-# Disable all functions
-step.set_functions("none")
-
-# Allow specific functions only
-step.set_functions(["lookup_account", "verify_identity"])
-
-# Allow all functions (default behavior)
-step.set_functions(["*"])
-```
-
-##### `set_valid_steps(steps: List[str]) -> Step`
-Define which steps can be navigated to from this step.
-
-**Parameters:**
-- `steps` (List[str]): List of valid step names (include "next" for sequential flow)
-
-**Usage:**
-```python
-# Sequential flow to next step
-step.set_valid_steps(["next"])
-
-# Allow jumping to specific steps
-step.set_valid_steps(["verify_account", "escalate", "end_call"])
-
-# Allow any step navigation
-step.set_valid_steps(["*"])
-```
-
-### Complete Context Example
+#### Usage Examples
 
 ```python
-# Define a customer service workflow
-contexts = agent.define_contexts()
+# Workflow container context (just organizes steps)
+main_context = contexts.add_context("main")
+main_context.set_prompt("Follow standard customer service protocols")
 
-# Greeting context
-greeting = contexts.add_context("greeting")
-greeting.add_step("welcome") \
-    .set_text("Hello! Welcome to Acme Support. How can I help you today?") \
-    .set_step_criteria("Customer has explained their issue or request") \
-    .set_valid_steps(["next"])
+# Context switch context (changes AI behavior)  
+billing_context = contexts.add_context("billing")
+billing_context.set_system_prompt("You are now a billing specialist") \
+    .set_consolidate(True) \
+    .set_user_prompt("Customer needs billing assistance") \
+    .add_section("Department", "Billing Department") \
+    .add_bullets("Services", ["Account inquiries", "Payments", "Refunds"])
 
-greeting.add_step("categorize") \
-    .add_section("Your Task", "Categorize the customer's request") \
-    .add_bullets("Categories", [
-        "Technical support - transfer to tech team",
-        "Billing inquiry - transfer to billing", 
-        "General question - handle directly"
-    ]) \
-    .set_functions(["transfer_to_tech", "transfer_to_billing"]) \
-    .set_step_criteria("Request has been categorized and appropriate action taken")
-
-greeting.set_valid_contexts(["technical_support", "billing", "general_help"])
-
-# Technical support context
-tech_support = contexts.add_context("technical_support")
-tech_support.add_step("diagnose") \
-    .set_text("I'll help you troubleshoot this technical issue. Let me gather some information.") \
-    .set_functions(["run_diagnostics", "check_system_status"]) \
-    .set_step_criteria("Diagnostic information has been collected") \
-    .set_valid_steps(["next"])
-
-tech_support.add_step("resolve") \
-    .set_text("Based on the diagnostics, here's what we need to do to fix this issue.") \
-    .set_functions(["apply_fix", "schedule_technician", "escalate_to_engineer"]) \
-    .set_step_criteria("Issue has been resolved or escalated appropriately")
-
-tech_support.set_valid_contexts(["greeting", "escalation"])
-```
-
-### Utility Function
-
-##### `create_simple_context(name: str = "default") -> Context`
-Create a simple single-context workflow.
-
-**Parameters:**
-- `name` (str): Context name (default: "default")
-
-**Returns:**
-- Context: Simple context for basic workflows
-
-**Usage:**
-```python
-from signalwire_agents.core.contexts import create_simple_context
-
-# Create a simple linear workflow
-simple_context = create_simple_context("customer_intake")
-simple_context.add_step("greeting").set_text("Welcome to our service!")
-simple_context.add_step("collect_info").set_text("Please provide your details")
-simple_context.add_step("process").set_text("Let me process your request")
+# Full reset context (complete conversation reset)
+manager_context = contexts.add_context("manager") 
+manager_context.set_system_prompt("You are a senior manager") \
+    .set_full_reset(True) \
+    .set_consolidate(True)
 ```
 
 ---

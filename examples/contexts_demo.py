@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
 """
-Contexts and Steps Demo Agent
+Advanced Contexts and Steps Demo Agent
 
-This agent demonstrates the new contexts and steps system as an alternative
-to traditional POM-based prompts. It shows both POM-style step building
-and direct text approaches.
+This agent demonstrates the complete contexts system including:
+- Context entry parameters (system_prompt, consolidate, full_reset, user_prompt)
+- Context prompts (structured POM format)
+- Step-to-context navigation with context switching
+- Multi-persona experience (Franklin, Rachael, Dwight)
 """
 
 from signalwire_agents import AgentBase
 
 
-class ContextsDemoAgent(AgentBase):
-    """Computer Sales Agent demonstrating contexts and steps system"""
+class AdvancedContextsDemoAgent(AgentBase):
+    """Advanced Computer Sales Agent demonstrating full contexts system"""
     
     def __init__(self):
         super().__init__(
-            name="Computer Sales Agent",
-            route="/contexts-demo"
+            name="Advanced Computer Sales Agent",
+            route="/advanced-contexts-demo"
         )
         
         # Set base prompt (required even when using contexts)
-        self.prompt_add_section(
-            "Role", 
-            "You are a knowledgeable computer sales consultant helping customers find the perfect computer."
-        )
+
         self.prompt_add_section(
             "Instructions",
-            "Follow the structured sales workflow to guide customers through their computer purchase decision.",
+            "Follow the structured sales workflow to guide customers through their computer purchase decision. Follow the newest role as defined.8",
             bullets=[
                 "Complete each step's specific criteria before advancing",
                 "Ask focused questions to gather the exact information needed",
@@ -35,14 +34,21 @@ class ContextsDemoAgent(AgentBase):
         )
         
         # Define contexts and steps AFTER setting base prompt
-        # Contexts add structured workflow on top of the base prompt
         contexts = self.define_contexts()
         
-        # Create a single context named "default" (required for single context)
-        context = contexts.add_context("default")
+        # Context 1: Sales workflow (workflow container with context prompts)
+        sales_context = contexts.add_context("sales") \
+            .set_isolated(True) \
+            .add_section("Role", "You are Franklin, a helpful computer sales agent. Introduce yourself by name and welcome customers to help them find the perfect computer through your systematic approach.") \
+            .add_section("Voice Instructions", "Use the English-Franklin language for natural conversation flow.") \
+            .add_bullets("When to use change_context tool", [
+                "Customer asks for manager/supervisor/store manager - change_context to 'manager'",
+                "Customer asks technical questions - change_context to 'tech_support'",
+                "Customer frustrated/confused - change_context to 'manager'"
+            ])
         
-        # Step 1: Determine use case - Gaming, Work, or Balanced
-        context.add_step("determine_use_case") \
+        # Step 1: Determine use case
+        sales_context.add_step("determine_use_case") \
             .add_section("Current Task", "Identify the customer's primary computer use case") \
             .add_bullets("Required Information to Collect", [
                 "What will they primarily use the computer for?",
@@ -51,45 +57,116 @@ class ContextsDemoAgent(AgentBase):
                 "Do they do creative work like video editing, design, or programming?",
                 "Help them categorize as: GAMING, WORK, or BALANCED"
             ]) \
-            .set_step_criteria("Customer has clearly stated their use case as one of: GAMING (high-performance games), WORK (business/productivity), or BALANCED (mix of both)") \
-            .set_functions("none")
+            .set_step_criteria("Customer has clearly stated their use case as one of: GAMING, WORK, or BALANCED") \
+            .set_valid_steps(["determine_form_factor"]) \
+            .set_valid_contexts(["tech_support", "manager"])
         
-        # Step 2: Laptop vs Desktop preference
-        context.add_step("determine_form_factor") \
+        # Step 2: Form factor preference
+        sales_context.add_step("determine_form_factor") \
             .add_section("Current Task", "Determine if customer wants a laptop or desktop computer") \
             .add_bullets("Decision-Making Questions", [
                 "Ask directly: 'Are you looking for a laptop or desktop computer or if they need help deciding?'",
-                "If they're unsure, help them decide by asking:",
-                "  - Do you need to take it with you places, or will it stay in one location?",
-                "  - Do you already have a monitor, keyboard, and mouse at home?",
-                "  - Is desk space limited?",
-                "  - What's more important: portability or maximum performance for your budget?"
+                "If they're unsure, help them decide by asking about portability vs performance needs"
             ]) \
-            .add_section("Important", "If customer explicitly says 'laptop' or 'desktop', immediately acknowledge their choice and move to the next step. Do NOT ask additional form factor questions.") \
-            .set_step_criteria("Customer has explicitly stated they want either a LAPTOP or DESKTOP (exact words matter)") \
-            .set_functions("none")
+            .set_step_criteria("Customer has explicitly stated they want either a LAPTOP or DESKTOP") \
+            .set_valid_steps(["make_recommendation"]) \
+            .set_valid_contexts(["tech_support", "manager"])
         
-        # Step 3: Final recommendation  
-        context.add_step("make_recommendation") \
+        # Step 3: Recommendation with context switching options
+        sales_context.add_step("make_recommendation") \
             .add_section("Current Task", "Provide specific computer recommendation based on gathered information") \
             .add_bullets("Recommendation Requirements", [
                 "Recommend a specific computer type based on their use case and form factor",
                 "Explain why this recommendation fits their needs",
                 "Mention key specs that matter for their use case",
                 "Provide a rough price range they should expect",
-                "Thank them for their time and let them know they can reach out with any follow-up questions and see if its ok to end the call, otherwise they can continue to ask questions"
+                "Ask if they want technical support or need to speak with a manager"
             ]) \
-            .set_step_criteria("Customer has received a specific recommendation with explanation and pricing guidance, and acknowledges understanding the recommendation")
-            # No valid_steps = conversation ends naturally after recommendation
+            .set_step_criteria("Customer has received a specific recommendation with explanation and pricing guidance") \
+            .set_valid_contexts(["tech_support", "manager"])
+        
+        # Context 2: Technical Support (context switch with entry parameters)
+        tech_context = contexts.add_context("tech_support") \
+            .set_isolated(True)
+        
+        # Configure context switching behavior (when entering this context)
+        
+        # Add context prompt for technical support with Rachael persona
+        tech_context.add_section("Role", "You are Rachael, a technical support specialist. Introduce yourself by name and offer to help with technical questions.") \
+            .add_section("Voice Instructions", "Use the English-Rachael language for helpful and knowledgeable technical assistance.") \
+            .add_section("Your Expertise", "Provide detailed technical assistance for computer-related questions and troubleshooting.") \
+            .add_bullets("When to use change_context tool", [
+                "Customer wants to continue shopping - change_context to 'sales'",
+                "Customer asks for manager/store manager/pricing issues - change_context to 'manager'",
+                "Technical question resolved, wants to buy - change_context to 'sales'"
+            ])
+        
+        # Technical support step with return to sales
+        tech_context.add_step("provide_support") \
+            .add_section("Current Task", "Help with technical questions about computers") \
+            .add_bullets("Areas of Support", [
+                "Specifications and compatibility questions",
+                "Setup and installation guidance", 
+                "Performance optimization tips",
+                "Troubleshooting common issues"
+            ]) \
+            .set_step_criteria("Customer's technical question has been answered satisfactorily") \
+            .set_valid_contexts(["sales", "manager"])
+        
+        # Context 3: Manager Escalation (full context reset)
+        manager_context = contexts.add_context("manager") \
+            .set_isolated(True)
+        
+        # Configure context entry
+        
+        # Add manager context prompt with introduction
+        manager_context.add_section("Role", "You are Dwight, the store manager. Introduce yourself by name and acknowledge that the customer needs additional assistance with their computer purchase.") \
+            .add_section("Voice Instructions", "Use the English-Dwight language for authoritative but friendly communication.") \
+            .add_section("Authority Level", "You are a senior store manager with decision-making power") \
+            .add_bullets("Your Capabilities", [
+                "Authorize special pricing and discounts",
+                "Handle complex customer requirements", 
+                "Resolve escalated issues",
+                "Make final purchasing decisions"
+            ]) \
+            .add_section("Approach", "Express commitment to finding the right solution and ask how you can help resolve their concerns.") \
+            .add_bullets("When to use change_context tool", [
+                "Customer needs technical help - change_context to 'tech_support'",
+                "Issue resolved, wants to continue shopping - change_context to 'sales'",
+                "Customer wants to talk to sales team - change_context to 'sales'"
+            ])
+
+        manager_context.add_step("handle_escalation") \
+            .add_section("Current Task", "Understand the customer's specific concerns and work to resolve their issues") \
+            .add_bullets("Manager Approach", [
+                "Ask what specific concerns they have about their computer purchase",
+                "Listen carefully to their issues",
+                "Use your authority to provide solutions",
+                "Offer appropriate assistance based on their needs"
+            ]) \
+            .set_step_criteria("Customer issue has been resolved by manager") \
+            .set_valid_contexts(["sales", "tech_support"])
         
         # Add language support
         self.add_language(
-            name="English",
+            name="English-Franklin",
             code="en-US",
             voice="rime.spore"
         )
         
-        # Add internal fillers for the next_step function (used by contexts system)
+        self.add_language(
+            name="English-Dwight",
+            code="en-US", 
+            voice="rime.marsh"
+        )
+        
+        self.add_language(
+            name="English-Rachael",
+            code="en-US",
+            voice="rime.cove"
+        )
+        
+        # Add internal fillers for context switching
         self.add_internal_filler("next_step", "en-US", [
             "Great! Let's move to the next step...",
             "Perfect! Moving forward in our conversation...",
@@ -97,37 +174,53 @@ class ContextsDemoAgent(AgentBase):
             "Wonderful! Progressing to the next step..."
         ])
         
-        # No additional skills needed for this sales workflow
+        self.add_internal_filler("context_switch", "en-US", [
+            "Let me connect you with the right department...",
+            "I'm transferring you to a specialist...",
+            "One moment while I get the right person...",
+            "Let me get someone who can help with that..."
+        ])
 
 
 def main():
-    """Main function to run the computer sales agent"""
-    print("=" * 60)
-    print("COMPUTER SALES AGENT - CONTEXTS DEMO")
-    print("=" * 60)
+    """Main function to run the advanced contexts demo agent"""
+    print("=" * 80)
+    print("ADVANCED CONTEXTS AND STEPS DEMO")
+    print("=" * 80)
     print()
-    print("This agent demonstrates structured sales workflow using contexts and steps!")
+    print("This agent demonstrates the complete contexts system including:")
     print()
-    print("Sales workflow:")
-    print("  1. Determine use case (Gaming/Work/Balanced)")
-    print("  2. Choose form factor (Laptop/Desktop)")
-    print("  3. Receive personalized recommendation")
+    print("Context Features:")
+    print("  • Context entry parameters (system_prompt, consolidate, full_reset, user_prompt)")
+    print("  • Context prompts (structured POM format)")
+    print("  • Post prompt overrides per context")
     print()
-    print("Features demonstrated:")
-    print("  • Specific, measurable step criteria")
-    print("  • Focused question guidance")
-    print("  • Sequential workflow progression")
-    print("  • Structured sales process")
+    print("Step Features:")
+    print("  • Step-to-step navigation (set_valid_steps)")
+    print("  • Step-to-context navigation (set_valid_contexts)")
+    print("  • Direct context switching instructions")
     print()
-    print("Test the agent at: http://localhost:3000/contexts-demo")
+    print("Navigation Flow:")
+    print("  1. Sales workflow (determine use case → form factor → recommendation)")
+    print("  2. Optional tech support (context switch)")
+    print("  3. Optional manager escalation (full reset)")
+    print("  4. Return to sales from any department")
+    print()
+    print("Personas:")
+    print("  • Franklin (Sales) - English-Franklin with rime.spore voice")
+    print("  • Rachael (Tech Support) - English-Rachael with rime.cove voice")
+    print("  • Dwight (Manager) - English-Dwight with rime.marsh voice")
+    print()
+    print("Test the agent at: http://localhost:3000/advanced-contexts-demo")
     print()
     
-    agent = ContextsDemoAgent()
+    agent = AdvancedContextsDemoAgent()
     
     print("Agent configuration:")
     print(f"  Name: {agent.get_name()}")
-    print(f"  Route: /contexts-demo")
-    print(f"  Mode: Computer Sales with Contexts & Steps")
+    print(f"  Route: /advanced-contexts-demo")
+    print(f"  Contexts: 3 (sales, tech_support, manager)")
+    print(f"  Features: Context entry params + Context switching")
     print()
     
     try:
@@ -137,6 +230,4 @@ def main():
 
 
 if __name__ == "__main__":
-    agent = ContextsDemoAgent()
-    print("Note: Works in any deployment mode (server/CGI/Lambda)")
-    agent.run() 
+    main() 

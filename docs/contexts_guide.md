@@ -45,10 +45,44 @@ The **Contexts and Steps** system enhances traditional Prompt Object Model (POM)
 
 ### Contexts
 
-A **Context** represents a distinct conversation state or workflow. Think of contexts as different "modes" your agent can operate in:
+A **Context** represents a conversation state or workflow area. Contexts can be:
 
-- **Single Context**: Simple linear workflows (e.g., onboarding process)
-- **Multiple Contexts**: Complex branching workflows (e.g., customer support with different departments)
+- **Workflow Container**: Simple step organization without state changes
+- **Context Switch**: Triggers conversation state changes when entered
+
+Each context can define:
+
+- **Steps**: Individual workflow stages within the context
+- **Context Prompts**: Guidance that applies to all steps in the context  
+- **Entry Parameters**: Control conversation state when context is entered
+- **Navigation Rules**: Which other contexts can be accessed
+
+### Context Entry Parameters
+
+When entering a context, these parameters control conversation behavior:
+
+- **`post_prompt`**: Override the agent's post prompt for this context
+- **`system_prompt`**: Trigger conversation reset with new instructions
+- **`consolidate`**: Summarize previous conversation in new prompt
+- **`full_reset`**: Complete system prompt replacement vs injection
+- **`user_prompt`**: Inject user message for context establishment
+
+**Important**: If `system_prompt` is present, the context becomes a "Context Switch Context" that processes entry parameters like a `context_switch` SWAIG action. Without `system_prompt`, it's a "Workflow Container Context" that only organizes steps.
+
+### Context Prompts
+
+Contexts can have their own prompts (separate from entry parameters):
+
+```python
+# Simple string prompt
+context.set_prompt("Context-specific guidance")
+
+# POM-style sections  
+context.add_section("Department", "Billing Department")
+context.add_bullets("Services", ["Payments", "Refunds", "Account inquiries"])
+```
+
+Context prompts provide guidance that applies to all steps within that context, creating a prompt hierarchy: Base Agent Prompt → Context Prompt → Step Prompt.
 
 ### Steps
 
@@ -83,28 +117,28 @@ class OnboardingAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Single context must be named "default"
-        workflow = contexts.create_context("default")
+        workflow = contexts.add_context("default")
         
         # Step 1: Welcome
-        workflow.create_step("welcome") \
+        workflow.add_step("welcome") \
             .set_text("Welcome to our service! Let's get you set up. What's your name?") \
             .set_step_criteria("User has provided their name") \
             .set_valid_steps(["collect_email"])
         
         # Step 2: Collect Email
-        workflow.create_step("collect_email") \
+        workflow.add_step("collect_email") \
             .set_text("Thanks! Now I need your email address to create your account.") \
             .set_step_criteria("Valid email address has been provided") \
             .set_valid_steps(["confirm_details"])
         
         # Step 3: Confirmation
-        workflow.create_step("confirm_details") \
+        workflow.add_step("confirm_details") \
             .set_text("Perfect! Let me confirm your details before we proceed.") \
             .set_step_criteria("User has confirmed their information") \
             .set_valid_steps(["complete"])
         
         # Step 4: Completion
-        workflow.create_step("complete") \
+        workflow.add_step("complete") \
             .set_text("All set! Your account has been created successfully.")
             # No valid_steps = end of workflow
 
@@ -132,8 +166,8 @@ class CustomerServiceAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Main triage context
-        triage = contexts.create_context("triage")
-        triage.create_step("greeting") \
+        triage = contexts.add_context("triage")
+        triage.add_step("greeting") \
             .add_section("Current Task", "Understand the customer's need and route appropriately") \
             .add_bullets("Required Information", [
                 "Type of issue they're experiencing",
@@ -144,8 +178,8 @@ class CustomerServiceAgent(AgentBase):
             .set_valid_contexts(["technical", "billing", "general"])
         
         # Technical support context
-        tech = contexts.create_context("technical")
-        tech.create_step("technical_help") \
+        tech = contexts.add_context("technical")
+        tech.add_step("technical_help") \
             .add_section("Current Task", "Help diagnose and resolve technical issues") \
             .add_section("Available Tools", "Use web search and datetime functions for technical solutions") \
             .set_functions(["web_search", "datetime"]) \
@@ -153,16 +187,16 @@ class CustomerServiceAgent(AgentBase):
             .set_valid_contexts(["triage"])
         
         # Billing context (restricted functions for security)
-        billing = contexts.create_context("billing")
-        billing.create_step("billing_help") \
+        billing = contexts.add_context("billing")
+        billing.add_step("billing_help") \
             .set_text("I'll help with your billing question. For security, please provide your account verification.") \
             .set_functions("none") \
             .set_step_criteria("Billing issue is addressed") \
             .set_valid_contexts(["triage"])
         
         # General inquiries context
-        general = contexts.create_context("general")
-        general.create_step("general_help") \
+        general = contexts.add_context("general")
+        general.add_step("general_help") \
             .set_text("I'm here to help with general questions. What can I assist you with?") \
             .set_functions(["web_search", "datetime"]) \
             .set_step_criteria("Question has been answered") \
@@ -186,7 +220,7 @@ The main entry point for defining contexts and steps.
 contexts = self.define_contexts()
 
 # Create contexts
-context = contexts.create_context(name: str) -> Context
+context = contexts.add_context(name: str) -> Context
 ```
 
 ### Context
@@ -195,17 +229,51 @@ Represents a conversation context or workflow state.
 
 ```python
 class Context:
-    def create_step(self, name: str) -> Step
+    def add_step(self, name: str) -> Step
         """Create a new step in this context"""
     
     def set_valid_contexts(self, contexts: List[str]) -> Context
         """Set which contexts can be accessed from this context"""
+        
+    # Context entry parameters
+    def set_post_prompt(self, post_prompt: str) -> Context
+        """Override post prompt for this context"""
+    
+    def set_system_prompt(self, system_prompt: str) -> Context
+        """Trigger context switch with new system prompt"""
+        
+    def set_consolidate(self, consolidate: bool) -> Context
+        """Consolidate conversation history when entering"""
+        
+    def set_full_reset(self, full_reset: bool) -> Context
+        """Full system prompt replacement vs injection"""
+        
+    def set_user_prompt(self, user_prompt: str) -> Context
+        """Inject user message for context"""
+    
+    # Context prompts
+    def set_prompt(self, prompt: str) -> Context
+        """Set simple string prompt for context"""
+        
+    def add_section(self, title: str, body: str) -> Context
+        """Add POM section to context prompt"""
+        
+    def add_bullets(self, title: str, bullets: List[str]) -> Context
+        """Add POM bullet section to context prompt"""
 ```
 
 #### Methods
 
-- `create_step(name)`: Create and return a new Step
+- `add_step(name)`: Create and return a new Step
 - `set_valid_contexts(contexts)`: Allow navigation to specified contexts
+- `set_post_prompt(prompt)`: Override agent's post prompt for this context
+- `set_system_prompt(prompt)`: Trigger context switch behavior (makes this a Context Switch Context)
+- `set_consolidate(bool)`: Whether to consolidate conversation when entering
+- `set_full_reset(bool)`: Complete vs partial context reset
+- `set_user_prompt(prompt)`: User message to inject when entering context
+- `set_prompt(text)`: Simple string prompt for context
+- `add_section(title, body)`: Add POM section to context prompt
+- `add_bullets(title, list)`: Add POM bullet section to context prompt
 
 ### Step
 
@@ -331,28 +399,28 @@ step.set_valid_contexts(["main"])  # Override - only main allowed
 contexts = self.define_contexts()
 
 # Main context
-main = contexts.create_context("main")
+main = contexts.add_context("main")
 main.set_valid_contexts(["help", "settings"])  # Context-level setting
 
-main.create_step("welcome") \
+main.add_step("welcome") \
     .set_text("Welcome! How can I help you?") \
     .set_valid_steps(["menu"])  # Must go to menu
     # Inherits context-level valid_contexts
 
-main.create_step("menu") \
+main.add_step("menu") \
     .set_text("Choose an option: 1) Help 2) Settings 3) Continue") \
     .set_valid_contexts(["help", "settings", "main"])  # Override context setting
     # No valid_steps = this is a branching point
 
 # Help context  
-help_ctx = contexts.create_context("help")
-help_ctx.create_step("help_info") \
+help_ctx = contexts.add_context("help")
+help_ctx.add_step("help_info") \
     .set_text("Here's how to use the system...") \
     .set_valid_contexts(["main"])  # Can return to main
 
 # Settings context
-settings = contexts.create_context("settings")
-settings.create_step("settings_menu") \
+settings = contexts.add_context("settings")
+settings.add_step("settings_menu") \
     .set_text("Choose a setting to modify...") \
     .set_valid_contexts(["main"])  # Can return to main
 ```
@@ -388,15 +456,15 @@ class SecureBankingAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Public context - full access
-        public = contexts.create_context("public")
-        public.create_step("welcome") \
+        public = contexts.add_context("public")
+        public.add_step("welcome") \
             .set_text("Welcome to banking support. Are you an existing customer?") \
             .set_functions(["datetime", "web_search"])  # Safe functions only \
             .set_valid_contexts(["authenticated", "public"])
         
         # Authenticated context - restricted for security
-        auth = contexts.create_context("authenticated")
-        auth.create_step("account_access") \
+        auth = contexts.add_context("authenticated")
+        auth.add_step("account_access") \
             .set_text("I can help with your account. What do you need assistance with?") \
             .set_functions("none")  # No external functions for account data \
             .set_valid_contexts(["public"])  # Can log out
@@ -409,18 +477,18 @@ class SecureBankingAgent(AgentBase):
 contexts = self.define_contexts()
 
 # Low trust - limited functions
-public = contexts.create_context("public")
-public.create_step("initial_contact") \
+public = contexts.add_context("public")
+public.add_step("initial_contact") \
     .set_functions(["datetime"])  # Only safe functions
 
 # Medium trust - more functions  
-verified = contexts.create_context("verified")
-verified.create_step("verified_user") \
+verified = contexts.add_context("verified")
+verified.add_step("verified_user") \
     .set_functions(["datetime", "web_search"])  # Add search capability
 
 # High trust - full access
-authenticated = contexts.create_context("authenticated")
-authenticated.create_step("full_access") \
+authenticated = contexts.add_context("authenticated")
+authenticated.add_step("full_access") \
     # No set_functions() call = all functions available
 ```
 
@@ -440,8 +508,8 @@ class TechnicalSupportAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Initial triage
-        triage = contexts.create_context("triage")
-        triage.create_step("problem_identification") \
+        triage = contexts.add_context("triage")
+        triage.add_step("problem_identification") \
             .add_section("Current Task", "Identify the type of technical issue") \
             .add_bullets("Information to Gather", [
                 "Description of the specific problem",
@@ -453,53 +521,53 @@ class TechnicalSupportAgent(AgentBase):
             .set_valid_contexts(["hardware", "software", "network"])
         
         # Hardware troubleshooting
-        hardware = contexts.create_context("hardware")
-        hardware.create_step("hardware_diagnosis") \
+        hardware = contexts.add_context("hardware")
+        hardware.add_step("hardware_diagnosis") \
             .add_section("Current Task", "Guide user through hardware diagnostics") \
             .add_section("Available Tools", "Use web search to find hardware specifications and troubleshooting guides") \
             .set_functions(["web_search"])  # Can search for hardware info \
             .set_step_criteria("Hardware issue diagnosed") \
             .set_valid_steps(["hardware_solution"])
         
-        hardware.create_step("hardware_solution") \
+        hardware.add_step("hardware_solution") \
             .set_text("Based on the diagnosis, here's how to resolve the hardware issue...") \
             .set_step_criteria("Solution provided and tested") \
             .set_valid_contexts(["triage"])  # Can start over if needed
         
         # Software troubleshooting
-        software = contexts.create_context("software")
-        software.create_step("software_diagnosis") \
+        software = contexts.add_context("software")
+        software.add_step("software_diagnosis") \
             .add_section("Current Task", "Diagnose software-related issues") \
             .add_section("Available Tools", "Use web search for software updates and datetime to check for recent changes") \
             .set_functions(["web_search", "datetime"])  # Can check for updates \
             .set_step_criteria("Software issue identified") \
             .set_valid_steps(["software_fix", "escalation"])
         
-        software.create_step("software_fix") \
+        software.add_step("software_fix") \
             .set_text("Let's try these software troubleshooting steps...") \
             .set_step_criteria("Fix attempted and result confirmed") \
             .set_valid_steps(["escalation", "resolution"])
         
-        software.create_step("escalation") \
+        software.add_step("escalation") \
             .set_text("I'll escalate this to our specialist team.") \
             .set_functions("none")  # No tools needed for escalation \
             .set_step_criteria("Escalation ticket created")
         
-        software.create_step("resolution") \
+        software.add_step("resolution") \
             .set_text("Great! The issue has been resolved.") \
             .set_step_criteria("Customer confirms resolution") \
             .set_valid_contexts(["triage"])
         
         # Network troubleshooting
-        network = contexts.create_context("network")
-        network.create_step("network_diagnosis") \
+        network = contexts.add_context("network")
+        network.add_step("network_diagnosis") \
             .add_section("Current Task", "Diagnose network and connectivity issues") \
             .add_section("Available Tools", "Use web search to check service status and datetime for outage windows") \
             .set_functions(["web_search", "datetime"])  # Check service status \
             .set_step_criteria("Network issue diagnosed") \
             .set_valid_steps(["network_fix"])
         
-        network.create_step("network_fix") \
+        network.add_step("network_fix") \
             .set_text("Let's resolve your connectivity issue with these steps...") \
             .set_step_criteria("Network connectivity restored") \
             .set_valid_contexts(["triage"])
@@ -524,10 +592,10 @@ class LoanApplicationAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Single workflow context
-        application = contexts.create_context("default")
+        application = contexts.add_context("default")
         
         # Step 1: Introduction and eligibility
-        application.create_step("introduction") \
+        application.add_step("introduction") \
             .add_section("Current Task", "Guide customers through the loan application process") \
             .add_bullets("Information to Provide", [
                 "Explain the process clearly",
@@ -538,7 +606,7 @@ class LoanApplicationAgent(AgentBase):
             .set_valid_steps(["personal_info"])
         
         # Step 2: Personal information
-        application.create_step("personal_info") \
+        application.add_step("personal_info") \
             .add_section("Instructions", "Collect personal information") \
             .add_bullets([
                 "Full legal name",
@@ -551,19 +619,19 @@ class LoanApplicationAgent(AgentBase):
             .set_valid_steps(["employment_info", "personal_info"])  # Can review/edit
         
         # Step 3: Employment information  
-        application.create_step("employment_info") \
+        application.add_step("employment_info") \
             .set_text("Now I need information about your employment and income.") \
             .set_step_criteria("Employment and income information complete") \
             .set_valid_steps(["financial_info", "personal_info"])  # Can go back
         
         # Step 4: Financial information
-        application.create_step("financial_info") \
+        application.add_step("financial_info") \
             .set_text("Let's review your financial situation including assets and debts.") \
             .set_step_criteria("Financial information complete") \
             .set_valid_steps(["review", "employment_info"])  # Can go back
         
         # Step 5: Review all information
-        application.create_step("review") \
+        application.add_step("review") \
             .add_section("Instructions", "Review all collected information") \
             .add_bullets([
                 "Confirm personal details",
@@ -575,7 +643,7 @@ class LoanApplicationAgent(AgentBase):
             .set_valid_steps(["submit", "personal_info", "employment_info", "financial_info"])
         
         # Step 6: Submission
-        application.create_step("submit") \
+        application.add_step("submit") \
             .set_text("Thank you! Your loan application has been submitted successfully. You'll receive a decision within 2-3 business days.") \
             .set_functions("none")  # No tools needed for final message \
             .set_step_criteria("Application submitted and confirmation provided")
@@ -602,8 +670,8 @@ class EcommerceServiceAgent(AgentBase):
         contexts = self.define_contexts()
         
         # Main service menu
-        main = contexts.create_context("main")
-        main.create_step("service_menu") \
+        main = contexts.add_context("main")
+        main.add_step("service_menu") \
             .add_section("Current Task", "Help customers with their orders and questions") \
             .add_bullets("Service Areas Available", [
                 "Order status, modifications, and tracking",
@@ -615,8 +683,8 @@ class EcommerceServiceAgent(AgentBase):
             .set_valid_contexts(["orders", "returns", "products", "account"])
         
         # Order management context
-        orders = contexts.create_context("orders")
-        orders.create_step("order_assistance") \
+        orders = contexts.add_context("orders")
+        orders.add_step("order_assistance") \
             .add_section("Current Task", "Help with order status, modifications, and tracking") \
             .add_section("Available Tools", "Use datetime to check delivery dates and processing times") \
             .set_functions(["datetime"])  # Can check delivery dates \
@@ -624,8 +692,8 @@ class EcommerceServiceAgent(AgentBase):
             .set_valid_contexts(["main"])
         
         # Returns and refunds context
-        returns = contexts.create_context("returns")
-        returns.create_step("return_process") \
+        returns = contexts.add_context("returns")
+        returns.add_step("return_process") \
             .add_section("Current Task", "Guide customers through return process") \
             .add_bullets("Return Process Steps", [
                 "Verify return eligibility",
@@ -638,8 +706,8 @@ class EcommerceServiceAgent(AgentBase):
             .set_valid_contexts(["main"])
         
         # Product information context
-        products = contexts.create_context("products")
-        products.create_step("product_help") \
+        products = contexts.add_context("products")
+        products.add_step("product_help") \
             .add_section("Current Task", "Help customers with product questions") \
             .add_section("Available Tools", "Use web search to find detailed product information and specifications") \
             .set_functions(["web_search"])  # Can search for product info \
@@ -647,8 +715,8 @@ class EcommerceServiceAgent(AgentBase):
             .set_valid_contexts(["main"])
         
         # Account management context
-        account = contexts.create_context("account")
-        account.create_step("account_help") \
+        account = contexts.add_context("account")
+        account.add_step("account_help") \
             .set_text("I can help with account-related questions. Please verify your identity first.") \
             .set_functions("none")  # Security-sensitive context \
             .set_step_criteria("Account issue resolved") \
@@ -669,14 +737,14 @@ Use descriptive step names that indicate purpose:
 
 ```python
 # Good
-.create_step("collect_shipping_address")
-.create_step("verify_payment_method")
-.create_step("confirm_order_details")
+.add_step("collect_shipping_address")
+.add_step("verify_payment_method")
+.add_step("confirm_order_details")
 
 # Avoid
-.create_step("step1")
-.create_step("next")
-.create_step("continue")
+.add_step("step1")
+.add_step("next")
+.add_step("continue")
 ```
 
 ### 2. Meaningful Completion Criteria
@@ -750,7 +818,7 @@ Provide recovery paths for common issues:
 .set_valid_contexts(["help", "main"])
 
 # Include validation steps
-verification_step.create_step("validation") \
+verification_step.add_step("validation") \
     .set_step_criteria("Data validation passed") \
     .set_valid_steps(["proceed", "edit_data"])
 ```
@@ -780,10 +848,10 @@ step.add_section("Role", "You are a technical specialist") \
 
 ```python
 # Wrong
-context = contexts.create_context("main")  # Error!
+context = contexts.add_context("main")  # Error!
 
 # Correct
-context = contexts.create_context("default")
+context = contexts.add_context("default")
 ```
 
 #### 2. "Cannot mix set_text with add_section"
@@ -838,7 +906,7 @@ Add logging to understand flow:
 
 ```python
 def create_step_with_logging(self, name):
-    step = context.create_step(name)
+    step = context.add_step(name)
     print(f"Created step: {name}")
     return step
 ```
@@ -896,9 +964,9 @@ class ContextsAgent(AgentBase):
         super().__init__(name="assistant", route="/assistant")
         
         contexts = self.define_contexts()
-        main = contexts.create_context("default")
+        main = contexts.add_context("default")
         
-        main.create_step("assistance") \
+        main.add_step("assistance") \
             .add_section("Role", "You are a helpful assistant") \
             .add_section("Instructions", "Help users with questions") \
             .add_section("Guidelines", bullets=[
@@ -923,9 +991,9 @@ class HybridAgent(AgentBase):
         
         # Define contexts for structured workflows
         contexts = self.define_contexts()
-        workflow = contexts.create_context("default")
+        workflow = contexts.add_context("default")
         
-        workflow.create_step("structured_process") \
+        workflow.add_step("structured_process") \
             .set_text("Following the structured workflow...") \
             .set_step_criteria("Workflow complete")
 ```
