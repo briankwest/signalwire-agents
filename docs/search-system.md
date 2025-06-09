@@ -49,7 +49,7 @@ The search system uses optional dependencies to keep the base SDK lightweight. C
 
 ### Basic Search (~500MB)
 ```bash
-pip install signalwire-agents[search]
+pip install "signalwire-agents[search]"
 ```
 **Includes:**
 - Core search functionality
@@ -59,7 +59,7 @@ pip install signalwire-agents[search]
 
 ### Full Document Processing (~600MB)
 ```bash
-pip install signalwire-agents[search-full]
+pip install "signalwire-agents[search-full]"
 ```
 **Adds:**
 - PDF processing (PyPDF2)
@@ -69,7 +69,7 @@ pip install signalwire-agents[search-full]
 
 ### Advanced NLP Features (~700MB)
 ```bash
-pip install signalwire-agents[search-nlp]
+pip install "signalwire-agents[search-nlp]"
 ```
 **Adds:**
 - spaCy for advanced text processing
@@ -92,7 +92,7 @@ Configure via the `nlp_backend` parameter in your search skill.
 
 ### All Search Features (~700MB)
 ```bash
-pip install signalwire-agents[search-all]
+pip install "signalwire-agents[search-all]"
 ```
 **Includes everything above**
 
@@ -113,7 +113,7 @@ Search functionality will show helpful error messages when dependencies are miss
 
 ### 1. Install Dependencies
 ```bash
-pip install signalwire-agents[search-full]
+pip install "signalwire-agents[search-full]"
 ```
 
 ### 2. Build a Search Index
