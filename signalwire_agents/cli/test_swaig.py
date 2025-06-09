@@ -1079,183 +1079,326 @@ def simple_template_expand(template: str, data: Dict[str, Any]) -> str:
 def execute_datamap_function(datamap_config: Dict[str, Any], args: Dict[str, Any], 
                            verbose: bool = False) -> Dict[str, Any]:
     """
-    Execute a DataMap function by processing its configuration and making HTTP requests
+    Execute a DataMap function following the actual DataMap processing pipeline:
+    1. Expressions (pattern matching)
+    2. Webhooks (try each sequentially until one succeeds)
+    3. Foreach (within successful webhook)
+    4. Output (from successful webhook)
+    5. Fallback output (if all webhooks fail)
     
     Args:
-        datamap_config: The complete DataMap function configuration
+        datamap_config: DataMap configuration dictionary
         args: Function arguments
-        verbose: Whether to show verbose output
+        verbose: Enable verbose output
         
     Returns:
-        Final function result
+        Function result (should be string or dict with 'response' key)
     """
-    # Extract data_map configuration
-    data_map = datamap_config.get('data_map', {})
+    if verbose:
+        print("=== DataMap Function Execution ===")
+        print(f"Config: {json.dumps(datamap_config, indent=2)}")
+        print(f"Args: {json.dumps(args, indent=2)}")
     
-    # Check if this is a simple DataMap (webhooks directly) or complex (with expressions)
-    if 'webhooks' in data_map and 'expressions' not in data_map:
-        # Simple DataMap structure - webhooks directly under data_map
-        webhooks = data_map.get('webhooks', [])
-        fallback_output = data_map.get('output', 'Function completed')
-        if verbose:
-            print(f"Simple DataMap structure with {len(webhooks)} webhook(s)")
-    else:
-        # Complex DataMap structure - with expressions containing webhooks
-        expressions = data_map.get('expressions', [])
-        matched_expression = None
-        
-        if verbose:
-            print(f"Complex DataMap structure with {len(expressions)} expression(s)...")
-        
-        for expr in expressions:
-            pattern = expr.get('pattern', '.*')  # Default to match everything
-            string_value = expr.get('string', '')
-            
-            # Create a test string from the arguments
-            test_string = json.dumps(args)
-            
-            if verbose:
-                print(f"  Testing pattern '{pattern}' against '{test_string}'")
-            
-            # Use regex to match
-            try:
-                if re.search(pattern, test_string):
-                    matched_expression = expr
-                    if verbose:
-                        print(f"  ✓ Pattern matched!")
-                    break
-                elif re.search(pattern, string_value):
-                    matched_expression = expr
-                    if verbose:
-                        print(f"  ✓ Pattern matched against string value!")
-                    break
-            except re.error as e:
-                if verbose:
-                    print(f"  ✗ Invalid regex pattern: {e}")
-        
-        if not matched_expression:
-            if verbose:
-                print("  No expressions matched, using first expression if available")
-            matched_expression = expressions[0] if expressions else {}
-        
-        # Get webhooks from matched expression
-        webhooks = matched_expression.get('webhooks', [])
-        fallback_output = matched_expression.get('output', 'Function completed')
-    webhook_result = None
+    # Extract the actual data_map configuration
+    # DataMap configs have the structure: {"function": "...", "data_map": {...}}
+    actual_datamap = datamap_config.get("data_map", datamap_config)
     
     if verbose:
-        print(f"Processing {len(webhooks)} webhook(s)...")
+        print(f"Extracted data_map: {json.dumps(actual_datamap, indent=2)}")
     
-    for i, webhook in enumerate(webhooks):
-        url = webhook.get('url', '')
-        method = webhook.get('method', 'POST').upper()
-        headers = webhook.get('headers', {})
-        
+    # Initialize context with function arguments
+    context = {"args": args}
+    context.update(args)  # Also make args available at top level for backward compatibility
+    
+    if verbose:
+        print(f"Initial context: {json.dumps(context, indent=2)}")
+    
+    # Step 1: Process expressions first (pattern matching)
+    if "expressions" in actual_datamap:
         if verbose:
-            print(f"  Webhook {i+1}: {method} {url}")
-        
-        # Prepare request data
-        request_data = args.copy()
-        
-        # Expand URL template with arguments
-        template_context = {"args": args, "array": [], **args}
-        expanded_url = simple_template_expand(url, template_context)
-        
-        if verbose:
-            print(f"    Original URL: {url}")
-            print(f"    Template context: {template_context}")
-            print(f"    Expanded URL: {expanded_url}")
-        
-        try:
-            if method == 'GET':
-                response = requests.get(expanded_url, params=request_data, headers=headers, timeout=10)
-            else:
-                response = requests.post(expanded_url, json=request_data, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                try:
-                    webhook_data = response.json()
+            print("\n--- Processing Expressions ---")
+        for expr in actual_datamap["expressions"]:
+            # Simple expression evaluation - in real implementation this would be more sophisticated
+            if "pattern" in expr and "output" in expr:
+                # For testing, we'll just match simple strings
+                pattern = expr["pattern"]
+                if pattern in str(args):
                     if verbose:
-                        print(f"  ✓ Webhook succeeded: {response.status_code}")
-                        print(f"    Response: {json.dumps(webhook_data, indent=4)}")
+                        print(f"Expression matched: {pattern}")
+                    result = simple_template_expand(str(expr["output"]), context)
+                    if verbose:
+                        print(f"Expression result: {result}")
+                    return result
+    
+    # Step 2: Process webhooks sequentially
+    if "webhooks" in actual_datamap:
+        if verbose:
+            print("\n--- Processing Webhooks ---")
+        
+        for i, webhook in enumerate(actual_datamap["webhooks"]):
+            if verbose:
+                print(f"\n=== Webhook {i+1}/{len(actual_datamap['webhooks'])} ===")
+            
+            url = webhook.get("url", "")
+            method = webhook.get("method", "POST").upper()
+            headers = webhook.get("headers", {})
+            
+            # Expand template variables in URL and headers
+            url = simple_template_expand(url, context)
+            expanded_headers = {}
+            for key, value in headers.items():
+                expanded_headers[key] = simple_template_expand(str(value), context)
+            
+            if verbose:
+                print(f"Making {method} request to: {url}")
+                print(f"Headers: {json.dumps(expanded_headers, indent=2)}")
+            
+            # Prepare request data
+            request_data = None
+            if method in ["POST", "PUT", "PATCH"]:
+                # Check for 'params' (SignalWire style) or 'data' (generic style) or 'body'
+                if "params" in webhook:
+                    # Expand template variables in params
+                    expanded_params = {}
+                    for key, value in webhook["params"].items():
+                        expanded_params[key] = simple_template_expand(str(value), context)
+                    request_data = json.dumps(expanded_params)
+                elif "body" in webhook:
+                    # Expand template variables in body
+                    if isinstance(webhook["body"], str):
+                        request_data = simple_template_expand(webhook["body"], context)
+                    else:
+                        expanded_body = {}
+                        for key, value in webhook["body"].items():
+                            expanded_body[key] = simple_template_expand(str(value), context)
+                        request_data = json.dumps(expanded_body)
+                elif "data" in webhook:
+                    # Expand template variables in data
+                    if isinstance(webhook["data"], str):
+                        request_data = simple_template_expand(webhook["data"], context)
+                    else:
+                        request_data = json.dumps(webhook["data"])
+                
+                if verbose and request_data:
+                    print(f"Request data: {request_data}")
+            
+            webhook_failed = False
+            response_data = None
+            
+            try:
+                # Make the HTTP request
+                if method == "GET":
+                    response = requests.get(url, headers=expanded_headers, timeout=30)
+                elif method == "POST":
+                    response = requests.post(url, data=request_data, headers=expanded_headers, timeout=30)
+                elif method == "PUT":
+                    response = requests.put(url, data=request_data, headers=expanded_headers, timeout=30)
+                elif method == "PATCH":
+                    response = requests.patch(url, data=request_data, headers=expanded_headers, timeout=30)
+                elif method == "DELETE":
+                    response = requests.delete(url, headers=expanded_headers, timeout=30)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
+                
+                if verbose:
+                    print(f"Response status: {response.status_code}")
+                    print(f"Response headers: {dict(response.headers)}")
+                
+                # Parse response
+                try:
+                    response_data = response.json()
+                except json.JSONDecodeError:
+                    response_data = {"text": response.text, "status_code": response.status_code}
+                    # Add parse_error like server does
+                    response_data["parse_error"] = True
+                    response_data["raw_response"] = response.text
+                
+                if verbose:
+                    print(f"Response data: {json.dumps(response_data, indent=2)}")
+                
+                # Check for webhook failure following server logic
+                
+                # 1. Check HTTP status code (fix the server bug - should be OR not AND)
+                if response.status_code < 200 or response.status_code > 299:
+                    webhook_failed = True
+                    if verbose:
+                        print(f"Webhook failed: HTTP status {response.status_code} outside 200-299 range")
+                
+                # 2. Check for explicit error keys (parse_error, protocol_error)
+                if not webhook_failed:
+                    explicit_error_keys = ["parse_error", "protocol_error"]
+                    for error_key in explicit_error_keys:
+                        if error_key in response_data and response_data[error_key]:
+                            webhook_failed = True
+                            if verbose:
+                                print(f"Webhook failed: Found explicit error key '{error_key}' = {response_data[error_key]}")
+                            break
+                
+                # 3. Check for custom error_keys from webhook config
+                if not webhook_failed and "error_keys" in webhook:
+                    error_keys = webhook["error_keys"]
+                    if isinstance(error_keys, str):
+                        error_keys = [error_keys]  # Convert single string to list
+                    elif not isinstance(error_keys, list):
+                        error_keys = []
                     
-                    # Process output template if defined in this webhook
-                    webhook_output = webhook.get('output')
-                    if webhook_output:
-                        # Create context for template expansion
-                        template_context = {
-                            "args": args,
-                            "array": webhook_data if isinstance(webhook_data, list) else [webhook_data]
-                        }
+                    for error_key in error_keys:
+                        if error_key in response_data and response_data[error_key]:
+                            webhook_failed = True
+                            if verbose:
+                                print(f"Webhook failed: Found custom error key '{error_key}' = {response_data[error_key]}")
+                            break
+                
+            except Exception as e:
+                webhook_failed = True
+                if verbose:
+                    print(f"Webhook failed: HTTP request exception: {e}")
+                # Create error response like server does
+                response_data = {
+                    "protocol_error": True,
+                    "error": str(e)
+                }
+            
+            # If webhook succeeded, process its output
+            if not webhook_failed:
+                if verbose:
+                    print(f"Webhook {i+1} succeeded!")
+                
+                # Add response data to context
+                webhook_context = context.copy()
+                
+                # Handle different response types
+                if isinstance(response_data, list):
+                    # For array responses, use ${array[0].field} syntax
+                    webhook_context["array"] = response_data
+                    if verbose:
+                        print(f"Array response: {len(response_data)} items")
+                else:
+                    # For object responses, use ${response.field} syntax
+                    webhook_context["response"] = response_data
+                    if verbose:
+                        print("Object response")
+                
+                # Step 3: Process webhook-level foreach (if present)
+                if "foreach" in webhook:
+                    foreach_config = webhook["foreach"]
+                    if verbose:
+                        print(f"\n--- Processing Webhook Foreach ---")
+                        print(f"Foreach config: {json.dumps(foreach_config, indent=2)}")
+                    
+                    input_key = foreach_config.get("input_key", "data")
+                    output_key = foreach_config.get("output_key", "result")
+                    max_items = foreach_config.get("max", 100)
+                    append_template = foreach_config.get("append", "${this.value}")
+                    
+                    # Look for the input data in the response
+                    input_data = None
+                    if input_key in response_data and isinstance(response_data[input_key], list):
+                        input_data = response_data[input_key]
+                        if verbose:
+                            print(f"Found array data in response.{input_key}: {len(input_data)} items")
+                    
+                    if input_data:
+                        result_parts = []
+                        items_to_process = input_data[:max_items]
                         
-                        # Add webhook_data contents to context if it's a dict
-                        if isinstance(webhook_data, dict):
-                            template_context.update(webhook_data)
+                        for item in items_to_process:
+                            if isinstance(item, dict):
+                                # For objects, make properties available as ${this.property}
+                                item_context = {"this": item}
+                                expanded = simple_template_expand(append_template, item_context)
+                            else:
+                                # For non-dict items, make them available as ${this.value}
+                                item_context = {"this": {"value": item}}
+                                expanded = simple_template_expand(append_template, item_context)
+                            result_parts.append(expanded)
                         
-                        if isinstance(webhook_output, dict):
-                            # Process dict output template (e.g., {"response": "template", "action": [...]} )
-                            webhook_result = {}
-                            for key, template in webhook_output.items():
-                                if isinstance(template, str):
-                                    webhook_result[key] = simple_template_expand(template, template_context)
-                                else:
-                                    webhook_result[key] = template
-                        elif isinstance(webhook_output, str):
-                            # Simple string template
-                            webhook_result = {"response": simple_template_expand(webhook_output, template_context)}
-                        else:
-                            # Other types
-                            webhook_result = {"response": str(webhook_output)}
+                        # Store the concatenated result
+                        foreach_result = "".join(result_parts)
+                        webhook_context[output_key] = foreach_result
                         
                         if verbose:
-                            print(f"    Processed output: {webhook_result}")
+                            print(f"Processed {len(items_to_process)} items")
+                            print(f"Foreach result ({output_key}): {foreach_result[:200]}{'...' if len(foreach_result) > 200 else ''}")
                     else:
-                        webhook_result = webhook_data if isinstance(webhook_data, dict) else {"response": str(webhook_data)}
-                    
-                    break
-                except json.JSONDecodeError:
-                    webhook_result = {"response": response.text}
+                        if verbose:
+                            print(f"No array data found for foreach input_key: {input_key}")
+                
+                # Step 4: Process webhook-level output (this is the final result)
+                if "output" in webhook:
+                    webhook_output = webhook["output"]
                     if verbose:
-                        print(f"  ✓ Webhook succeeded (text): {response.status_code}")
-                    break
-            else:
-                if verbose:
-                    print(f"  ✗ Webhook failed: {response.status_code}")
-        except requests.RequestException as e:
-            if verbose:
-                print(f"  ✗ Webhook request failed: {e}")
-    
-    # If no webhook succeeded, use fallback
-    if webhook_result is None:
-        if verbose:
-            print("All webhooks failed, using fallback output...")
-        
-        # Use the fallback output determined earlier
-        output_template = fallback_output
-        
-        # Handle both string and dict output templates
-        if isinstance(output_template, dict):
-            # Process dict output template (e.g., {"response": "template"})
-            webhook_result = {}
-            for key, template in output_template.items():
-                if isinstance(template, str):
-                    webhook_result[key] = simple_template_expand(template, {"args": args})
+                        print(f"\n--- Processing Webhook Output ---")
+                        print(f"Output template: {json.dumps(webhook_output, indent=2)}")
+                    
+                    if isinstance(webhook_output, dict):
+                        # Process each key-value pair in the output
+                        final_result = {}
+                        for key, template in webhook_output.items():
+                            expanded_value = simple_template_expand(str(template), webhook_context)
+                            final_result[key] = expanded_value
+                            if verbose:
+                                print(f"Set {key} = {expanded_value}")
+                    else:
+                        # Single output value (string template)
+                        final_result = simple_template_expand(str(webhook_output), webhook_context)
+                        if verbose:
+                            print(f"Final result = {final_result}")
+                    
+                    if verbose:
+                        print(f"\n--- Webhook {i+1} Final Result ---")
+                        print(f"Result: {json.dumps(final_result, indent=2) if isinstance(final_result, dict) else final_result}")
+                    
+                    return final_result
+                
                 else:
-                    webhook_result[key] = template
-        elif isinstance(output_template, str):
-            # Simple string template
-            webhook_result = {"response": simple_template_expand(output_template, {"args": args})}
+                    # No output template defined, return the response data
+                    if verbose:
+                        print("No output template defined, returning response data")
+                    return response_data
+            
+            else:
+                # This webhook failed, try next webhook
+                if verbose:
+                    print(f"Webhook {i+1} failed, trying next webhook...")
+                continue
+    
+    # Step 5: All webhooks failed, use fallback output if available
+    if "output" in actual_datamap:
+        if verbose:
+            print(f"\n--- Using DataMap Fallback Output ---")
+        datamap_output = actual_datamap["output"]
+        if verbose:
+            print(f"Fallback output template: {json.dumps(datamap_output, indent=2)}")
+        
+        if isinstance(datamap_output, dict):
+            # Process each key-value pair in the fallback output
+            final_result = {}
+            for key, template in datamap_output.items():
+                expanded_value = simple_template_expand(str(template), context)
+                final_result[key] = expanded_value
+                if verbose:
+                    print(f"Fallback: Set {key} = {expanded_value}")
+            result = final_result
         else:
-            # Other types (shouldn't happen but be safe)
-            webhook_result = {"response": str(output_template)}
+            # Single fallback output value
+            result = simple_template_expand(str(datamap_output), context)
+            if verbose:
+                print(f"Fallback result = {result}")
         
         if verbose:
-            print(f"Fallback result = {webhook_result}")
+            print(f"\n--- DataMap Fallback Final Result ---")
+            print(f"Result: {json.dumps(result, indent=2) if isinstance(result, dict) else result}")
+        
+        return result
     
-    # Process foreach (not implemented in this simple version)
-    # This would iterate over array results and apply templates
+    # No fallback defined, return generic error
+    error_result = {"error": "All webhooks failed and no fallback output defined", "status": "failed"}
+    if verbose:
+        print(f"\n--- DataMap Error Result ---")
+        print(f"Result: {json.dumps(error_result, indent=2)}")
     
-    return webhook_result
+    return error_result
 
 
 def execute_external_webhook_function(func: 'SWAIGFunction', function_name: str, function_args: Dict[str, Any], 
