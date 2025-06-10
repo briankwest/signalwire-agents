@@ -41,18 +41,7 @@ class NativeVectorSearchSkill(SkillBase):
     def setup(self) -> bool:
         """Setup the native vector search skill"""
         
-        # Check if search functionality is available
-        try:
-            from signalwire_agents.search import IndexBuilder, SearchEngine
-            from signalwire_agents.search.query_processor import preprocess_query
-            self.search_available = True
-        except ImportError as e:
-            self.search_available = False
-            self.import_error = str(e)
-            self.logger.warning(f"Search dependencies not available: {e}")
-            # Don't fail setup - we'll provide helpful error messages at runtime
-        
-        # Get configuration
+        # Get configuration first
         self.tool_name = self.params.get('tool_name', 'search_knowledge')
         self.index_file = self.params.get('index_file')
         self.build_index = self.params.get('build_index', False)
@@ -74,7 +63,34 @@ class NativeVectorSearchSkill(SkillBase):
         # SWAIG fields for function fillers
         self.swaig_fields = self.params.get('swaig_fields', {})
         
-        # NLP backend configuration
+        # **EARLY REMOTE CHECK - Option 1**
+        # If remote URL is configured, skip all heavy local imports and just validate remote connectivity
+        if self.remote_url:
+            self.use_remote = True
+            self.search_engine = None  # No local search engine needed
+            self.logger.info(f"Using remote search server: {self.remote_url}")
+            
+            # Test remote connection (lightweight check)
+            try:
+                import requests
+                response = requests.get(f"{self.remote_url}/health", timeout=5)
+                if response.status_code == 200:
+                    self.logger.info("Remote search server is available")
+                    self.search_available = True
+                    return True  # Success - skip all local setup
+                else:
+                    self.logger.error(f"Remote search server returned status {response.status_code}")
+                    self.search_available = False
+                    return False
+            except Exception as e:
+                self.logger.error(f"Failed to connect to remote search server: {e}")
+                self.search_available = False
+                return False
+        
+        # **LOCAL MODE SETUP - Only when no remote URL**
+        self.use_remote = False
+        
+        # NLP backend configuration (only needed for local mode)
         self.nlp_backend = self.params.get('nlp_backend')  # Backward compatibility
         self.index_nlp_backend = self.params.get('index_nlp_backend', 'nltk')  # Default to fast NLTK for indexing
         self.query_nlp_backend = self.params.get('query_nlp_backend', 'nltk')  # Default to fast NLTK for search
@@ -94,6 +110,17 @@ class NativeVectorSearchSkill(SkillBase):
         if self.query_nlp_backend not in ['nltk', 'spacy']:
             self.logger.warning(f"Invalid query_nlp_backend '{self.query_nlp_backend}', using 'nltk'")
             self.query_nlp_backend = 'nltk'
+        
+        # Check if local search functionality is available (heavy imports only for local mode)
+        try:
+            from signalwire_agents.search import IndexBuilder, SearchEngine
+            from signalwire_agents.search.query_processor import preprocess_query
+            self.search_available = True
+        except ImportError as e:
+            self.search_available = False
+            self.import_error = str(e)
+            self.logger.warning(f"Search dependencies not available: {e}")
+            # Don't fail setup - we'll provide helpful error messages at runtime
         
         # Auto-build index if requested and search is available
         if self.build_index and self.source_dir and self.search_available:
@@ -124,7 +151,7 @@ class NativeVectorSearchSkill(SkillBase):
                     self.logger.error(f"Failed to build search index: {e}")
                     self.search_available = False
         
-        # Initialize search engine
+        # Initialize local search engine
         self.search_engine = None
         if self.search_available and self.index_file and os.path.exists(self.index_file):
             try:
@@ -132,24 +159,6 @@ class NativeVectorSearchSkill(SkillBase):
                 self.search_engine = SearchEngine(self.index_file)
             except Exception as e:
                 self.logger.error(f"Failed to load search index {self.index_file}: {e}")
-                self.search_available = False
-        
-        # Check if we should use remote search mode
-        self.use_remote = bool(self.remote_url)
-        if self.use_remote:
-            self.logger.info(f"Using remote search server: {self.remote_url}")
-            # Test remote connection
-            try:
-                import requests
-                response = requests.get(f"{self.remote_url}/health", timeout=5)
-                if response.status_code == 200:
-                    self.logger.info("Remote search server is available")
-                    self.search_available = True
-                else:
-                    self.logger.error(f"Remote search server returned status {response.status_code}")
-                    self.search_available = False
-            except Exception as e:
-                self.logger.error(f"Failed to connect to remote search server: {e}")
                 self.search_available = False
         
         return True
@@ -184,6 +193,11 @@ class NativeVectorSearchSkill(SkillBase):
     def _search_handler(self, args, raw_data):
         """Handle search requests"""
         
+        # Debug logging to see what arguments are being passed
+        self.logger.info(f"Search handler called with args: {args}")
+        self.logger.info(f"Args type: {type(args)}")
+        self.logger.info(f"Raw data: {raw_data}")
+        
         if not self.search_available:
             return SwaigFunctionResult(
                 f"Search functionality is not available. {getattr(self, 'import_error', '')}\n"
@@ -196,21 +210,27 @@ class NativeVectorSearchSkill(SkillBase):
                 f"{'Index file not found: ' + (self.index_file or 'not specified') if self.index_file else 'No index file configured'}"
             )
         
+        # Get arguments - the framework handles parsing correctly
         query = args.get('query', '').strip()
+        self.logger.error(f"DEBUG: Extracted query: '{query}' (length: {len(query)})")
+        self.logger.info(f"Query bool value: {bool(query)}")
+        
         if not query:
+            self.logger.error(f"Query validation failed - returning error message")
             return SwaigFunctionResult("Please provide a search query.")
         
+        self.logger.info(f"Query validation passed - proceeding with search")
         count = args.get('count', self.count)
         
         try:
-            # Preprocess the query
-            from signalwire_agents.search.query_processor import preprocess_query
-            enhanced = preprocess_query(query, language='en', vector=True, query_nlp_backend=self.query_nlp_backend)
-            
             # Perform search (local or remote)
             if self.use_remote:
-                results = self._search_remote(query, enhanced, count)
+                # For remote searches, let the server handle query preprocessing
+                results = self._search_remote(query, None, count)
             else:
+                # For local searches, preprocess the query locally
+                from signalwire_agents.search.query_processor import preprocess_query
+                enhanced = preprocess_query(query, language='en', vector=True, query_nlp_backend=self.query_nlp_backend)
                 results = self.search_engine.search(
                     query_vector=enhanced.get('vector', []),
                     enhanced_text=enhanced['enhanced_text'],
