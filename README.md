@@ -422,7 +422,10 @@ The SDK includes optional local search capabilities that can be installed separa
 #### Search Installation Options
 
 ```bash
-# Basic search (vector search + keyword search)
+# Query existing .swsearch files only (smallest footprint)
+pip install signalwire-agents[search-queryonly]
+
+# Basic search (vector search + keyword search + building indexes)
 pip install signalwire-agents[search]
 
 # Full search with document processing (PDF, DOCX, etc.)
@@ -439,10 +442,17 @@ pip install signalwire-agents[search-all]
 
 | Option | Size | Features |
 |--------|------|----------|
+| `search-queryonly` | ~400MB | Query existing .swsearch files only (no building/processing) |
 | `search` | ~500MB | Vector embeddings, keyword search, basic text processing |
 | `search-full` | ~600MB | + PDF, DOCX, Excel, PowerPoint, HTML, Markdown processing |
 | `search-nlp` | ~600MB | + Advanced spaCy NLP features |
 | `search-all` | ~700MB | All search features combined |
+
+**When to use `search-queryonly`:**
+- Production containers with pre-built `.swsearch` files
+- Lambda/serverless deployments
+- Agents that only need to query knowledge bases (not build them)
+- Smaller deployment footprint requirements
 
 #### Search Features
 

@@ -118,15 +118,28 @@ stopwords_language_map = {
 # Function to ensure NLTK resources are downloaded
 def ensure_nltk_resources():
     """Download required NLTK resources if not already present"""
-    resources = ['punkt', 'wordnet', 'averaged_perceptron_tagger', 'stopwords']
+    resources = ['punkt', 'punkt_tab', 'wordnet', 'averaged_perceptron_tagger', 'stopwords']
     for resource in resources:
         try:
-            nltk.data.find(f'corpora/{resource}')
+            # Try different paths for different resource types
+            if resource in ['punkt', 'punkt_tab']:
+                nltk.data.find(f'tokenizers/{resource}')
+            elif resource in ['wordnet']:
+                nltk.data.find(f'corpora/{resource}')
+            elif resource in ['averaged_perceptron_tagger']:
+                nltk.data.find(f'taggers/{resource}')
+            elif resource in ['stopwords']:
+                nltk.data.find(f'corpora/{resource}')
+            else:
+                nltk.data.find(f'corpora/{resource}')
         except LookupError:
             try:
+                logger.info(f"Downloading NLTK resource '{resource}'...")
                 nltk.download(resource, quiet=True)
+                logger.info(f"Successfully downloaded NLTK resource '{resource}'")
             except Exception as e:
                 logger.warning(f"Failed to download NLTK resource '{resource}': {e}")
+                # Continue without this resource - some functionality may be degraded
 
 # Initialize NLTK resources
 ensure_nltk_resources()
@@ -246,7 +259,20 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
         query_nlp_backend = 'nltk'
     
     # Tokenization and stop word removal
-    tokens = nltk.word_tokenize(query)
+    try:
+        tokens = nltk.word_tokenize(query)
+    except LookupError as e:
+        # If tokenization fails, try to download punkt resources
+        logger.warning(f"NLTK tokenization failed: {e}")
+        try:
+            nltk.download('punkt', quiet=True)
+            nltk.download('punkt_tab', quiet=True)
+            tokens = nltk.word_tokenize(query)
+        except Exception as fallback_error:
+            # If all else fails, use simple split as fallback
+            logger.warning(f"NLTK tokenization fallback failed: {fallback_error}. Using simple word splitting.")
+            tokens = query.split()
+    
     nltk_language = stopwords_language_map.get(language, 'english')
     
     try:
@@ -279,14 +305,29 @@ def preprocess_query(query: str, language: str = 'en', pos_to_expand: Optional[L
             logger.info(f"POS Tagging Results (spaCy): {pos_tags}")
     else:
         # Use NLTK (default or fallback)
-        nltk_pos_tags = nltk.pos_tag(tokens)
-        for token, pos_tag in nltk_pos_tags:
-            lemma = lemmatizer.lemmatize(token, get_wordnet_pos(pos_tag)).lower()
-            stemmed = stemmer.stem(lemma)
-            lemmas.append((token.lower(), stemmed))
-            pos_tags[token.lower()] = pos_tag
-        if debug:
-            logger.info(f"POS Tagging Results (NLTK): {pos_tags}")
+        try:
+            nltk_pos_tags = nltk.pos_tag(tokens)
+            for token, pos_tag in nltk_pos_tags:
+                try:
+                    lemma = lemmatizer.lemmatize(token, get_wordnet_pos(pos_tag)).lower()
+                except Exception:
+                    # Fallback if lemmatization fails
+                    lemma = token.lower()
+                stemmed = stemmer.stem(lemma)
+                lemmas.append((token.lower(), stemmed))
+                pos_tags[token.lower()] = pos_tag
+            if debug:
+                logger.info(f"POS Tagging Results (NLTK): {pos_tags}")
+        except Exception as pos_error:
+            # Fallback if POS tagging fails completely
+            logger.warning(f"NLTK POS tagging failed: {pos_error}. Using basic token processing.")
+            for token in tokens:
+                lemma = token.lower()
+                stemmed = stemmer.stem(lemma)
+                lemmas.append((token.lower(), stemmed))
+                pos_tags[token.lower()] = 'NN'  # Default to noun
+            if debug:
+                logger.info(f"Using fallback token processing for: {tokens}")
 
     # Expanding query with synonyms
     expanded_query_set = set()

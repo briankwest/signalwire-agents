@@ -367,15 +367,56 @@ class IndexBuilder:
                      global_tags: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Process single file into chunks"""
         try:
-            # Try to read as text first
-            try:
-                content = file_path.read_text(encoding='utf-8')
-            except UnicodeDecodeError:
-                if self.verbose:
-                    print(f"Skipping binary file: {file_path}")
-                return []
-            
             relative_path = str(file_path.relative_to(source_dir))
+            file_extension = file_path.suffix.lower()
+            
+            # Handle different file types appropriately
+            if file_extension == '.pdf':
+                # Use document processor for PDF extraction
+                content_result = self.doc_processor._extract_text_from_file(str(file_path))
+                if isinstance(content_result, str) and content_result.startswith('{"error"'):
+                    if self.verbose:
+                        print(f"Skipping PDF file (extraction failed): {file_path}")
+                    return []
+                content = content_result
+            elif file_extension in ['.docx', '.xlsx', '.pptx']:
+                # Use document processor for Office documents
+                content_result = self.doc_processor._extract_text_from_file(str(file_path))
+                if isinstance(content_result, str) and content_result.startswith('{"error"'):
+                    if self.verbose:
+                        print(f"Skipping office document (extraction failed): {file_path}")
+                    return []
+                content = content_result
+            elif file_extension == '.html':
+                # Use document processor for HTML
+                content_result = self.doc_processor._extract_text_from_file(str(file_path))
+                if isinstance(content_result, str) and content_result.startswith('{"error"'):
+                    if self.verbose:
+                        print(f"Skipping HTML file (extraction failed): {file_path}")
+                    return []
+                content = content_result
+            elif file_extension == '.rtf':
+                # Use document processor for RTF
+                content_result = self.doc_processor._extract_text_from_file(str(file_path))
+                if isinstance(content_result, str) and content_result.startswith('{"error"'):
+                    if self.verbose:
+                        print(f"Skipping RTF file (extraction failed): {file_path}")
+                    return []
+                content = content_result
+            else:
+                # Try to read as text file (markdown, txt, code, etc.)
+                try:
+                    content = file_path.read_text(encoding='utf-8')
+                except UnicodeDecodeError:
+                    if self.verbose:
+                        print(f"Skipping binary file: {file_path}")
+                    return []
+            
+            # Validate content
+            if not content or (isinstance(content, str) and len(content.strip()) == 0):
+                if self.verbose:
+                    print(f"Skipping empty file: {file_path}")
+                return []
             
             # Create chunks using document processor - pass content directly, not file path
             chunks = self.doc_processor.create_chunks(

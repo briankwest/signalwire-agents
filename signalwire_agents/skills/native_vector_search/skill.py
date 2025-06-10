@@ -256,7 +256,24 @@ class NativeVectorSearchSkill(SkillBase):
             return SwaigFunctionResult("\n".join(response_parts))
             
         except Exception as e:
-            return SwaigFunctionResult(f"Search error: {str(e)}")
+            # Log the full error details for debugging
+            self.logger.error(f"Search error for query '{query}': {str(e)}", exc_info=True)
+            
+            # Return user-friendly error message
+            user_msg = "I'm sorry, I encountered an issue while searching. "
+            
+            # Check for specific error types and provide helpful guidance
+            error_str = str(e).lower()
+            if 'punkt' in error_str or 'nltk' in error_str:
+                user_msg += "It looks like some language processing resources are missing. Please try again in a moment."
+            elif 'vector' in error_str or 'embedding' in error_str:
+                user_msg += "There was an issue with the search indexing. Please try rephrasing your question."
+            elif 'timeout' in error_str or 'connection' in error_str:
+                user_msg += "The search service is temporarily unavailable. Please try again later."
+            else:
+                user_msg += "Please try rephrasing your question or contact support if the issue persists."
+                
+            return SwaigFunctionResult(user_msg)
     
     def _search_remote(self, query: str, enhanced: dict, count: int) -> list:
         """Perform search using remote search server"""

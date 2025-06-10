@@ -37,6 +37,15 @@ dependencies = [
 
 # Optional dependencies for search functionality
 [project.optional-dependencies]
+# Query existing .swsearch files only (no document processing/building)
+search-queryonly = [
+    "numpy>=1.24.0",
+    "scikit-learn>=1.3.0",
+    "sentence-transformers>=2.2.0",
+    "nltk>=3.8",
+]
+
+# Full search functionality (includes document processing and building)
 search = [
     "sentence-transformers>=2.2.0",
     "scikit-learn>=1.3.0",
