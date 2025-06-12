@@ -1331,7 +1331,7 @@ class AgentBase(SWMLService):
                 base_url = f"https://localhost:7071/api/{function_name}"
         else:
             # Server mode
-            protocol = 'https' if self.ssl_cert and self.ssl_key else 'http'
+            protocol = 'https' if getattr(self, 'ssl_enabled', False) else 'http'
             base_url = f"{protocol}://{self.host}:{self.port}"
         
         # Add route if not already included (for server mode)

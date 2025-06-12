@@ -82,8 +82,13 @@ class SWMLService:
         self.route = route.rstrip("/")  # Ensure no trailing slash
         self.host = host
         self.port = port
-        self.ssl_enabled = False
-        self.domain = None
+        
+        # Initialize SSL configuration from environment variables
+        ssl_enabled_env = os.environ.get('SWML_SSL_ENABLED', '').lower()
+        self.ssl_enabled = ssl_enabled_env in ('true', '1', 'yes')
+        self.domain = os.environ.get('SWML_DOMAIN')
+        self.ssl_cert_path = os.environ.get('SWML_SSL_CERT_PATH')
+        self.ssl_key_path = os.environ.get('SWML_SSL_KEY_PATH')
         
         # Initialize proxy detection attributes
         self._proxy_url_base = os.environ.get('SWML_PROXY_URL_BASE')
@@ -749,13 +754,15 @@ class SWMLService:
         """
         import uvicorn
         
-        # Store SSL configuration
-        self.ssl_enabled = ssl_enabled if ssl_enabled is not None else False
-        self.domain = domain
+        # Store SSL configuration (override environment if explicitly provided)
+        if ssl_enabled is not None:
+            self.ssl_enabled = ssl_enabled
+        if domain is not None:
+            self.domain = domain
         
-        # Set SSL paths
-        ssl_cert_path = ssl_cert
-        ssl_key_path = ssl_key
+        # Set SSL paths (use provided paths or fall back to environment)
+        ssl_cert_path = ssl_cert or getattr(self, 'ssl_cert_path', None)
+        ssl_key_path = ssl_key or getattr(self, 'ssl_key_path', None)
         
         # Validate SSL configuration if enabled
         if self.ssl_enabled:

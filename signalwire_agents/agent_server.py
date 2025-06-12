@@ -11,6 +11,7 @@ See LICENSE file in the project root for full license information.
 AgentServer - Class for hosting multiple SignalWire AI Agents in a single server
 """
 
+import os
 import re
 from typing import Dict, Any, Optional, List, Tuple, Callable
 
@@ -575,24 +576,62 @@ class AgentServer:
             # No matching agent found
             return {"error": "Not Found"}
             
-        # Print server info
+        # Set host and port
         host = host or self.host
         port = port or self.port
         
-        self.logger.info(f"Starting server on {host}:{port}")
+        # Check for SSL configuration from environment variables
+        ssl_enabled_env = os.environ.get('SWML_SSL_ENABLED', '').lower()
+        ssl_enabled = ssl_enabled_env in ('true', '1', 'yes')
+        ssl_cert_path = os.environ.get('SWML_SSL_CERT_PATH')
+        ssl_key_path = os.environ.get('SWML_SSL_KEY_PATH')
+        domain = os.environ.get('SWML_DOMAIN')
+        
+        # Validate SSL configuration if enabled
+        if ssl_enabled:
+            if not ssl_cert_path or not os.path.exists(ssl_cert_path):
+                self.logger.warning(f"SSL cert not found: {ssl_cert_path}")
+                ssl_enabled = False
+            elif not ssl_key_path or not os.path.exists(ssl_key_path):
+                self.logger.warning(f"SSL key not found: {ssl_key_path}")
+                ssl_enabled = False
+        
+        # Update server info display with correct protocol
+        protocol = "https" if ssl_enabled else "http"
+        
+        # Determine display host - include port unless it's the standard port for the protocol
+        if ssl_enabled and domain:
+            # Use domain, but include port if it's not the standard HTTPS port (443)
+            display_host = f"{domain}:{port}" if port != 443 else domain
+        else:
+            # Use host:port for HTTP or when no domain is specified
+            display_host = f"{host}:{port}"
+        
+        self.logger.info(f"Starting server on {protocol}://{display_host}")
         for route, agent in self.agents.items():
             username, password = agent.get_basic_auth_credentials()
             self.logger.info(f"Agent '{agent.get_name()}' available at:")
-            self.logger.info(f"URL: http://{host}:{port}{route}")
+            self.logger.info(f"URL: {protocol}://{display_host}{route}")
             self.logger.info(f"Basic Auth: {username}:{password}")
-            
-        # Start the server
-        uvicorn.run(
-            self.app,
-            host=host,
-            port=port,
-            log_level=self.log_level
-        )
+        
+        # Start the server with or without SSL
+        if ssl_enabled and ssl_cert_path and ssl_key_path:
+            self.logger.info(f"Starting with SSL - cert: {ssl_cert_path}, key: {ssl_key_path}")
+            uvicorn.run(
+                self.app,
+                host=host,
+                port=port,
+                log_level=self.log_level,
+                ssl_certfile=ssl_cert_path,
+                ssl_keyfile=ssl_key_path
+            )
+        else:
+            uvicorn.run(
+                self.app,
+                host=host,
+                port=port,
+                log_level=self.log_level
+            )
 
     def register_global_routing_callback(self, callback_fn: Callable[[Request, Dict[str, Any]], Optional[str]], 
                                         path: str) -> None:
