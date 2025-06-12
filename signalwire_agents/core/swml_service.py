@@ -845,7 +845,14 @@ class SWMLService:
         
         # Use correct protocol and host in displayed URL
         protocol = "https" if self.ssl_enabled else "http"
-        display_host = self.domain if self.ssl_enabled and self.domain else f"{host}:{port}"
+        
+        # Determine display host - include port unless it's the standard port for the protocol
+        if self.ssl_enabled and self.domain:
+            # Use domain, but include port if it's not the standard HTTPS port (443)
+            display_host = f"{self.domain}:{port}" if port != 443 else self.domain
+        else:
+            # Use host:port for HTTP or when no domain is specified
+            display_host = f"{host}:{port}"
         
         self.log.info("starting_server", 
                      url=f"{protocol}://{display_host}{self.route}",
@@ -1050,7 +1057,8 @@ class SWMLService:
             
             # Use domain if available and SSL is enabled
             if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
-                host_part = self.domain
+                # Use domain, but include port if it's not the standard HTTPS port (443)
+                host_part = f"{self.domain}:{self.port}" if self.port != 443 else self.domain
             else:
                 # For local URLs
                 if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):

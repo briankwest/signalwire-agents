@@ -1332,7 +1332,16 @@ class AgentBase(SWMLService):
         else:
             # Server mode
             protocol = 'https' if getattr(self, 'ssl_enabled', False) else 'http'
-            base_url = f"{protocol}://{self.host}:{self.port}"
+            
+            # Determine host part - include port unless it's the standard port for the protocol
+            if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
+                # Use domain, but include port if it's not the standard HTTPS port (443)
+                host_part = f"{self.domain}:{self.port}" if self.port != 443 else self.domain
+            else:
+                # Use host:port for HTTP or when no domain is specified
+                host_part = f"{self.host}:{self.port}"
+            
+            base_url = f"{protocol}://{host_part}"
         
         # Add route if not already included (for server mode)
         if mode == 'server' and self.route and not base_url.endswith(self.route):
@@ -1413,15 +1422,25 @@ class AgentBase(SWMLService):
             url = urlparse(base)
             base = url._replace(netloc=f"{username}:{password}@{url.netloc}").geturl()
         else:
-            # For local URLs
-            if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
-                host = "localhost"
+            # Determine protocol based on SSL settings
+            protocol = "https" if getattr(self, 'ssl_enabled', False) else "http"
+            
+            # Determine host part - include port unless it's the standard port for the protocol
+            if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
+                # Use domain, but include port if it's not the standard HTTPS port (443)
+                host_part = f"{self.domain}:{self.port}" if self.port != 443 else self.domain
             else:
-                host = self.host
+                # For local URLs
+                if self.host in ("0.0.0.0", "127.0.0.1", "localhost"):
+                    host = "localhost"
+                else:
+                    host = self.host
+                
+                host_part = f"{host}:{self.port}"
                 
             # Always include auth credentials
             username, password = self._basic_auth
-            base = f"http://{username}:{password}@{host}:{self.port}"
+            base = f"{protocol}://{username}:{password}@{host_part}"
         
         # Ensure the endpoint has a trailing slash to prevent redirects
         if endpoint in ["swaig", "post_prompt"]:
