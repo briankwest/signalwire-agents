@@ -1330,18 +1330,23 @@ class AgentBase(SWMLService):
                 # Fallback for local testing
                 base_url = f"https://localhost:7071/api/{function_name}"
         else:
-            # Server mode
-            protocol = 'https' if getattr(self, 'ssl_enabled', False) else 'http'
-            
-            # Determine host part - include port unless it's the standard port for the protocol
-            if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
-                # Use domain, but include port if it's not the standard HTTPS port (443)
-                host_part = f"{self.domain}:{self.port}" if self.port != 443 else self.domain
+            # Server mode - check for proxy URL first
+            if hasattr(self, '_proxy_url_base') and self._proxy_url_base:
+                # Use proxy URL when available (from reverse proxy detection)
+                base_url = self._proxy_url_base.rstrip('/')
             else:
-                # Use host:port for HTTP or when no domain is specified
-                host_part = f"{self.host}:{self.port}"
-            
-            base_url = f"{protocol}://{host_part}"
+                # Fallback to local URL construction
+                protocol = 'https' if getattr(self, 'ssl_enabled', False) else 'http'
+                
+                # Determine host part - include port unless it's the standard port for the protocol
+                if getattr(self, 'ssl_enabled', False) and getattr(self, 'domain', None):
+                    # Use domain, but include port if it's not the standard HTTPS port (443)
+                    host_part = f"{self.domain}:{self.port}" if self.port != 443 else self.domain
+                else:
+                    # Use host:port for HTTP or when no domain is specified
+                    host_part = f"{self.host}:{self.port}"
+                
+                base_url = f"{protocol}://{host_part}"
         
         # Add route if not already included (for server mode)
         if mode == 'server' and self.route and not base_url.endswith(self.route):
