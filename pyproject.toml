@@ -102,7 +102,7 @@ swaig-test = "signalwire_agents.cli.test_swaig:console_entry_point"
 sw-search = "signalwire_agents.cli.build_search:console_entry_point"
 
 [tool.setuptools]
-packages = ["signalwire_agents", "signalwire_agents.prefabs", "signalwire_agents.utils", "signalwire_agents.core", "signalwire_agents.core.state", "signalwire_agents.core.security", "signalwire_agents.skills", "signalwire_agents.skills.web_search", "signalwire_agents.skills.datetime", "signalwire_agents.skills.math", "signalwire_agents.skills.joke", "signalwire_agents.skills.datasphere", "signalwire_agents.skills.datasphere_serverless", "signalwire_agents.skills.wikipedia_search", "signalwire_agents.skills.native_vector_search", "signalwire_agents.cli", "signalwire_agents.search"]
+packages = {find = {}}
 include-package-data = true
 
 [tool.setuptools.package-data]
