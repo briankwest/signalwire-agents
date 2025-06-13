@@ -102,7 +102,7 @@ swaig-test = "signalwire_agents.cli.test_swaig:console_entry_point"
 sw-search = "signalwire_agents.cli.build_search:console_entry_point"
 
 [tool.setuptools]
-packages = {find = {}}
+packages = {find = {where = ["."], include = ["signalwire_agents*"]}}
 include-package-data = true
 
 [tool.setuptools.package-data]
