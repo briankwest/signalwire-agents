@@ -58,171 +58,15 @@ from signalwire_agents.core.skill_manager import SkillManager
 from signalwire_agents.utils.schema_utils import SchemaUtils
 from signalwire_agents.core.logging_config import get_logger, get_execution_mode
 
+# Import refactored components
+from signalwire_agents.core.agent.config.ephemeral import EphemeralAgentConfig
+from signalwire_agents.core.agent.prompt.manager import PromptManager
+from signalwire_agents.core.agent.tools.registry import ToolRegistry
+from signalwire_agents.core.agent.tools.decorator import ToolDecorator
+
 # Create a logger using centralized system
 logger = get_logger("agent_base")
 
-class EphemeralAgentConfig:
-    """
-    An ephemeral configurator object that mimics AgentBase's configuration interface.
-    
-    This allows dynamic configuration callbacks to use the same familiar methods
-    they would use during agent initialization, but for per-request configuration.
-    """
-    
-    def __init__(self):
-        # Initialize all configuration containers
-        self._hints = []
-        self._languages = []
-        self._pronounce = []
-        self._params = {}
-        self._global_data = {}
-        self._prompt_sections = []
-        self._raw_prompt = None
-        self._post_prompt = None
-        self._function_includes = []
-        self._native_functions = []
-    
-    # Mirror all the AgentBase configuration methods
-    
-    def add_hint(self, hint: str) -> 'EphemeralAgentConfig':
-        """Add a simple string hint"""
-        if isinstance(hint, str) and hint:
-            self._hints.append(hint)
-        return self
-    
-    def add_hints(self, hints: List[str]) -> 'EphemeralAgentConfig':
-        """Add multiple string hints"""
-        if hints and isinstance(hints, list):
-            for hint in hints:
-                if isinstance(hint, str) and hint:
-                    self._hints.append(hint)
-        return self
-    
-    def add_language(self, name: str, code: str, voice: str, **kwargs) -> 'EphemeralAgentConfig':
-        """Add a language configuration"""
-        language = {
-            "name": name,
-            "code": code,
-            "voice": voice
-        }
-        
-        # Handle additional parameters
-        for key, value in kwargs.items():
-            if key in ["engine", "model", "speech_fillers", "function_fillers", "fillers"]:
-                language[key] = value
-        
-        self._languages.append(language)
-        return self
-    
-    def add_pronunciation(self, replace: str, with_text: str, ignore_case: bool = False) -> 'EphemeralAgentConfig':
-        """Add a pronunciation rule"""
-        if replace and with_text:
-            rule = {"replace": replace, "with": with_text}
-            if ignore_case:
-                rule["ignore_case"] = True
-            self._pronounce.append(rule)
-        return self
-    
-    def set_param(self, key: str, value: Any) -> 'EphemeralAgentConfig':
-        """Set a single AI parameter"""
-        if key:
-            self._params[key] = value
-        return self
-    
-    def set_params(self, params: Dict[str, Any]) -> 'EphemeralAgentConfig':
-        """Set multiple AI parameters"""
-        if params and isinstance(params, dict):
-            self._params.update(params)
-        return self
-    
-    def set_global_data(self, data: Dict[str, Any]) -> 'EphemeralAgentConfig':
-        """Set global data"""
-        if data and isinstance(data, dict):
-            self._global_data = data
-        return self
-    
-    def update_global_data(self, data: Dict[str, Any]) -> 'EphemeralAgentConfig':
-        """Update global data"""
-        if data and isinstance(data, dict):
-            self._global_data.update(data)
-        return self
-    
-    def set_prompt_text(self, text: str) -> 'EphemeralAgentConfig':
-        """Set raw prompt text"""
-        self._raw_prompt = text
-        return self
-    
-    def set_post_prompt(self, text: str) -> 'EphemeralAgentConfig':
-        """Set post-prompt text"""
-        self._post_prompt = text
-        return self
-    
-    def prompt_add_section(self, title: str, body: str = "", bullets: Optional[List[str]] = None, **kwargs) -> 'EphemeralAgentConfig':
-        """Add a prompt section"""
-        section = {
-            "title": title,
-            "body": body
-        }
-        if bullets:
-            section["bullets"] = bullets
-        
-        # Handle additional parameters
-        for key, value in kwargs.items():
-            if key in ["numbered", "numbered_bullets", "subsections"]:
-                section[key] = value
-        
-        self._prompt_sections.append(section)
-        return self
-    
-    def set_native_functions(self, function_names: List[str]) -> 'EphemeralAgentConfig':
-        """Set native functions"""
-        if function_names and isinstance(function_names, list):
-            self._native_functions = [name for name in function_names if isinstance(name, str)]
-        return self
-    
-    def add_function_include(self, url: str, functions: List[str], meta_data: Optional[Dict[str, Any]] = None) -> 'EphemeralAgentConfig':
-        """Add a function include"""
-        if url and functions and isinstance(functions, list):
-            include = {"url": url, "functions": functions}
-            if meta_data and isinstance(meta_data, dict):
-                include["meta_data"] = meta_data
-            self._function_includes.append(include)
-        return self
-    
-    def extract_config(self) -> Dict[str, Any]:
-        """
-        Extract the configuration as a dictionary for applying to the real agent.
-        
-        Returns:
-            Dictionary containing all the configuration changes
-        """
-        config = {}
-        
-        if self._hints:
-            config["hints"] = self._hints
-        if self._languages:
-            config["languages"] = self._languages
-        if self._pronounce:
-            config["pronounce"] = self._pronounce
-        if self._params:
-            config["params"] = self._params
-        if self._global_data:
-            config["global_data"] = self._global_data
-        if self._function_includes:
-            config["function_includes"] = self._function_includes
-        if self._native_functions:
-            config["native_functions"] = self._native_functions
-        
-        # Handle prompt sections - these should be applied to the agent's POM, not as raw config
-        # The calling code should use these to build the prompt properly
-        if self._prompt_sections:
-            config["_ephemeral_prompt_sections"] = self._prompt_sections
-        if self._raw_prompt:
-            config["_ephemeral_raw_prompt"] = self._raw_prompt
-        if self._post_prompt:
-            config["_ephemeral_post_prompt"] = self._post_prompt
-        
-        return config
 
 class AgentBase(SWMLService):
     """
@@ -328,8 +172,6 @@ class AgentBase(SWMLService):
         
         # Initialize prompt handling
         self._use_pom = use_pom
-        self._raw_prompt = None
-        self._post_prompt = None
         
         # Initialize POM if needed
         if self._use_pom:
@@ -345,7 +187,6 @@ class AgentBase(SWMLService):
             self.pom = None
         
         # Initialize tool registry (separate from SWMLService verb registry)
-        self._swaig_functions = {}
         
         # Initialize session manager
         self._session_manager = SessionManager(token_expiry_secs=token_expiry_secs)
@@ -364,6 +205,10 @@ class AgentBase(SWMLService):
         self._record_format = record_format
         self._record_stereo = record_stereo
         
+        # Initialize refactored managers early
+        self._prompt_manager = PromptManager(self)
+        self._tool_registry = ToolRegistry(self)
+        
         # Process declarative PROMPT_SECTIONS if defined in subclass
         self._process_prompt_sections()
         
@@ -371,7 +216,7 @@ class AgentBase(SWMLService):
         self._state_manager = state_manager or FileStateManager()
         
         # Process class-decorated tools (using @AgentBase.tool)
-        self._register_class_decorated_tools()
+        self._tool_registry.register_class_decorated_tools()
         
         # Add native_functions parameter
         self.native_functions = native_functions or []
@@ -504,25 +349,34 @@ class AgentBase(SWMLService):
     # Prompt Building Methods
     # ----------------------------------------------------------------------
     
-    def define_contexts(self) -> 'ContextBuilder':
+    def define_contexts(self, contexts=None) -> Optional['ContextBuilder']:
         """
         Define contexts and steps for this agent (alternative to POM/prompt)
         
+        Args:
+            contexts: Optional context configuration (dict or ContextBuilder)
+            
         Returns:
-            ContextBuilder for method chaining
+            ContextBuilder for method chaining if no contexts provided
             
         Note:
             Contexts can coexist with traditional prompts. The restriction is only
             that you can't mix POM sections with raw text in the main prompt.
         """
-        # Import here to avoid circular imports
-        from signalwire_agents.core.contexts import ContextBuilder
-        
-        if self._contexts_builder is None:
-            self._contexts_builder = ContextBuilder(self)
-            self._contexts_defined = True
-        
-        return self._contexts_builder
+        if contexts is not None:
+            # New behavior - set contexts
+            self._prompt_manager.define_contexts(contexts)
+            return self
+        else:
+            # Legacy behavior - return ContextBuilder
+            # Import here to avoid circular imports
+            from signalwire_agents.core.contexts import ContextBuilder
+            
+            if self._contexts_builder is None:
+                self._contexts_builder = ContextBuilder(self)
+                self._contexts_defined = True
+            
+            return self._contexts_builder
     
     def _validate_prompt_mode_exclusivity(self):
         """
@@ -530,12 +384,8 @@ class AgentBase(SWMLService):
         
         Note: This does NOT prevent contexts from being used alongside traditional prompts
         """
-        # Only check for mixing POM sections with raw text in the main prompt
-        if self._raw_prompt and (self.pom and hasattr(self.pom, 'sections') and self.pom.sections):
-            raise ValueError(
-                "Cannot mix raw text prompt with POM sections in the main prompt. "
-                "Use either set_prompt_text() OR prompt_add_section() methods, not both."
-            )
+        # Delegate to prompt manager
+        self._prompt_manager._validate_prompt_mode_exclusivity()
     
     def set_prompt_text(self, text: str) -> 'AgentBase':
         """
@@ -547,8 +397,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        self._validate_prompt_mode_exclusivity()
-        self._raw_prompt = text
+        self._prompt_manager.set_prompt_text(text)
         return self
     
     def set_post_prompt(self, text: str) -> 'AgentBase':
@@ -561,7 +410,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        self._post_prompt = text
+        self._prompt_manager.set_post_prompt(text)
         return self
     
     def set_prompt_pom(self, pom: List[Dict[str, Any]]) -> 'AgentBase':
@@ -574,10 +423,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        if self._use_pom:
-            self.pom = pom
-        else:
-            raise ValueError("use_pom must be True to use set_prompt_pom")
+        self._prompt_manager.set_prompt_pom(pom)
         return self
     
     def prompt_add_section(
@@ -603,38 +449,14 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        self._validate_prompt_mode_exclusivity()
-        if self._use_pom and self.pom:
-            # Create parameters for add_section based on what's supported
-            kwargs = {}
-            
-            # Start with basic parameters
-            kwargs['title'] = title
-            kwargs['body'] = body
-            if bullets:
-                kwargs['bullets'] = bullets
-            
-            # Add optional parameters if they look supported
-            if hasattr(self.pom, 'add_section'):
-                sig = inspect.signature(self.pom.add_section)
-                if 'numbered' in sig.parameters:
-                    kwargs['numbered'] = numbered
-                if 'numberedBullets' in sig.parameters:
-                    kwargs['numberedBullets'] = numbered_bullets
-            
-            # Create the section
-            section = self.pom.add_section(**kwargs)
-            
-            # Now add subsections if provided, by calling add_subsection on the section
-            if subsections:
-                for subsection in subsections:
-                    if 'title' in subsection:
-                        section.add_subsection(
-                            title=subsection.get('title'),
-                            body=subsection.get('body', ''),
-                            bullets=subsection.get('bullets', [])
-                        )
-                
+        self._prompt_manager.prompt_add_section(
+            title=title,
+            body=body,
+            bullets=bullets,
+            numbered=numbered,
+            numbered_bullets=numbered_bullets,
+            subsections=subsections
+        )
         return self
         
     def prompt_add_to_section(
@@ -656,13 +478,12 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        if self._use_pom and self.pom:
-            self.pom.add_to_section(
-                title=title,
-                body=body,
-                bullet=bullet,
-                bullets=bullets
-            )
+        self._prompt_manager.prompt_add_to_section(
+            title=title,
+            body=body,
+            bullet=bullet,
+            bullets=bullets
+        )
         return self
         
     def prompt_add_subsection(
@@ -684,29 +505,25 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        if self._use_pom and self.pom:
-            # First find or create the parent section
-            parent_section = None
-            
-            # Try to find the parent section by title
-            if hasattr(self.pom, 'sections'):
-                for section in self.pom.sections:
-                    if hasattr(section, 'title') and section.title == parent_title:
-                        parent_section = section
-                        break
-            
-            # If parent section not found, create it
-            if not parent_section:
-                parent_section = self.pom.add_section(title=parent_title)
-            
-            # Now call add_subsection on the parent section object, not on POM
-            parent_section.add_subsection(
-                title=title,
-                body=body,
-                bullets=bullets or []
-            )
-            
+        self._prompt_manager.prompt_add_subsection(
+            parent_title=parent_title,
+            title=title,
+            body=body,
+            bullets=bullets
+        )
         return self
+    
+    def prompt_has_section(self, title: str) -> bool:
+        """
+        Check if a section exists in the prompt
+        
+        Args:
+            title: Section title to check
+            
+        Returns:
+            True if section exists, False otherwise
+        """
+        return self._prompt_manager.prompt_has_section(title)
     
     # ----------------------------------------------------------------------
     # Tool/Function Management
@@ -739,10 +556,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        if name in self._swaig_functions:
-            raise ValueError(f"Tool with name '{name}' already exists")
-            
-        self._swaig_functions[name] = SWAIGFunction(
+        self._tool_registry.define_tool(
             name=name,
             description=description,
             parameters=parameters,
@@ -764,16 +578,7 @@ class AgentBase(SWMLService):
         Returns:
             Self for method chaining
         """
-        function_name = function_dict.get('function')
-        if not function_name:
-            raise ValueError("Function dictionary must contain 'function' field with the function name")
-            
-        if function_name in self._swaig_functions:
-            raise ValueError(f"Tool with name '{function_name}' already exists")
-        
-        # Store the raw function dictionary for data_map tools
-        # These don't have handlers since they execute on SignalWire's server
-        self._swaig_functions[function_name] = function_dict
+        self._tool_registry.register_swaig_function(function_dict)
         return self
     
     def _tool_decorator(self, name=None, **kwargs):
@@ -786,71 +591,8 @@ class AgentBase(SWMLService):
         def example_function(self, param1):
             # ...
         """
-        def decorator(func):
-            nonlocal name
-            if name is None:
-                name = func.__name__
-                
-            parameters = kwargs.pop("parameters", {})
-            description = kwargs.pop("description", func.__doc__ or f"Function {name}")
-            secure = kwargs.pop("secure", True)
-            fillers = kwargs.pop("fillers", None)
-            webhook_url = kwargs.pop("webhook_url", None)
-            
-            self.define_tool(
-                name=name,
-                description=description,
-                parameters=parameters,
-                handler=func,
-                secure=secure,
-                fillers=fillers,
-                webhook_url=webhook_url,
-                **kwargs  # Pass through any additional swaig_fields
-            )
-            return func
-        return decorator
+        return ToolDecorator.create_instance_decorator(self._tool_registry)(name, **kwargs)
     
-    def _register_class_decorated_tools(self):
-        """
-        Register tools defined with @AgentBase.tool class decorator
-        
-        This method scans the class for methods decorated with @AgentBase.tool
-        and registers them automatically.
-        """
-        # Get the class of this instance
-        cls = self.__class__
-        
-        # Loop through all attributes in the class
-        for name in dir(cls):
-            # Get the attribute
-            attr = getattr(cls, name)
-            
-            # Check if it's a method decorated with @AgentBase.tool
-            if inspect.ismethod(attr) or inspect.isfunction(attr):
-                if hasattr(attr, "_is_tool") and getattr(attr, "_is_tool", False):
-                    # Extract tool information
-                    tool_name = getattr(attr, "_tool_name", name)
-                    tool_params = getattr(attr, "_tool_params", {})
-                    
-                    # Extract known parameters and pass through the rest as swaig_fields
-                    tool_params_copy = tool_params.copy()
-                    description = tool_params_copy.pop("description", attr.__doc__ or f"Function {tool_name}")
-                    parameters = tool_params_copy.pop("parameters", {})
-                    secure = tool_params_copy.pop("secure", True)
-                    fillers = tool_params_copy.pop("fillers", None)
-                    webhook_url = tool_params_copy.pop("webhook_url", None)
-                    
-                    # Register the tool with any remaining params as swaig_fields
-                    self.define_tool(
-                        name=tool_name,
-                        description=description,
-                        parameters=parameters,
-                        handler=attr.__get__(self, cls),  # Bind the method to this instance
-                        secure=secure,
-                        fillers=fillers,
-                        webhook_url=webhook_url,
-                        **tool_params_copy  # Pass through any additional swaig_fields
-                    )
     
     @classmethod
     def tool(cls, name=None, **kwargs):
@@ -863,12 +605,7 @@ class AgentBase(SWMLService):
         def example_function(self, param1):
             # ...
         """
-        def decorator(func):
-            setattr(func, "_is_tool", True)
-            setattr(func, "_tool_name", name or func.__name__)
-            setattr(func, "_tool_params", kwargs)
-            return func
-        return decorator
+        return ToolDecorator.create_class_decorator()(name, **kwargs)
     
     # ----------------------------------------------------------------------
     # Override Points for Subclasses
@@ -911,7 +648,7 @@ class AgentBase(SWMLService):
                     "status": "healthy",
                     "agent": self.get_name(),
                     "route": self.route,
-                    "functions": len(self._swaig_functions)
+                    "functions": len(self._tool_registry._swaig_functions)
                 }
             
             @app.get("/ready")
@@ -922,7 +659,7 @@ class AgentBase(SWMLService):
                     "status": "ready",
                     "agent": self.get_name(),
                     "route": self.route,
-                    "functions": len(self._swaig_functions)
+                    "functions": len(self._tool_registry._swaig_functions)
                 }
             
             # Add CORS middleware if needed
@@ -980,6 +717,11 @@ class AgentBase(SWMLService):
         Returns:
             Either a string prompt or a POM object as list of dicts
         """
+        # First check if prompt manager has a prompt
+        prompt_result = self._prompt_manager.get_prompt()
+        if prompt_result is not None:
+            return prompt_result
+            
         # If using POM, return the POM structure
         if self._use_pom and self.pom:
             try:
@@ -1012,8 +754,8 @@ class AgentBase(SWMLService):
                 self.log.error("pom_rendering_failed", error=str(e))
                 # Fall back to raw text if POM fails
                 
-        # Return raw text (either explicitly set or default)
-        return self._raw_prompt or f"You are {self.name}, a helpful AI assistant."
+        # Return default text
+        return f"You are {self.name}, a helpful AI assistant."
     
     def get_post_prompt(self) -> Optional[str]:
         """
@@ -1022,7 +764,7 @@ class AgentBase(SWMLService):
         Returns:
             Post-prompt text or None if not set
         """
-        return self._post_prompt
+        return self._prompt_manager.get_post_prompt()
     
     def define_tools(self) -> List[SWAIGFunction]:
         """
@@ -1034,7 +776,7 @@ class AgentBase(SWMLService):
         This method can be overridden by subclasses.
         """
         tools = []
-        for func in self._swaig_functions.values():
+        for func in self._tool_registry._swaig_functions.values():
             if isinstance(func, dict):
                 # Raw dictionary from register_swaig_function (e.g., DataMap)
                 tools.append(func)
@@ -1067,12 +809,12 @@ class AgentBase(SWMLService):
             Function result
         """
         # Check if the function is registered
-        if name not in self._swaig_functions:
+        if name not in self._tool_registry._swaig_functions:
             # If the function is not found, return an error
             return {"response": f"Function '{name}' not found"}
             
         # Get the function
-        func = self._swaig_functions[name]
+        func = self._tool_registry._swaig_functions[name]
         
         # Check if this is a data_map function (raw dictionary)
         if isinstance(func, dict):
@@ -1148,12 +890,12 @@ class AgentBase(SWMLService):
         """
         try:
             # Skip validation for non-secure tools
-            if function_name not in self._swaig_functions:
+            if function_name not in self._tool_registry._swaig_functions:
                 self.log.warning("unknown_function", function=function_name)
                 return False
                 
             # Get the function and check if it's secure
-            func = self._swaig_functions[function_name]
+            func = self._tool_registry._swaig_functions[function_name]
             is_secure = True  # Default to secure
             
             if isinstance(func, dict):
@@ -1507,7 +1249,7 @@ class AgentBase(SWMLService):
         swaig_obj = {}
         
         # Add defaults if we have functions
-        if self._swaig_functions:
+        if self._tool_registry._swaig_functions:
             swaig_obj["defaults"] = {
                 "web_hook_url": default_webhook_url
             }
@@ -1528,7 +1270,7 @@ class AgentBase(SWMLService):
         functions = []
         
         # Add each function to the functions array
-        for name, func in self._swaig_functions.items():
+        for name, func in self._tool_registry._swaig_functions.items():
             if isinstance(func, dict):
                 # For raw dictionaries (DataMap functions), use the entire dictionary as-is
                 # This preserves data_map and any other special fields
@@ -1594,7 +1336,7 @@ class AgentBase(SWMLService):
                 post_prompt_url = self._post_prompt_url_override
                 
         # Add answer verb with auto-answer enabled
-        self.add_answer_verb()
+        self.add_verb("answer", {})
         
         # Use the AI verb handler to build and validate the AI verb config
         ai_config = {}
@@ -1714,7 +1456,7 @@ class AgentBase(SWMLService):
             
             # Clear and rebuild the document with the modified AI config
             self.reset_document()
-            self.add_answer_verb()
+            self.add_verb("answer", {})
             self.add_verb("ai", ai_config)
         
         # Return the rendered document as a string
@@ -1785,7 +1527,7 @@ class AgentBase(SWMLService):
                     "status": "healthy",
                     "agent": self.get_name(),
                     "route": self.route,
-                    "functions": len(self._swaig_functions)
+                    "functions": len(self._tool_registry._swaig_functions)
                 }
             
             @app.get("/ready")
@@ -1794,7 +1536,7 @@ class AgentBase(SWMLService):
                 """Readiness check endpoint for Kubernetes readiness probe"""
                 # Check if agent is properly initialized
                 ready = (
-                    hasattr(self, '_swaig_functions') and
+                    hasattr(self, '_tool_registry') and
                     hasattr(self, 'schema_utils') and
                     self.schema_utils is not None
                 )
@@ -1907,7 +1649,7 @@ class AgentBase(SWMLService):
         mode = force_mode or get_execution_mode()
         
         try:
-            if mode in ['cgi', 'cloud_function', 'azure_function']:
+            if mode in ['cgi', 'azure_function']:
                 response = self.handle_serverless_request(event, context, mode)
                 print(response)
                 return response
@@ -2020,31 +1762,6 @@ class AgentBase(SWMLService):
             "body": json.dumps({"error": "Unauthorized"})
         }
     
-    def _check_cloud_function_auth(self, request) -> bool:
-        """
-        Check basic auth in Cloud Function mode
-        
-        Args:
-            request: Cloud Function request object
-            
-        Returns:
-            True if auth is valid, False otherwise
-        """
-        # This would need to be implemented based on the specific
-        # cloud function framework being used (Flask, etc.)
-        # For now, return True to maintain existing behavior
-        return True
-    
-    def _send_cloud_function_auth_challenge(self):
-        """
-        Send authentication challenge in Cloud Function mode
-        
-        Returns:
-            Cloud Function response with 401 status
-        """
-        # This would need to be implemented based on the specific
-        # cloud function framework being used
-        return {"error": "Unauthorized", "status": 401}
 
     def handle_serverless_request(self, event=None, context=None, mode=None):
         """
@@ -2174,13 +1891,6 @@ class AgentBase(SWMLService):
                 
                 return self._handle_azure_function_request(event)
             
-            elif mode in ['cloud_function']:
-                # Legacy cloud function mode - deprecated
-                # Check authentication in Cloud Function mode
-                if not self._check_cloud_function_auth(event):
-                    return self._send_cloud_function_auth_challenge()
-                
-                return self._handle_cloud_function_request(event)
                 
         except Exception as e:
             import logging
@@ -2194,19 +1904,6 @@ class AgentBase(SWMLService):
             else:
                 raise
 
-    def _handle_cloud_function_request(self, request):
-        """
-        Handle Cloud Function specific requests
-        
-        Args:
-            request: Cloud Function request object
-            
-        Returns:
-            Cloud Function response
-        """
-        # Platform-specific implementation would go here
-        # For now, return basic SWML response
-        return self._render_swml()
 
     def _execute_swaig_function(self, function_name: str, args: Optional[Dict[str, Any]] = None, call_id: Optional[str] = None, raw_data: Optional[Dict[str, Any]] = None):
         """
@@ -2234,8 +1931,8 @@ class AgentBase(SWMLService):
         
         try:
             # Validate function exists
-            if function_name not in self._swaig_functions:
-                req_log.warning("function_not_found", available_functions=list(self._swaig_functions.keys()))
+            if function_name not in self._tool_registry._swaig_functions:
+                req_log.warning("function_not_found", available_functions=list(self._tool_registry._swaig_functions.keys()))
                 return {"error": f"Function '{function_name}' not found"}
             
             # Use empty args if not provided
@@ -2952,7 +2649,7 @@ class AgentBase(SWMLService):
                 req_log.debug("token_found", token_length=len(token))
                 
                 # Check token validity but don't reject the request
-                if hasattr(self, '_session_manager') and function_name in self._swaig_functions:
+                if hasattr(self, '_session_manager') and function_name in self._tool_registry._swaig_functions:
                     is_valid = self._session_manager.validate_tool_token(function_name, token, call_id)
                     if is_valid:
                         req_log.debug("token_valid")
@@ -3238,8 +2935,7 @@ class AgentBase(SWMLService):
             if token:
                 req_log.debug("token_found", token_length=len(token))
                 
-                # Try to validate token, but continue processing regardless 
-                # for backward compatibility with existing implementations
+                # Try to validate token, but continue processing regardless
                 if call_id and hasattr(self, '_session_manager'):
                     try:
                         is_valid = self._session_manager.validate_tool_token("post_prompt", token, call_id)
@@ -3469,7 +3165,7 @@ class AgentBase(SWMLService):
         Called when SWML is requested, with request data when available
         
         This method overrides SWMLService's on_request to properly handle SWML generation
-        for AI Agents. It forwards the call to on_swml_request for compatibility.
+        for AI Agents.
         
         Args:
             request_data: Optional dictionary containing the parsed POST body
@@ -3478,13 +3174,11 @@ class AgentBase(SWMLService):
         Returns:
             None to use the default SWML rendering (which will call _render_swml)
         """
-        # First try to call on_swml_request if it exists (backward compatibility)
+        # Call on_swml_request for customization
         if hasattr(self, 'on_swml_request') and callable(getattr(self, 'on_swml_request')):
             return self.on_swml_request(request_data, callback_path, None)
             
         # If no on_swml_request or it returned None, we'll proceed with default rendering
-        # We're not returning any modifications here because _render_swml will be called
-        # to generate the complete SWML document
         return None
     
     def on_swml_request(self, request_data: Optional[dict] = None, callback_path: Optional[str] = None, request: Optional[Request] = None) -> Optional[dict]:
