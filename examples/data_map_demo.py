@@ -23,6 +23,13 @@ class DataMapDemoAgent(AgentBase):
     Demo agent showing different data_map patterns
     """
     
+    def __init__(self):
+        super().__init__(
+            name="datamap-demo",
+            route="/datamap-demo"
+        )
+        self.setup()
+    
     def setup(self):
         """Set up the agent with data_map tools"""
         
@@ -81,7 +88,11 @@ class DataMapDemoAgent(AgentBase):
             .webhook('POST', 'https://api.knowledge.com/search', 
                     headers={'Authorization': 'Bearer YOUR_TOKEN', 'Content-Type': 'application/json'})
             .body({'query': '${query}', 'limit': '${limit}'})
-            .foreach('${response.results}')
+            .foreach({
+                'input_key': '${response.results}',
+                'output_key': 'foreach',
+                'append': True
+            })
             .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
             .error_keys(['error', 'status'])
         )
@@ -108,7 +119,11 @@ class DataMapDemoAgent(AgentBase):
             # Fallback to comprehensive API if first fails
             .webhook('GET', 'https://api.comprehensive.com/search?q=${query}&detail=full',
                     headers={'Authorization': 'Bearer COMPREHENSIVE_TOKEN'})
-            .foreach('${response.items}')
+            .foreach({
+                'input_key': '${response.items}',
+                'output_key': 'foreach',
+                'append': True
+            })
             .output(SwaigFunctionResult('Search result: ${foreach.title} - Score: ${foreach.relevance}'))
             .error_keys(['error', 'failed', 'unavailable'])
         )
@@ -189,7 +204,11 @@ def print_data_map_examples():
         .parameter('query', 'string', 'Search query', required=True) 
         .webhook('POST', 'https://api.docs.com/search', headers={'Authorization': 'Bearer TOKEN'})
         .body({'query': '${query}', 'limit': 3})
-        .foreach('${response.results}')
+        .foreach({
+            'input_key': '${response.results}',
+            'output_key': 'foreach',
+            'append': True
+        })
         .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
         .error_keys(['error'])
     )
@@ -205,11 +224,7 @@ def print_data_map_examples():
 
 
 # Create the agent instance for testing
-agent = DataMapDemoAgent(
-    name="DataMap Demo Agent",
-    route="/datamap-demo"
-)
-agent.setup()
+agent = DataMapDemoAgent()
 
 if __name__ == "__main__":
     # Print examples first

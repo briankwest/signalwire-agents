@@ -86,7 +86,7 @@ def main():
     agent = JokeSkillAgent()
     
     try:
-        agent.serve(host="0.0.0.0", port=3000)
+        agent.run(host="0.0.0.0", port=3000)
     except KeyboardInterrupt:
         print("\nShutting down joke skill demo agent...")
 

@@ -51,11 +51,13 @@ class HealthCheckAgent(AgentBase):
     - Structured logging
     """
     
+    def __init__(self, name="lambda-agent", route="/", **kwargs):
+        super().__init__(name=name, route=route, **kwargs)
+        self.initialize()
+    
     def initialize(self):
-        # Add some SWAIG functions
-        self.add_function("greet_user", self.greet_user)
-        self.add_function("get_time", self.get_time)
-        self.add_function("health_status", self.health_status)
+        # SWAIG functions are registered using decorators below
+        pass
         
     def get_prompt(self):
         return """You are a helpful AI assistant running in AWS Lambda.
@@ -67,6 +69,7 @@ You have access to these functions:
 
 Always be friendly and helpful!"""
     
+    @AgentBase.tool("Greet a user by name")
     def greet_user(self, name: str = "friend"):
         """
         Greet a user by name
@@ -76,18 +79,20 @@ Always be friendly and helpful!"""
         """
         return f"Hello {name}! I'm running in AWS Lambda!"
     
+    @AgentBase.tool("Get the current time")
     def get_time(self):
         """Get the current time"""
         import datetime
         return f"Current time: {datetime.datetime.now().isoformat()}"
     
+    @AgentBase.tool("Check the health status of the Lambda function")
     def health_status(self):
         """Check the health status of the Lambda function"""
         return {
             "status": "healthy",
             "platform": "AWS Lambda",
-            "agent": self.get_name(),
-            "functions": len(self._swaig_functions)
+            "agent": self.name,
+            "functions": len(self._tool_registry._swaig_functions)
         }
 
 

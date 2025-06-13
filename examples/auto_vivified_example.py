@@ -381,7 +381,7 @@ def main():
         
         # Start the server
         try:
-            service.serve(host=args.host, port=args.port)
+            service.run(host=args.host, port=args.port)
         except KeyboardInterrupt:
             logger.info("server_shutdown")
             print("\nShutting down...")
