@@ -105,7 +105,7 @@ agent.serve()
 - **Dependency validation**: Clear error messages for missing requirements
 - **Modular architecture**: Skills are self-contained and reusable
 
-For detailed documentation, see [Skills System README](docs/SKILLS_SYSTEM_README.md).
+For detailed documentation, see [Skills System README](docs/skills_system.md).
 
 ## DataMap Tools
 
