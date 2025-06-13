@@ -179,5 +179,3 @@ class SWAIGFunction:
             
         return function_def
 
-# Add an alias for backward compatibility
-SwaigFunction = SWAIGFunction

@@ -57,7 +57,7 @@ class SimpleVoiceService(SWMLService):
         self.reset_document()
         
         # Add answer verb
-        self.add_answer_verb()
+        self.add_verb("answer", {})
         
         # Add play verb for greeting
         self.add_verb("play", {
@@ -65,7 +65,7 @@ class SimpleVoiceService(SWMLService):
         })
         
         # Add hangup verb
-        self.add_hangup_verb()
+        self.add_verb("hangup", {})
 
 # Create and start the service
 service = SimpleVoiceService()
@@ -163,9 +163,7 @@ SWML documents have the following basic structure:
 
 ### Common Verb Shortcuts
 
-- `add_answer_verb(max_duration=None, codecs=None)`: Add an answer verb
-- `add_hangup_verb(reason=None)`: Add a hangup verb
-- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None, params=None)`: Add an AI verb
+- `add_verb(verb_name, config)`: Add any SWML verb with configuration
 
 ## Verb Handling
 
@@ -366,7 +364,7 @@ class MultiSectionService(SWMLService):
         
         # Create the main document
         self.reset_document()
-        self.add_answer_verb()
+        self.add_verb("answer", {})
         self.add_verb("play", {"url": "say:Hello from the main service!"})
         self.add_verb("hangup", {})
         
@@ -493,9 +491,7 @@ service = SWMLService(
 
 ### Verb Helper Methods
 
-- `add_answer_verb(max_duration=None, codecs=None)`
-- `add_hangup_verb(reason=None)`
-- `add_ai_verb(prompt_text=None, prompt_pom=None, post_prompt=None, post_prompt_url=None, swaig=None, params=None)`
+- `add_verb(verb_name, config)`: Add any SWML verb with configuration
 
 ## Examples
 
@@ -522,7 +518,7 @@ class VoicemailService(SWMLService):
         self.reset_document()
         
         # Add answer verb
-        self.add_answer_verb()
+        self.add_verb("answer", {})
         
         # Add play verb for greeting
         self.add_verb("play", {
@@ -548,7 +544,7 @@ class VoicemailService(SWMLService):
         })
         
         # Hang up
-        self.add_hangup_verb()
+        self.add_verb("hangup", {})
         
         self.log.debug("voicemail_document_built")
 ```
@@ -565,7 +561,7 @@ class CallRouterService(SWMLService):
         
         # Create a new document
         self.reset_document()
-        self.add_answer_verb()
+        self.add_verb("answer", {})
         
         # Get routing parameters
         department = request_data.get("department", "").lower()
@@ -596,7 +592,7 @@ class CallRouterService(SWMLService):
         self.add_verb("play", {
             "url": "say:We're sorry, but all of our agents are currently busy. Please try again later."
         })
-        self.add_hangup_verb()
+        self.add_verb("hangup", {})
         
         return None  # Use the document we've built
 ```

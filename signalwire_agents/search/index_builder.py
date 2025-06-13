@@ -203,7 +203,7 @@ class IndexBuilder:
                    file_types: List[str], exclude_patterns: Optional[List[str]] = None,
                    languages: List[str] = None, tags: Optional[List[str]] = None):
         """
-        Build complete search index from a single directory (legacy method)
+        Build complete search index from a single directory
         
         Args:
             source_dir: Directory to scan for documents

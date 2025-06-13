@@ -2084,15 +2084,15 @@ else:
                           body="Take time to fully address customer needs")
 ```
 
-#### Convenience Methods
+#### Structured Prompt Building
 
-The SDK also provides convenience methods for common prompt sections:
+The SDK uses `prompt_add_section()` for all prompt configuration:
 
 ```python
-# These are equivalent to prompt_add_section with appropriate titles
-self.setPersonality("You are a technical support specialist.")
-self.setGoal("Resolve customer technical issues efficiently.")
-self.setInstructions([
+# Use prompt_add_section for all prompt configuration
+self.prompt_add_section("Personality", body="You are a technical support specialist.")
+self.prompt_add_section("Goal", body="Resolve customer technical issues efficiently.")
+self.prompt_add_section("Instructions", bullets=[
     "Get specific error details",
     "Guide users through troubleshooting steps",
     "Document the resolution"

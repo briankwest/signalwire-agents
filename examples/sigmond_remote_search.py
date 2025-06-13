@@ -229,7 +229,7 @@ def main():
     logger.info("- 'How do I deploy my agent?'")
     logger.info("Starting server...")
     
-    agent.serve()
+    agent.run()
 
 if __name__ == "__main__":
     main() 

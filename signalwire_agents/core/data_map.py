@@ -257,7 +257,6 @@ class DataMap:
         
         Args:
             foreach_config: Either:
-                - String: JSON path to array in response (deprecated, kept for compatibility)
                 - Dict: Foreach configuration with keys:
                     - input_key: Key in API response containing the array
                     - output_key: Name for the built string variable
@@ -278,20 +277,7 @@ class DataMap:
         if not self._webhooks:
             raise ValueError("Must add webhook before setting foreach")
             
-        if isinstance(foreach_config, str):
-            # Legacy support - convert string to basic foreach config
-            # Extract the key from "${response.key}" format if present
-            if foreach_config.startswith("${response.") and foreach_config.endswith("}"):
-                key = foreach_config[12:-1]  # Remove "${response." and "}"
-            else:
-                key = foreach_config
-            
-            foreach_data = {
-                "input_key": key,
-                "output_key": "foreach_output",
-                "append": "${this}"
-            }
-        else:
+        if isinstance(foreach_config, dict):
             # New format - validate required keys
             required_keys = ["input_key", "output_key", "append"]
             missing_keys = [key for key in required_keys if key not in foreach_config]
@@ -299,6 +285,8 @@ class DataMap:
                 raise ValueError(f"foreach config missing required keys: {missing_keys}")
             
             foreach_data = foreach_config
+        else:
+            raise ValueError("foreach_config must be a dictionary")
             
         self._webhooks[-1]["foreach"] = foreach_data
         return self

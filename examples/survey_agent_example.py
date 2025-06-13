@@ -326,7 +326,7 @@ if __name__ == "__main__":
     
     try:
         # Start the agent's server
-        agent.serve(host=args.host, port=args.port)
+        agent.run(host=args.host, port=args.port)
     except KeyboardInterrupt:
         logger.info("server_shutdown")
         print("\nStopping the agent.") 
