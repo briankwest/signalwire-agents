@@ -134,13 +134,6 @@ class SkillManager:
         if skill_identifier in self.loaded_skills:
             instance_key = skill_identifier
             skill_instance = self.loaded_skills[skill_identifier]
-        else:
-            # Try to find by skill name (for backwards compatibility)
-            for key, instance in self.loaded_skills.items():
-                if instance.SKILL_NAME == skill_identifier:
-                    instance_key = key
-                    skill_instance = instance
-                    break
         
         if skill_instance is None:
             self.logger.warning(f"Skill '{skill_identifier}' is not loaded")
@@ -173,11 +166,6 @@ class SkillManager:
         if skill_identifier in self.loaded_skills:
             return True
         
-        # Try to find by skill name (for backwards compatibility)
-        for instance in self.loaded_skills.values():
-            if instance.SKILL_NAME == skill_identifier:
-                return True
-        
         return False
     
     def get_skill(self, skill_identifier: str) -> Optional[SkillBase]:
@@ -193,10 +181,5 @@ class SkillManager:
         # First try as direct instance key
         if skill_identifier in self.loaded_skills:
             return self.loaded_skills[skill_identifier]
-        
-        # Try to find by skill name (for backwards compatibility)
-        for instance in self.loaded_skills.values():
-            if instance.SKILL_NAME == skill_identifier:
-                return instance
         
         return None 

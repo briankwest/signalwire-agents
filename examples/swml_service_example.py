@@ -67,15 +67,14 @@ def example_using_service():
     service.reset_document()
     
     # Add verbs to the document in sequence
-    # add_answer_verb() is a convenience method for the common answer verb
-    service.add_answer_verb()  # Answer the call when it arrives
-    
     # add_verb takes a verb name and parameters dictionary
+    service.add_verb("answer", {})  # Answer the call when it arrives
+    
     # This plays a text-to-speech message to the caller
     service.add_verb("play", {"url": "say:Hello, world!"})
     
     # Add a hangup verb to end the call
-    service.add_hangup_verb()  # End the call
+    service.add_verb("hangup", {})  # End the call
     
     # Print the rendered document as JSON for inspection
     print(service.render_document())

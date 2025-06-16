@@ -212,7 +212,7 @@ if __name__ == "__main__":
     
     # Start the agent's web server
     try:
-    print("Note: Works in any deployment mode (server/CGI/Lambda)")
+        print("Note: Works in any deployment mode (server/CGI/Lambda)")
         agent.run()
     except KeyboardInterrupt:
         print("\nStopping the FAQ Bot.")

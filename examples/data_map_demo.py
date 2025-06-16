@@ -23,6 +23,13 @@ class DataMapDemoAgent(AgentBase):
     Demo agent showing different data_map patterns
     """
     
+    def __init__(self):
+        super().__init__(
+            name="datamap-demo",
+            route="/datamap-demo"
+        )
+        self.setup()
+    
     def setup(self):
         """Set up the agent with data_map tools"""
         
@@ -60,7 +67,7 @@ class DataMapDemoAgent(AgentBase):
         
         # 2. Expression-based file control - no API calls
         file_control_tool = (DataMap('file_control')
-            .purpose('Control audio/video playback')
+            .description('Control audio/video playback')
             .parameter('command', 'string', 'Playback command', required=True)
             .parameter('filename', 'string', 'File to control', required=False)
             .expression('${args.command}', r'start.*', 
@@ -75,20 +82,24 @@ class DataMapDemoAgent(AgentBase):
         
         # 3. Knowledge search with foreach - processes arrays
         knowledge_tool = (DataMap('search_knowledge')
-            .purpose('Search knowledge base and return multiple results')
+            .description('Search knowledge base and return multiple results')
             .parameter('query', 'string', 'Search query', required=True)
             .parameter('limit', 'number', 'Max results to return', required=False)
             .webhook('POST', 'https://api.knowledge.com/search', 
                     headers={'Authorization': 'Bearer YOUR_TOKEN', 'Content-Type': 'application/json'})
             .body({'query': '${query}', 'limit': '${limit}'})
-            .foreach('${response.results}')
+            .foreach({
+                'input_key': '${response.results}',
+                'output_key': 'foreach',
+                'append': True
+            })
             .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
             .error_keys(['error', 'status'])
         )
         
         # 4. Random joke API - handles array responses differently  
         joke_tool = (DataMap('get_joke')
-            .purpose('Get a random joke from specific category')
+            .description('Get a random joke from specific category')
             .parameter('category', 'string', 'Joke category', 
                       enum=['programming', 'dad', 'general'], required=False)
             .webhook('GET', 'https://api.jokes.com/random?category=${category}')
@@ -98,7 +109,7 @@ class DataMapDemoAgent(AgentBase):
         
         # 5. Complex API with multiple webhooks and fallback
         complex_search_tool = (DataMap('complex_search')
-            .purpose('Search with fallback APIs')
+            .description('Search with fallback APIs')
             .parameter('query', 'string', 'Search query', required=True)
             .parameter('priority', 'string', 'Search priority', 
                       enum=['fast', 'comprehensive'], required=False)
@@ -108,7 +119,11 @@ class DataMapDemoAgent(AgentBase):
             # Fallback to comprehensive API if first fails
             .webhook('GET', 'https://api.comprehensive.com/search?q=${query}&detail=full',
                     headers={'Authorization': 'Bearer COMPREHENSIVE_TOKEN'})
-            .foreach('${response.items}')
+            .foreach({
+                'input_key': '${response.items}',
+                'output_key': 'foreach',
+                'append': True
+            })
             .output(SwaigFunctionResult('Search result: ${foreach.title} - Score: ${foreach.relevance}'))
             .error_keys(['error', 'failed', 'unavailable'])
         )
@@ -185,11 +200,15 @@ def print_data_map_examples():
     
     # Complex tool with foreach
     search_tool = (DataMap('search_docs')
-        .purpose('Search documentation')
+        .description('Search documentation')
         .parameter('query', 'string', 'Search query', required=True) 
         .webhook('POST', 'https://api.docs.com/search', headers={'Authorization': 'Bearer TOKEN'})
         .body({'query': '${query}', 'limit': 3})
-        .foreach('${response.results}')
+        .foreach({
+            'input_key': '${response.results}',
+            'output_key': 'foreach',
+            'append': True
+        })
         .output(SwaigFunctionResult('Found: ${foreach.title} - ${foreach.summary}'))
         .error_keys(['error'])
     )
@@ -205,11 +224,7 @@ def print_data_map_examples():
 
 
 # Create the agent instance for testing
-agent = DataMapDemoAgent(
-    name="DataMap Demo Agent",
-    route="/datamap-demo"
-)
-agent.setup()
+agent = DataMapDemoAgent()
 
 if __name__ == "__main__":
     # Print examples first

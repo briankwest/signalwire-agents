@@ -501,10 +501,7 @@ class SimpleAgent(AgentBase):
         self.prompt_add_section("Goal", body="Help users with basic questions.")
         self.prompt_add_section("Instructions", bullets=["Be concise and clear."])
         
-        # Alternative using convenience methods:
-        # self.setPersonality("You are a helpful assistant.")
-        # self.setGoal("Help users with basic questions.")
-        # self.setInstructions(["Be concise and clear."])
+        # Note: Use prompt_add_section() for all prompt configuration
     
     @AgentBase.tool(
         name="get_time", 
