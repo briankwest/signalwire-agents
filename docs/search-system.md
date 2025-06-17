@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # Local Search System
 
 The SignalWire Agents SDK includes a powerful local search system that provides DataSphere-compatible search functionality without external dependencies. This system uses advanced query preprocessing, local embeddings, and hybrid search techniques to enable agents to search through document collections offline.

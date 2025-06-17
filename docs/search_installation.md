@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # SignalWire Agents Search Installation Guide
 
 The SignalWire Agents SDK includes optional local search capabilities that can be installed separately to avoid adding large dependencies to the base installation.
