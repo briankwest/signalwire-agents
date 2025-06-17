@@ -2,6 +2,10 @@
 
 A Python SDK for creating, hosting, and securing SignalWire AI agents as microservices with minimal boilerplate.
 
+> [!WARNING]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
 ## Features
 
 - **Self-Contained Agents**: Each agent is both a web app and an AI persona
