@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # SignalWire SWAIG post_data Complete Reference
 
 This document comprehensively details all possible keys that can be present in the `post_data` JSON object sent to SWAIG functions, based on analysis of the `execute_user_function` implementation in `server_code/mod_openai.c`.

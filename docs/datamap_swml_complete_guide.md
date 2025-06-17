@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # DataMap Complete Guide: SWML Perspective and Development
 
 A comprehensive guide to understanding, implementing, and testing DataMap configurations in SignalWire AI Agents from the SWML (SignalWire Markup Language) perspective.

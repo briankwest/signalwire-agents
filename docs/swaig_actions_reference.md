@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # SWAIG Actions Reference
 
 This document describes all supported SWAIG actions that can be returned from function calls, their expected JSON parameters, and proposed Python helper methods for the `SwaigFunctionResult` class.

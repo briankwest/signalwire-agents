@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # SWAIG CLI Testing Tool Guide
 
 A comprehensive command-line tool for testing SignalWire AI Agents SWAIG functions and SWML generation locally with complete environment simulation and real API execution.
