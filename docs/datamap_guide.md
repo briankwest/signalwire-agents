@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # DataMap Guide
 
 The DataMap system allows you to create SWAIG tools that integrate directly with REST APIs without requiring custom webhook endpoints. DataMap tools execute on the SignalWire server, making them simpler to deploy and manage than traditional webhook-based tools.

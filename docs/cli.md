@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> You're looking at the older, **Alpha** version of the Agents SDK.
+> For the current version, visit SignalWire's [Agents SDK repository](https://github.com/signalwire/signalwire-agents).
+
+---
 # Command Line Interface (CLI) Tools
 
 The SignalWire Agents SDK provides several command-line tools to help with development, testing, and deployment.
